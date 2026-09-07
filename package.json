@@ -1,0 +1,14 @@
+{
+  "name": "hextech-seekers",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "A 3D Hextech hide-and-seek fan game with shared team vision and fog of war",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
