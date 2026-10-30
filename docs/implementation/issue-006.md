@@ -36,3 +36,12 @@ npm start
 ## 继续开发优先级
 
 在具备可用 EGL 和资源下载的环境执行构建，上传实际三英雄动画图集到 GitHub；真实 Chromium 对比盖伦与新增英雄的身高比例、方向、移动、待机、攻击与遮挡，然后接入其他英雄玩家操控和攻击命中帧。之后继续原版视野、泉水与完整对局。
+
+## 2026-10-31 实际执行补充：原始图集和 Chromium 自动视觉验收已完成
+
+- GitHub Actions 成功运行：[Issue 006 Chromium 验收](https://github.com/xia-ke/Hextech-Seekers/actions/runs/41097612767)。在 Ubuntu EGL llvmpipe 上实际下载并校验 9 个固定原始源文件，成功生成布里茨、锐雯、亚索各自的 idle1/run/attack1 彩色与深度图集，资源已提交到 main。首次旧版骨骼 local 矩阵兼容性错误已修复。
+- 真实 `node --test` 完整仓库测试：**35/35 PASS**；Chromium 真实加载：`盖伦/布里茨/锐雯/亚索` 四套图集成功，无 JavaScript pageerror，原始动作帧非空，颜色／深度图尺寸相符。
+- 视觉验收图片（已保存到仓库）：[四英雄图集展示](issue006-visual/champion-gallery.png)、[峡谷 Chromium 原图](issue006-visual/chromium-game.png)、[峡谷缩略图](issue006-visual/chromium-game-preview.jpg)、[浏览器验收 JSON](issue006-visual/browser-check.json)。四英雄图集展示已人工查看，人物外形可辨；峡谷图可见盖伦、附近布里茨，其他英雄是否完全露出需进一步针对地形和景深逐个核对，不将脚本中可见性判定直接等同于完整英雄像素可见。
+- 浏览器脚本仅在 `localhost/?visualQA=1` 允许对局截图布位与冻结模拟，用真实的地图/模型/深度合成显示视野内三名 AI 角色。这是验证场景，不修改线上游戏平常的 AI 行为。
+- Chromium 数据（1600×900，无头 SwiftShader）：`fpsText=5 FPS`、`drawP95=7.0ms`、`rafP95≈350ms`、`rafP50≈16.7ms`、`page_errors=[]`。RAF 调度有明显间歇性长停顿，**不能宣称原先 Issue 001 的游戏流畅度问题已经解决**。
+- 本次已完成的是 Issue 006 的**三英雄资产生成、提交和 Chromium 资源/基础画面冒烟验收**；原版画风细节、三位新英雄作为玩家可操作、攻击命中帧、全量实时对局仍需单独验收。Issue 006 整体继续标记 PARTIAL。
