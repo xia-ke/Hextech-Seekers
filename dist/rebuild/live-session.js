@@ -17,7 +17,7 @@ export function createLiveSession(nav,{totalPlayers=2,playerRole='hunter',player
     return {x:start.x+offsets[0],z:start.z+offsets[1]};
   });
   const player=actors.get('player');
-  let aiDecisionAccumulator=0,aiAttackAccumulator=0;
+  let aiDecisionAccumulator=0,aiAttackAccumulator=0,lastPlayerCaptureAt=-Infinity;
   function syncPlayer(position,facing) {
     if(!player.active||match.phase==='finished')return false;
     if(match.phase==='prepare'&&player.role==='hunter')return false;
@@ -40,7 +40,10 @@ export function createLiveSession(nav,{totalPlayers=2,playerRole='hunter',player
       .filter(a=>Math.hypot(a.x-player.x,a.z-player.z)<=CAPTURE_RANGE)
       .sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z))[0];
     if(!target)return {ok:false,reason:'no-visible-target-in-range'};
-    return meleeHit(player,target,match,{visible:vision.canSee,clearPath:vision.hasLineOfSight});
+    if(match.elapsed-lastPlayerCaptureAt<0.8)return {ok:false,reason:'attack-cooldown'};
+    const hit=meleeHit(player,target,match,{visible:vision.canSee,clearPath:vision.hasLineOfSight});
+    if(hit.ok)lastPlayerCaptureAt=match.elapsed;
+    return hit;
   }
   function tick(seconds) {
     if(!Number.isFinite(seconds)||seconds<0)throw new RangeError('Invalid delta');
