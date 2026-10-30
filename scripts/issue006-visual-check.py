@@ -50,6 +50,7 @@ try:
         page.locator('#round-count').select_option('4')
         page.locator('#round-role').select_option('hunter')
         page.locator('#round-hero').select_option('盖伦')
+        page.locator('#round-start').click()
         page.locator('#round-live-start').click()
         page.wait_for_function("Object.keys(window.__hextechLive.assets()).length === 4",timeout=120000)
         page.wait_for_timeout(3000)
