@@ -9,7 +9,10 @@ const locations = {red:{x:7765,z:-4020},river:{x:9838,z:-4398},blue:{x:11032,z:-
 let map, nav, sprite, overview, minimap, tiles, actor;
 let width=0,height=0,dpr=1,zoom=.8,follow=true,ready=false,last=0,animTime=0,attackEnd=0;
 let camera={x:0,y:0},path=[],heading=Math.PI,marker=null,toastEnd=0,drag=null;
-let fpsFrames=0,fpsTime=0,uiTime=0;
+let fpsFrames=0,fpsTime=0,uiTime=0,miniTime=0,previousFrame=0;
+const metrics={rafGaps:[],drawCosts:[],mapCosts:[],actorCosts:[],longGaps:0};
+function sample(list,value){list.push(value);if(list.length>120)list.shift();}
+function percentile(list,p){if(!list.length)return 0;const sorted=[...list].sort((a,b)=>a-b);return sorted[Math.min(sorted.length-1,Math.floor((sorted.length-1)*p))];}
 const atlases = new Map(), frameCache = new Map();
 const work=document.createElement('canvas');work.width=work.height=256;
 const wctx=work.getContext('2d',{willReadFrequently:true});
@@ -76,7 +79,10 @@ function frame(clip,direction,index){
   const rgba=wctx.getImageData(0,0,size,size).data;
   wctx.clearRect(0,0,size,size);wctx.drawImage(atlas.depth,direction*size,index*size,size,size,0,0,size,size);
   const depth=wctx.getImageData(0,0,size,size).data;
-  const result={key,rgba,depth};frameCache.set(key,result);
+  // Precompute opaque samples once per animation frame, not every scene redraw.
+  const opaque=[];
+  for(let i=0;i<rgba.length;i+=4)if(rgba[i+3])opaque.push(i);
+  const result={key,rgba,depth,opaque};frameCache.set(key,result);
   if(frameCache.size>32)frameCache.delete(frameCache.keys().next().value);return result;
 }
 
@@ -89,8 +95,8 @@ function drawActor(now){
   // Compare original world depth per pixel; trees and walls can cover the hero.
   if(maskKey!==f.key||maskX!==actor.x||maskZ!==actor.z||maskedTileVersion!==tiles.version){
     const dst=maskedPixels.data;dst.set(f.rgba);const baseDepth=viewDepth(actor),size=sprite.tileSize;
-    for(let y=0;y<size;y++)for(let x=0;x<size;x++){
-      const i=(y*size+x)*4;if(!dst[i+3])continue;
+    for(const i of f.opaque){
+      const pixel=i>>2,x=pixel%size,y=(pixel/size)|0;
       const terrain=tiles.depthAt(point.x+(x-sprite.pivot[0])*ratio,point.y+(y-sprite.pivot[1])*ratio);
       const local=decodeDepth(f.depth[i],f.depth[i+1],1024,16);
       if(terrain!=null&&terrain>baseDepth+local+5)dst[i+3]=0;
@@ -140,12 +146,27 @@ function updateUI(){
   $('coords').textContent='X '+Math.round(actor.x)+' · Z '+Math.round(-actor.z);
 }
 
-function paint(){if(!ready)return;drawMap();drawMarker(performance.now());drawActor(performance.now());drawMinimap();}
+// Animation frames already render continuously; event handlers should not duplicate draws.
+function paint(){if(!ready)return;}
+function renderFrame(now){
+  const start=performance.now();drawMap();
+  const afterMap=performance.now();drawMarker(now);drawActor(now);
+  const afterActor=performance.now();
+  if(now-miniTime>=100){drawMinimap();miniTime=now;}
+  sample(metrics.mapCosts,afterMap-start);
+  sample(metrics.actorCosts,afterActor-afterMap);
+  sample(metrics.drawCosts,performance.now()-start);
+}
 
 function tick(now){
   requestAnimationFrame(tick);if(!ready)return;
   // Path following consumes distance across waypoints, even at low frame rates.
   // Visibility changes reset the clock, so returning to a tab cannot teleport.
+  if(previousFrame){
+    const gap=now-previousFrame;sample(metrics.rafGaps,gap);
+    if(gap>100)metrics.longGaps++;
+  }
+  previousFrame=now;
   const dt=last?Math.min((now-last)/1000,1):0;last=now;animTime+=dt;
   let remaining=340*dt;
   while(path.length&&remaining>0){const target=path[0],dx=target.x-actor.x,dz=target.z-actor.z,distance=Math.hypot(dx,dz);
@@ -155,11 +176,10 @@ function tick(now){
   }
   actor.y=nav.heightAt(actor.x,actor.z);
   if(follow){const p=project(map,actor),factor=1-Math.exp(-dt*12);camera.x+=(p.x-camera.x)*factor;camera.y+=(p.y-camera.y)*factor;}
-  const renderStart=performance.now();drawMap();drawMarker(now);drawActor(now);drawMinimap();
-  const renderMS=performance.now()-renderStart;
+  renderFrame(now);
   if(now>toastEnd)$('toast').classList.remove('show');
   if(now-uiTime>200){updateUI();uiTime=now;}
-  fpsFrames++;if(now-fpsTime>1000){$('fps').textContent=Math.round(fpsFrames*1000/(now-fpsTime))+' FPS · '+renderMS.toFixed(1)+' ms';fpsFrames=0;fpsTime=now;}
+  fpsFrames++;if(now-fpsTime>1000){$('fps').textContent=Math.round(fpsFrames*1000/(now-fpsTime))+' FPS · draw p95 '+percentile(metrics.drawCosts,.95).toFixed(1)+'ms · RAF p95 '+percentile(metrics.rafGaps,.95).toFixed(0)+'ms';fpsFrames=0;fpsTime=now;}
 }
 
 async function moveTo(x,y){
@@ -209,7 +229,7 @@ document.addEventListener('keydown',e=>{
   if(e.code==='Space'){e.preventDefault();recenter();}if(e.code==='KeyS')stop();if(e.code==='KeyA')attack();
   if(e.code==='KeyY'){setFollow(!follow);if(follow)recenter();}
 });
-document.addEventListener('visibilitychange',()=>last=0);window.addEventListener('resize',resize);
+document.addEventListener('visibilitychange',()=>{last=0;previousFrame=0;});window.addEventListener('resize',resize);
 
 async function boot(){
   try{
@@ -227,6 +247,13 @@ async function boot(){
     await Promise.all(tiles.visible().map(([x,y])=>tiles.load(x,y)));
     progress('峡谷已就绪',100);ready=true;$('loading').hidden=true;updateUI();
     fpsTime=performance.now();requestAnimationFrame(tick);
+    window.__hextechPerf=()=>({
+      fpsText:$('fps').textContent,rafP50:percentile(metrics.rafGaps,.5),
+      rafP95:percentile(metrics.rafGaps,.95),drawP95:percentile(metrics.drawCosts,.95),
+      mapP95:percentile(metrics.mapCosts,.95),actorP95:percentile(metrics.actorCosts,.95),
+      longGaps:metrics.longGaps,samples:metrics.rafGaps.length,
+      viewport:{width,height,dpr},visibility:document.visibilityState
+    });
   }catch(error){console.error(error);$('loading').classList.add('error');progress('加载中断：'+error.message,0);$('retry').hidden=false;}
 }
 boot();
