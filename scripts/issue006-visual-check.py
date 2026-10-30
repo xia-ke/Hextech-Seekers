@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""Chromium visual proof for Issue 006. Must run only after real atlas build."""
+import json
+import subprocess
+import time
+from pathlib import Path
+from PIL import Image
+from playwright.sync_api import sync_playwright
+
+ROOT=Path(__file__).resolve().parent.parent
+OUT=ROOT/'artifacts/issue006'
+OUT.mkdir(parents=True,exist_ok=True)
+heroes=['garen','blitzcrank','riven','yasuo']
+manifest={}
+for hero in heroes:
+    path=ROOT/'dist/assets/visual'/hero
+    meta=json.loads((path/'sprite.json').read_text())
+    frames={}
+    for clip,info in meta['clips'].items():
+        color=path/info['image']
+        depth=path/info['depth']
+        with Image.open(color) as image:
+            image.load()
+            if image.size!=(meta['tileSize']*meta['directions'],meta['tileSize']*info['frames']):
+                raise AssertionError(f'{hero}/{clip} atlas dimensions incorrect')
+            # Non-empty pixels in the first actual animation tile.
+            frame=image.crop((0,0,meta['tileSize'],meta['tileSize'])).convert('RGBA')
+            occupied=frame.getchannel('A').getbbox()
+            if occupied is None:raise AssertionError(f'{hero}/{clip} empty original sprite')
+            frames[clip]={'size':image.size,'first_frame_bbox':occupied}
+        with Image.open(depth) as dep:
+            dep.load()
+            if dep.size!=image.size:raise AssertionError(f'{hero}/{clip} depth mismatch')
+    if set(['idle1','run','attack1'])-set(meta['clips']):
+        raise AssertionError(hero+' missing clips')
+    manifest[hero]=frames
+(OUT/'atlas-check.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2))
+
+server=subprocess.Popen(['node','scripts/serve.mjs'],cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+try:
+    with sync_playwright() as p:
+        browser=p.chromium.launch(headless=True,args=['--disable-dev-shm-usage','--use-gl=angle','--use-angle=swiftshader'])
+        page=browser.new_page(viewport={'width':1600,'height':900},device_scale_factor=1)
+        errors=[]
+        page.on('pageerror',lambda error:errors.append(str(error)))
+        page.goto('http://127.0.0.1:8000/',wait_until='domcontentloaded',timeout=60000)
+        page.wait_for_function('window.__hextechLive && window.__hextechNavigation',timeout=120000)
+        page.wait_for_function("document.querySelector('#loading').hidden",timeout=120000)
+        page.locator('#round-toggle').click()
+        page.locator('#round-count').select_option('4')
+        page.locator('#round-role').select_option('hunter')
+        page.locator('#round-hero').select_option('盖伦')
+        page.locator('#round-live-start').click()
+        page.wait_for_function("Object.keys(window.__hextechLive.assets()).length === 4",timeout=120000)
+        page.wait_for_timeout(3000)
+        assets=page.evaluate('window.__hextechLive.assets()')
+        if len(assets)!=4 or not all(assets.values()):
+            raise AssertionError('Original atlases did not load: '+str(assets))
+        if errors:raise AssertionError('Browser page errors: '+str(errors))
+        page.screenshot(path=str(OUT/'chromium-game.png'),full_page=True)
+        snapshot=page.evaluate('window.__hextechLive.snapshot()')
+        perf=page.evaluate('window.__hextechPerf()')
+        assert snapshot['phase'] in ('prepare','chase'),snapshot
+        assert perf['samples']>0,perf
+        (OUT/'browser-check.json').write_text(json.dumps(
+            {'asset_status':assets,'snapshot':snapshot,'performance':perf,
+             'page_errors':errors,'viewport':{'width':1600,'height':900}},
+            ensure_ascii=False,indent=2))
+        # Separate atlas inspection sheet is a screenshot rendered by real Chromium.
+        cards=[]
+        for hero in heroes:
+            meta=json.loads((ROOT/'dist/assets/visual'/hero/'sprite.json').read_text())
+            name=meta.get('hero',hero)
+            cards.append(f'<div class="card"><h2>{name}</h2><img src="http://127.0.0.1:8000/assets/visual/{hero}/inspection.png"><p>Original 3D model · rasterized EGL sprite</p></div>')
+        gallery=browser.new_page(viewport={'width':1400,'height':520})
+        gallery.set_content('<html><head><style>body{margin:0;background:#09151c;color:#e9d7a1;font:17px sans-serif;display:flex;gap:12px;padding:18px}.card{padding:15px;border:1px solid #86724c;width:300px;text-align:center;background:#102631}.card img{width:265px;height:265px;object-fit:contain}.card p{font-size:12px;color:#a7c6c1}</style></head><body>'+''.join(cards)+'</body></html>',wait_until='load')
+        gallery.wait_for_timeout(2000)
+        gallery.screenshot(path=str(OUT/'champion-gallery.png'))
+        gallery.close()
+        browser.close()
+finally:
+    server.terminate()
+    try:server.wait(timeout=5)
+    except subprocess.TimeoutExpired:server.kill()
+print('PASS Chromium: rendered four original hero sprites, game viewport, no page exceptions; outputs:',OUT)
