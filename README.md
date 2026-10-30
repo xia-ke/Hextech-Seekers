@@ -87,4 +87,4 @@ python3 -m pip install -r scripts/visual-requirements.txt
 python3 scripts/build-issue006-champions.py --source /tmp/hextech-issue006
 ```
 
-**当前 GitHub 只提交了资源构建与渲染代码，尚未生成并提交这三位英雄的二进制动作图集。** 运行素材缺失时会提示“原始模型未安装”，不会拿盖伦或几何占位替代。当前玩家实时演练仍仅支持盖伦；本轮逻辑与渲染边界检查共 31 项通过，完整浏览器和 EGL 实测尚未完成。GitHub 与体验站点未同步部署。
+**三位英雄的真实动作图集和深度图已在 GitHub Actions 中生成并提交到 main；Chromium 已完成四套资源加载和基础视觉冒烟验收。** 运行素材缺失时会提示“原始模型未安装”，不会拿盖伦或几何占位替代。当前玩家实时演练仍仅支持盖伦；完整仓库 Node 测试 35/35 通过，EGL 构建与 Chromium 自动视觉冒烟验收已完成。无头 Chromium RAF 存在长停顿，性能和原版画风最终验收仍未通过。验收证据见 [Issue 006 浏览器截图](docs/implementation/issue006-visual/chromium-game-preview.jpg) 与 [四英雄图集](docs/implementation/issue006-visual/champion-gallery.png)。GitHub 与体验站点未同步部署。
