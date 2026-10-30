@@ -1,9 +1,9 @@
 {
   "name": "hextech-seekers",
-  "version": "0.4.0-visual.1",
+  "version": "0.5.0-round-preview.1",
   "private": true,
   "type": "module",
-  "description": "Hextech Seekers rebuild: original Rift scene and Garen exploration milestone",
+  "description": "Rift exploration plus Issue 002 deterministic round rules preview",
   "scripts": {
     "start": "node scripts/serve.mjs",
     "test": "node --test",
