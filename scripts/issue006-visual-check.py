@@ -64,6 +64,11 @@ try:
         if len(staged)!=3:raise AssertionError('Could not stage 3 visible real enemy sprites: '+str(staged))
         page.wait_for_timeout(250)
         page.screenshot(path=str(OUT/'chromium-game.png'),full_page=True)
+        # Small visual evidence that remains readable from GitHub API clients.
+        with Image.open(OUT/'chromium-game.png') as screenshot:
+            thumbnail=screenshot.convert('RGB')
+            thumbnail.thumbnail((1100,620))
+            thumbnail.save(OUT/'chromium-game-preview.jpg',quality=72,optimize=True)
         snapshot=page.evaluate('window.__hextechLive.snapshot()')
         perf=page.evaluate('window.__hextechPerf()')
         assert snapshot['phase'] in ('prepare','chase'),snapshot
