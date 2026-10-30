@@ -20,3 +20,10 @@
 .round-player small{color:#a7bbb5}
 #round-result h3{font-size:14px;color:#e6d39d}
 @media(max-width:650px){.round-lab{top:102px;right:10px}.round-panel{max-height:calc(100vh - 240px)}}
+
+
+.round-ai{margin-top:14px;padding:11px;background:#0b242acb;border:1px solid #6a8d835a}
+.round-ai p{font-size:11px;color:#bacdc8;line-height:1.6;margin:0 0 8px}
+.round-ai button{font-size:11px;background:#19363a;color:#d8e5cf;border:1px solid #819c8b;padding:7px 9px;margin:0 6px 8px 0}
+.round-ai button:disabled{opacity:.4;cursor:not-allowed}
+.round-ai pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.7 ui-monospace,monospace;color:#b2ddd4}
