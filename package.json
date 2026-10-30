@@ -1,9 +1,9 @@
 {
   "name": "hextech-seekers",
-  "version": "0.9.0-hero-renderer.1",
+  "version": "0.9.1-asset-verified",
   "private": true,
   "type": "module",
-  "description": "Issue 006 source-pinned original hero assets pipeline and visibility-filtered multi-character renderer",
+  "description": "Issue 006 original four-champion atlases built and Chromium visual smoke-tested; gameplay/vision parity pending",
   "scripts": {
     "start": "node scripts/serve.mjs",
     "test": "node --test",
