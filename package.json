@@ -1,9 +1,9 @@
 {
   "name": "hextech-seekers",
-  "version": "0.8.0-live-preview.1",
+  "version": "0.9.0-hero-renderer.1",
   "private": true,
   "type": "module",
-  "description": "Rift exploration and developer live Garen match integration with AI, vision and capture",
+  "description": "Issue 006 source-pinned original hero assets pipeline and visibility-filtered multi-character renderer",
   "scripts": {
     "start": "node scripts/serve.mjs",
     "test": "node --test",
