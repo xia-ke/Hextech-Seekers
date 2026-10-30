@@ -46,3 +46,12 @@
 ## 页面实拍
 
 ![默认斜俯视镜头与盖伦](screenshots/exploration.jpg)
+
+
+## 2026-10-30 后续性能补丁（尚未完成真实游戏验收）
+
+- 源码提交：`6edf7f0d6ec8ed26134b829e6b923a497dfd5f77`，修改 `dist/rebuild/app.js`。
+- 删除输入事件额外执行的同步完整绘制；由现有 RAF 主循环统一呈现。英雄动画帧首次解码时缓存不透明像素索引，减少每帧遮挡循环扫描透明像素。小地图绘制频率限制在最多约 10 Hz。新增 `window.__hextechPerf()`，报告 RAF P50/P95、draw/map/actor P95、超过 100ms 的 RAF 间隔次数、DPR 和页面可见性。
+- 检查：从 GitHub 读取更新后的完整 JS，去掉静态 import 后由 JS 引擎完整解析，PASS；真实 Chromium 144 无地图素材的独立像素循环基准（256×256、约 2/3 非透明，80 次迭代）原版 1.093ms/次、优化版 0.931ms/次，输出像素 0 处差异。Chromium 空白页 RAF 约 49.7Hz，仅证明测试浏览器能够正常调度，并非游戏 FPS。
+- 环境限制：当前执行容器无法 DNS 解析 GitHub 克隆地址；独立浏览器访问既有 Sites 地址收到 `ERR_BLOCKED_BY_ADMINISTRATOR`。无法在当前环境加载实际游戏素材做整页视觉、移动、遮挡或真实帧率对照，**Issue 001 仍为 PARTIAL，不宣称解决原先 1 FPS**。GitHub 已更新，Sites 未同步发布。
+- 后续在可访问实际站点的浏览器运行 `window.__hextechPerf()`，分别记录待机、长距离移动、拖动镜头、滚轮缩放各 30 秒数据；检查操作行为与截图后才能判断验收。
