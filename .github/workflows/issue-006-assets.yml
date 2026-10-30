@@ -1,0 +1,53 @@
+name: Build Issue 006 originals and Chromium validate
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/issue-006-assets.yml'
+      - 'scripts/build-issue006-champions.py'
+      - 'scripts/fetch-visual-sources.py'
+      - 'scripts/convert-native-champion.py'
+      - 'scripts/render-visual-assets.py'
+      - 'scripts/issue006-visual-check.py'
+      - 'dist/rebuild/**'
+      - 'tests/champion-renderer.test.mjs'
+permissions:
+  contents: write
+jobs:
+  assets-and-chromium:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Install EGL and browser prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libgles2 libosmesa6 libgl1-mesa-dri
+          python -m pip install --break-system-packages -r scripts/visual-requirements.txt playwright
+          python -m playwright install --with-deps chromium
+      - name: Build original champion atlases (strict source verification)
+        run: |
+          python scripts/build-issue006-champions.py --source /tmp/issue006-source
+          node --test
+      - name: Check rendered assets with Chromium
+        run: |
+          python scripts/issue006-visual-check.py
+      - name: Upload visual acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue006-chromium-proof
+          path: |
+            artifacts/issue006/**
+          if-no-files-found: warn
+      - name: Commit generated original atlases only after browser check
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/assets/visual/blitzcrank dist/assets/visual/riven dist/assets/visual/yasuo
+          git diff --cached --quiet && exit 0
+          git commit -m "assets: build original Blitzcrank Riven Yasuo sprites (Issue 006)"
+          git push
