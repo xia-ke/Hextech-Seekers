@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Chromium visual proof for Issue 006. Must run only after real atlas build."""
 import json
+import base64
+import io
 import subprocess
 import time
 from pathlib import Path
@@ -43,7 +45,7 @@ try:
         page=browser.new_page(viewport={'width':1600,'height':900},device_scale_factor=1)
         errors=[]
         page.on('pageerror',lambda error:errors.append(str(error)))
-        page.goto('http://127.0.0.1:8000/',wait_until='domcontentloaded',timeout=60000)
+        page.goto('http://127.0.0.1:8000/?visualQA=1',wait_until='domcontentloaded',timeout=60000)
         page.wait_for_function('window.__hextechLive && window.__hextechNavigation',timeout=120000)
         page.wait_for_function("document.querySelector('#loading').hidden",timeout=120000)
         page.locator('#round-toggle').click()
@@ -53,15 +55,19 @@ try:
         page.locator('#round-start').click()
         page.locator('#round-live-start').click()
         page.wait_for_function("Object.keys(window.__hextechLive.assets()).length === 4",timeout=120000)
-        page.wait_for_timeout(3000)
+        page.wait_for_timeout(300)
         assets=page.evaluate('window.__hextechLive.assets()')
         if len(assets)!=4 or not all(assets.values()):
             raise AssertionError('Original atlases did not load: '+str(assets))
         if errors:raise AssertionError('Browser page errors: '+str(errors))
+        staged=page.evaluate('window.__hextechLive.stageForVisualQA()')
+        if len(staged)!=3:raise AssertionError('Could not stage 3 visible real enemy sprites: '+str(staged))
+        page.wait_for_timeout(250)
         page.screenshot(path=str(OUT/'chromium-game.png'),full_page=True)
         snapshot=page.evaluate('window.__hextechLive.snapshot()')
         perf=page.evaluate('window.__hextechPerf()')
         assert snapshot['phase'] in ('prepare','chase'),snapshot
+        assert len(snapshot['visible'])==3,('Visible original sprites missing',snapshot['visible'])
         assert perf['samples']>0,perf
         (OUT/'browser-check.json').write_text(json.dumps(
             {'asset_status':assets,'snapshot':snapshot,'performance':perf,
@@ -72,7 +78,15 @@ try:
         for hero in heroes:
             meta=json.loads((ROOT/'dist/assets/visual'/hero/'sprite.json').read_text())
             name=meta.get('hero',hero)
-            cards.append(f'<div class="card"><h2>{name}</h2><img src="http://127.0.0.1:8000/assets/visual/{hero}/inspection.png"><p>Original 3D model · rasterized EGL sprite</p></div>')
+            # Generate a first-frame inspection image from each original sprite
+            # rather than depending on optional 'inspection.png' in the repo.
+            info=meta['clips']['idle1']
+            with Image.open(ROOT/'dist/assets/visual'/hero/info['image']) as atlas:
+                first=atlas.crop((0,0,meta['tileSize'],meta['tileSize']))
+                buf=io.BytesIO()
+                first.save(buf,format='PNG')
+            encoded=base64.b64encode(buf.getvalue()).decode('ascii')
+            cards.append(f'<div class="card"><h2>{name}</h2><img src="data:image/png;base64,{encoded}"><p>Original 3D model · rasterized EGL sprite</p></div>')
         gallery=browser.new_page(viewport={'width':1400,'height':520})
         gallery.set_content('<html><head><style>body{margin:0;background:#09151c;color:#e9d7a1;font:17px sans-serif;display:flex;gap:12px;padding:18px}.card{padding:15px;border:1px solid #86724c;width:300px;text-align:center;background:#102631}.card img{width:265px;height:265px;object-fit:contain}.card p{font-size:12px;color:#a7c6c1}</style></head><body>'+''.join(cards)+'</body></html>',wait_until='load')
         gallery.wait_for_timeout(2000)
