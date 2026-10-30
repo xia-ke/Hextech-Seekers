@@ -1,9 +1,9 @@
 {
   "name": "hextech-seekers",
-  "version": "0.7.0-vision-preview.1",
+  "version": "0.8.0-live-preview.1",
   "private": true,
   "type": "module",
-  "description": "Rift exploration with match, navigation and independent vision/AI perception diagnostics",
+  "description": "Rift exploration and developer live Garen match integration with AI, vision and capture",
   "scripts": {
     "start": "node scripts/serve.mjs",
     "test": "node --test",
