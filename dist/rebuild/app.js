@@ -330,7 +330,35 @@ async function boot(){
       },
       stop(){liveSession=null;liveLastPhase='';path=[];return true;},
       snapshot(){return liveSession?.snapshot()??null;},
-      assets(){return championRenderer?Object.fromEntries([...championRenderer.resources.keys()].map(hero=>[hero,true])):{};}
+      assets(){return championRenderer?Object.fromEntries([...championRenderer.resources.keys()].map(hero=>[hero,true])):{};},
+      stageForVisualQA(){
+        // Only on an expressly requested localhost Chromium QA run.
+        if(!['127.0.0.1','localhost'].includes(location.hostname) ||
+           !new URLSearchParams(location.search).has('visualQA'))
+          throw new Error('Local visual QA mode required');
+        if(!liveSession)throw new Error('No live match');
+        const player=liveSession.actors.get('player');
+        const others=[...liveSession.actors.values()].filter(a=>a.id!=='player');
+        const spots=[];
+        for(const a of others){
+          let found=null;
+          outer: for(const radius of [140,220,300,400,520]){
+            for(let direction=0;direction<24;direction++){
+              const radians=(direction/24)*Math.PI*2;
+              const p=nav.nearest(player.x+Math.cos(radians)*radius,
+                                  player.z+Math.sin(radians)*radius,4);
+              if(!p||spots.some(q=>Math.hypot(p.x-q.x,p.z-q.z)<100))continue;
+              const sample={...a,x:p.x,z:p.z,active:true};
+              if(liveSession.vision.canSee(player,sample)){found=p;break outer;}
+            }
+          }
+          if(!found)throw new Error('Not enough visible Rift positions for all sprites');
+          a.x=found.x;a.z=found.z;a.route=[];a.active=true;
+          a.facing={x:player.x-a.x,z:player.z-a.z};
+          spots.push(found);
+        }
+        return liveSession.snapshot().visible.map(a=>a.hero);
+      }
     };
     fpsTime=performance.now();requestAnimationFrame(tick);
     window.__hextechPerf=()=>({
