@@ -7,11 +7,30 @@
   },
   "snapshot": {
     "phase": "prepare",
-    "remaining": 103.30060000000097,
-    "elapsed": 16.699400000000047,
+    "remaining": 119.21670000000005,
+    "elapsed": 0.7833000000000004,
     "playerActive": true,
     "playerRole": "hunter",
-    "visible": [],
+    "visible": [
+      {
+        "id": "ai-1",
+        "hero": "布里茨",
+        "x": 7823.89510345459,
+        "z": -4207.755798339844
+      },
+      {
+        "id": "ai-2",
+        "hero": "锐雯",
+        "x": 7773.89510345459,
+        "z": -4107.755798339844
+      },
+      {
+        "id": "ai-3",
+        "hero": "亚索",
+        "x": 7673.89510345459,
+        "z": -4057.7557983398438
+      }
+    ],
     "result": null,
     "players": [
       {
@@ -41,14 +60,14 @@
     ]
   },
   "performance": {
-    "fpsText": "15 FPS · draw p95 1.5ms · RAF p95 267ms",
-    "rafP50": 16.700000000000728,
-    "rafP95": 266.7000000000007,
-    "drawP95": 1.5,
-    "mapP95": 0.1000000000349246,
-    "actorP95": 1.400000000023283,
-    "longGaps": 60,
-    "samples": 120,
+    "fpsText": "5 FPS · draw p95 7.0ms · RAF p95 350ms",
+    "rafP50": 16.699999999999818,
+    "rafP95": 349.90000000000055,
+    "drawP95": 7,
+    "mapP95": 0.10000000000582077,
+    "actorP95": 6.400000000023283,
+    "longGaps": 13,
+    "samples": 110,
     "viewport": {
       "width": 1600,
       "height": 900,
