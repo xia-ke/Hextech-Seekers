@@ -1,5 +1,6 @@
 import { NavGrid } from './navigation.js';
 import {createLiveSession} from './live-session.js';
+import {ChampionAtlasRenderer,renderableOpponents} from './champion-renderer.js';
 import { project, unproject, viewDepth, decodeDepth, directionIndex, SIN, COS } from './projection.js';
 
 const $ = id => document.getElementById(id);
@@ -7,7 +8,7 @@ const canvas = $('world'), ctx = canvas.getContext('2d', {alpha:false});
 const mini = $('minimap'), mctx = mini.getContext('2d');
 const mapBase = 'assets/visual/summoners-rift/', heroBase = 'assets/visual/garen/';
 const locations = {red:{x:7765,z:-4020},river:{x:9838,z:-4398},blue:{x:11032,z:-6991}};
-let map, nav, sprite, overview, minimap, tiles, actor,liveSession=null,liveLastPhase='',liveNotice=0;
+let map, nav, sprite, overview, minimap, tiles, actor,liveSession=null,liveLastPhase='',liveNotice=0,championRenderer=null;
 let width=0,height=0,dpr=1,zoom=.8,follow=true,ready=false,last=0,animTime=0,attackEnd=0;
 let camera={x:0,y:0},path=[],heading=Math.PI,marker=null,toastEnd=0,drag=null;
 let fpsFrames=0,fpsTime=0,uiTime=0,miniTime=0,previousFrame=0;
@@ -126,15 +127,26 @@ function drawMap(){
 }
 
 function drawLiveDiagnostics(){
- if(!liveSession)return;
- for(const enemy of liveSession.snapshot().visible){
-   const point=project(map,{x:enemy.x,z:enemy.z,y:nav.heightAt(enemy.x,enemy.z)}),p=screen(point);
-   if(p.x<0||p.y<0||p.x>width||p.y>height)continue;
-   ctx.save();ctx.strokeStyle='#ecb56d';ctx.lineWidth=2;ctx.setLineDash([5,5]);
-   ctx.beginPath();ctx.arc(p.x,p.y,15*zoom,0,2*Math.PI);ctx.stroke();
-   ctx.setLineDash([]);ctx.fillStyle='#fff0c9';ctx.font='12px sans-serif';
-   ctx.fillText('诊断目标 · '+enemy.hero,p.x+14,p.y-15);ctx.restore();
- }
+  if(!liveSession)return;
+  const visible=renderableOpponents(liveSession);
+  const roster=new Map(liveSession.match.players.map(p=>[p.id,p.hero]));
+  // Render only opponents the player's own vision can see. Never draw hidden labels.
+  visible.sort((a,b)=>project(map,{x:a.x,z:a.z,y:nav.heightAt(a.x,a.z)}).y-
+                     project(map,{x:b.x,z:b.z,y:nav.heightAt(b.x,b.z)}).y);
+  for(const enemy of visible){
+    const hero=roster.get(enemy.id);
+    if(championRenderer?.resources.has(hero)){
+      championRenderer.draw(enemy,hero,{zoom,animTime});
+      continue;
+    }
+    // Development-only diagnostic marker, explicitly not a champion model.
+    const point=project(map,{x:enemy.x,z:enemy.z,y:nav.heightAt(enemy.x,enemy.z)}),p=screen(point);
+    if(p.x<0||p.y<0||p.x>width||p.y>height)continue;
+    ctx.save();ctx.strokeStyle='#ecb56d';ctx.lineWidth=2;ctx.setLineDash([5,5]);
+    ctx.beginPath();ctx.arc(p.x,p.y,15*zoom,0,2*Math.PI);ctx.stroke();
+    ctx.setLineDash([]);ctx.fillStyle='#fff0c9';ctx.font='12px sans-serif';
+    ctx.fillText('原始模型未安装 · '+hero,p.x+14,p.y-15);ctx.restore();
+  }
 }
 function drawMarker(now){
   if(!marker||now-marker.time>1200)return;
@@ -301,6 +313,7 @@ async function boot(){
       walkable:nav.walkable,
       bushes:nav.bushes
     };
+    championRenderer=new ChampionAtlasRenderer({map,tiles,ctx,screen,loadImage,heightAt:(x,z)=>nav.heightAt(x,z)});
     window.__hextechLive={
       start(config){
         if(!ready)throw new Error('峡谷尚未加载');
@@ -308,10 +321,13 @@ async function boot(){
         const start={x:actor.x,z:actor.z};
         liveSession=createLiveSession(nav,{...config,start});
         path=[];liveLastPhase='';liveNotice=0;
+        championRenderer.loadRoster(liveSession.match.players.map(p=>p.hero))
+          .then(status=>window.dispatchEvent(new CustomEvent('hextech:hero-assets',{detail:status})));
         return liveSession.snapshot();
       },
       stop(){liveSession=null;liveLastPhase='';path=[];return true;},
-      snapshot(){return liveSession?.snapshot()??null;}
+      snapshot(){return liveSession?.snapshot()??null;},
+      assets(){return championRenderer?Object.fromEntries([...championRenderer.resources.keys()].map(hero=>[hero,true])):{};}
     };
     fpsTime=performance.now();requestAnimationFrame(tick);
     window.__hextechPerf=()=>({
