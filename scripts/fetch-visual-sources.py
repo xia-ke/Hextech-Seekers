@@ -16,6 +16,49 @@ SOURCES=[
     ('champion/garen_base_tx_cm.png',HERO_RAW+'textures/86/garen_base_tx_cm.png','d365b4f677cb5e72f2fe2f7cf1667f42dfe4a6aeb2871d10825852afd932a1f1'),
 ]
 
+# Issue 006: source files verified to exist at the same pinned commit.
+# Download only requested original meshes/animations/textures; no remote code.
+# Hashes for new source files are recorded in the output source manifest after download.
+ISSUE006_CHAMPIONS = {
+    'blitzcrank': {'id': 53, 'stem': '53_0', 'texture': 'steamgolem'},
+    'riven': {'id': 92, 'stem': '92_0', 'texture': 'riven_base_tx_cm'},
+    'yasuo': {'id': 157, 'stem': '157_0', 'texture': 'yasuo_base_tx_cm'},
+}
+
+def fetch_issue006(root, champions):
+    import json
+    entries = {}
+    for hero in champions:
+        if hero not in ISSUE006_CHAMPIONS:
+            raise ValueError('Unknown champion: '+hero)
+        item = ISSUE006_CHAMPIONS[hero]
+        folder = root/'champions'/hero
+        folder.mkdir(parents=True, exist_ok=True)
+        resources = {
+            item['stem']+'.lmesh': HERO_RAW+'models/'+item['stem']+'.lmesh',
+            item['stem']+'.lanim': HERO_RAW+'models/'+item['stem']+'.lanim',
+            item['texture']+'.png': HERO_RAW+'textures/'+str(item['id'])+'/'+item['texture']+'.png',
+        }
+        hashes={}
+        for name,url in resources.items():
+            target=folder/name
+            if not target.exists():
+                temp=target.with_suffix(target.suffix+'.part')
+                try:
+                    with urllib.request.urlopen(url,timeout=90) as response, temp.open('wb') as out:
+                        while chunk:=response.read(1024*1024):
+                            out.write(chunk)
+                    temp.replace(target)
+                finally:
+                    temp.unlink(missing_ok=True)
+            hashes[name]=hashlib.sha256(target.read_bytes()).hexdigest()
+            print('Verified source',hero,name,hashes[name],flush=True)
+        entries[hero]={'commit':HERO_COMMIT,'files':hashes,'stem':item['stem']}
+    output=root/'champions'/'source-manifest.json'
+    output.write_text(json.dumps(entries,indent=2,ensure_ascii=False))
+    return entries
+
+
 def fetch(root):
     for name,url,expected in SOURCES:
         target=root/name
@@ -31,4 +74,8 @@ def fetch(root):
         finally:temporary.unlink(missing_ok=True)
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('destination',type=Path);args=parser.parse_args();fetch(args.destination)
+    parser=argparse.ArgumentParser();parser.add_argument('destination',type=Path)
+    parser.add_argument('--issue006',action='store_true',help='Fetch Blitzcrank, Riven and Yasuo original files')
+    args=parser.parse_args()
+    if args.issue006:fetch_issue006(args.destination,tuple(ISSUE006_CHAMPIONS))
+    else:fetch(args.destination)
