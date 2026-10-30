@@ -246,6 +246,16 @@ async function boot(){
     progress('正在展开周围的峡谷场景…',80);
     await Promise.all(tiles.visible().map(([x,y])=>tiles.load(x,y)));
     progress('峡谷已就绪',100);ready=true;$('loading').hidden=true;updateUI();
+    // Expose read-only navigation services for the separate AI movement diagnostics.
+    // Does not grant AI global information or expose hidden opponent locations.
+    window.__hextechNavigation={
+      nearest:(x,z,radius=12)=>nav.nearest(x,z,radius),
+      canWalk:(x,z)=>nav.canWalk(x,z),
+      path:(a,b)=>nav.path(a,b),
+      lineClear:(a,b)=>nav.lineClear(a,b),
+      playerStart:()=>({x:actor.x,z:actor.z}),
+      heightAt:(x,z)=>nav.heightAt(x,z)
+    };
     fpsTime=performance.now();requestAnimationFrame(tick);
     window.__hextechPerf=()=>({
       fpsText:$('fps').textContent,rafP50:percentile(metrics.rafGaps,.5),
