@@ -223,9 +223,9 @@ def render_map(renderer, source, output):
     return
 
 
-def render_champion(renderer, source_assets, output):
+def render_champion(renderer, source_assets, output, hero='garen'):
     ctx, program = renderer.ctx, renderer.program
-    manifest=json.loads((source_assets/'garen.json').read_text());raw=(source_assets/'garen.bin').read_bytes()
+    manifest=json.loads((source_assets/(hero+'.json')).read_text());raw=(source_assets/(hero+'.bin')).read_bytes()
     def arr(d):return np.frombuffer(raw,'<u2' if d['type']=='H' else '<f4',d['count'],d['offset'])
     geo=manifest['geometry'];vertices=arr(geo['position']).reshape(-1,3);uv=arr(geo['uv']).reshape(-1,2)
     normals=arr(geo['normal']).reshape(-1,3);weights=arr(geo['skinWeight']).reshape(-1,4);joints=arr(geo['skinIndex']).reshape(-1,4);indices=arr(geo['index'])
@@ -243,14 +243,22 @@ def render_champion(renderer, source_assets, output):
         transformed=np.einsum('nvij,nj->nvi',skin[joints],homogeneous)
         return (transformed*weights[:,:,None]).sum(axis=1)[:,:3]
     tile,ppu,pivot,directions=256,.6,[128,205],16
-    target=make_target(ctx,(tile,tile));folder=output/'garen';folder.mkdir(parents=True,exist_ok=True)
+    target=make_target(ctx,(tile,tile));folder=output/hero;folder.mkdir(parents=True,exist_ok=True)
     # The same camera projection is used for the scene and every sprite direction.
     matrix=projection(tile,tile,ppu,-pivot[0]/ppu,-pivot[1]/ppu)
     program['projection'].write(matrix.T.tobytes());program['navMode']=0
     texture=source_assets/manifest['texture'];renderer.bind([texture]*8)
     frames_meta={}
+    clip_names={c['name']:c for c in manifest['clips']}
+    # Preserve original animation clips, while exporting stable runtime slots.
+    chosen={slot:next((clip_names[key] for key in candidates if key in clip_names),None)
+            for slot,candidates in {'idle1':['idle1','idle','idle2'],
+                                    'run':['run','run1','walk'],
+                                    'attack1':['attack1']}.items()}
+    if any(v is None for v in chosen.values()):
+        raise ValueError(f'{hero}: required real animation missing: '+str({k:v is not None for k,v in chosen.items()}))
     for name,count in [('idle1',8),('run',16),('attack1',12)]:
-        clip=next(c for c in manifest['clips'] if c['name']==name)
+        clip=chosen[name]
         atlas=Image.new('RGBA',(tile*directions,tile*count));depth_atlas=Image.new('RGBA',atlas.size)
         for direction in range(directions):
             a=direction*2*math.pi/directions;rot=np.array([[math.cos(a),0,math.sin(a)],[0,1,0],[-math.sin(a),0,math.cos(a)]])
@@ -269,12 +277,12 @@ def render_champion(renderer, source_assets, output):
         frames_meta[name]=dict(frames=count,duration=clip['duration'],image=name+'.webp',depth=name+'-depth.png')
         print('Champion atlas',name,atlas.size,flush=True)
         if name=='idle1':atlas.crop((0,0,tile,tile)).resize((512,512)).save(folder/'inspection.png')
-    meta=dict(version=1,hero='Garen',tileSize=tile,ppu=ppu,pivot=pivot,directions=directions,pitch=55,clips=frames_meta,provenance=manifest['provenance'])
+    meta=dict(version=1,hero=manifest['hero'],tileSize=tile,ppu=ppu,pivot=pivot,directions=directions,pitch=55,clips=frames_meta,provenance=manifest['provenance'])
     (folder/'sprite.json').write_text(json.dumps(meta,separators=(',',':')))
 
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('source',type=Path);p.add_argument('output',type=Path);p.add_argument('--champion-source',type=Path,required=True);p.add_argument('--only',choices=['map','champion','all'],default='all');args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('source',type=Path);p.add_argument('output',type=Path);p.add_argument('--champion-source',type=Path,required=True);p.add_argument('--only',choices=['map','champion','all'],default='all');p.add_argument('--hero',default='garen');args=p.parse_args()
     renderer=Renderer();print('Asset renderer:',renderer.ctx.info['GL_RENDERER'],flush=True)
-    if args.only in ('champion','all'):render_champion(renderer,args.champion_source,args.output)
+    if args.only in ('champion','all'):render_champion(renderer,args.champion_source,args.output,args.hero)
     if args.only in ('map','all'):render_map(renderer,args.source,args.output)
