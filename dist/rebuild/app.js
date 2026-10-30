@@ -1,4 +1,5 @@
 import { NavGrid } from './navigation.js';
+import {createLiveSession} from './live-session.js';
 import { project, unproject, viewDepth, decodeDepth, directionIndex, SIN, COS } from './projection.js';
 
 const $ = id => document.getElementById(id);
@@ -6,7 +7,7 @@ const canvas = $('world'), ctx = canvas.getContext('2d', {alpha:false});
 const mini = $('minimap'), mctx = mini.getContext('2d');
 const mapBase = 'assets/visual/summoners-rift/', heroBase = 'assets/visual/garen/';
 const locations = {red:{x:7765,z:-4020},river:{x:9838,z:-4398},blue:{x:11032,z:-6991}};
-let map, nav, sprite, overview, minimap, tiles, actor;
+let map, nav, sprite, overview, minimap, tiles, actor,liveSession=null,liveLastPhase='',liveNotice=0;
 let width=0,height=0,dpr=1,zoom=.8,follow=true,ready=false,last=0,animTime=0,attackEnd=0;
 let camera={x:0,y:0},path=[],heading=Math.PI,marker=null,toastEnd=0,drag=null;
 let fpsFrames=0,fpsTime=0,uiTime=0,miniTime=0,previousFrame=0;
@@ -29,7 +30,13 @@ function toast(text){$('toast').textContent=text;$('toast').classList.add('show'
 function setFollow(value){follow=value;$('follow').setAttribute('aria-pressed',String(value));}
 function recenter(){if(!ready)return;setFollow(true);camera=project(map,actor);paint();}
 function stop(){path=[];attackEnd=0;animTime=0;updateUI();paint();}
-function attack(){if(!ready)return;path=[];animTime=0;attackEnd=performance.now()+sprite.clips.attack1.duration*1000;toast('攻击动作预览 · 当前无伤害或抓捕判定');updateUI();paint();}
+function attack(){
+ if(!ready)return;
+ path=[];animTime=0;attackEnd=performance.now()+sprite.clips.attack1.duration*1000;
+ if(liveSession){const result=liveSession.playerAttack();toast(result.ok?'实时演练：抓捕成功':'实时演练：'+result.reason);}
+ else toast('攻击动作预览 · 当前无伤害或抓捕判定');
+ updateUI();paint();
+}
 function screen(p){return{x:(p.x-camera.x)*zoom+width/2,y:(p.y-camera.y)*zoom+height*.47};}
 function imagePoint(x,y){return{x:(x-width/2)/zoom+camera.x,y:(y-height*.47)/zoom+camera.y};}
 function cameraBounds(){camera.x=Math.max(0,Math.min(map.width,camera.x));camera.y=Math.max(0,Math.min(map.height,camera.y));}
@@ -118,6 +125,17 @@ function drawMap(){
   tiles.trim(visible);
 }
 
+function drawLiveDiagnostics(){
+ if(!liveSession)return;
+ for(const enemy of liveSession.snapshot().visible){
+   const point=project(map,{x:enemy.x,z:enemy.z,y:nav.heightAt(enemy.x,enemy.z)}),p=screen(point);
+   if(p.x<0||p.y<0||p.x>width||p.y>height)continue;
+   ctx.save();ctx.strokeStyle='#ecb56d';ctx.lineWidth=2;ctx.setLineDash([5,5]);
+   ctx.beginPath();ctx.arc(p.x,p.y,15*zoom,0,2*Math.PI);ctx.stroke();
+   ctx.setLineDash([]);ctx.fillStyle='#fff0c9';ctx.font='12px sans-serif';
+   ctx.fillText('诊断目标 · '+enemy.hero,p.x+14,p.y-15);ctx.restore();
+ }
+}
 function drawMarker(now){
   if(!marker||now-marker.time>1200)return;
   const p=screen(project(map,marker)),fade=1-(now-marker.time)/1200;
@@ -150,7 +168,7 @@ function updateUI(){
 function paint(){if(!ready)return;}
 function renderFrame(now){
   const start=performance.now();drawMap();
-  const afterMap=performance.now();drawMarker(now);drawActor(now);
+  const afterMap=performance.now();drawMarker(now);drawActor(now);drawLiveDiagnostics();
   const afterActor=performance.now();
   if(now-miniTime>=100){drawMinimap();miniTime=now;}
   sample(metrics.mapCosts,afterMap-start);
@@ -168,6 +186,10 @@ function tick(now){
   }
   previousFrame=now;
   const dt=last?Math.min((now-last)/1000,1):0;last=now;animTime+=dt;
+  if(liveSession){
+    const view=liveSession.snapshot();
+    if((view.phase==='prepare'&&view.playerRole==='hunter')||!view.playerActive||view.phase==='finished')path=[];
+  }
   let remaining=340*dt;
   while(path.length&&remaining>0){const target=path[0],dx=target.x-actor.x,dz=target.z-actor.z,distance=Math.hypot(dx,dz);
     if(distance>.01)heading=Math.atan2(dx,dz);
@@ -175,6 +197,19 @@ function tick(now){
     else{actor.x+=dx/distance*remaining;actor.z+=dz/distance*remaining;remaining=0;}
   }
   actor.y=nav.heightAt(actor.x,actor.z);
+  if(liveSession){
+    liveSession.syncPlayer(actor,{x:Math.sin(heading),z:Math.cos(heading)});
+    const view=liveSession.tick(dt);
+    if(view.phase!==liveLastPhase){
+      liveLastPhase=view.phase;
+      toast(view.phase==='chase'?'追捕阶段开始':view.phase==='finished'?'实时演练已结算':'准备阶段开始');
+      if(view.phase==='finished')path=[];
+    }
+    if(now-liveNotice>=200){
+      window.dispatchEvent(new CustomEvent('hextech:live-update',{detail:view}));
+      liveNotice=now;
+    }
+  }
   if(follow){const p=project(map,actor),factor=1-Math.exp(-dt*12);camera.x+=(p.x-camera.x)*factor;camera.y+=(p.y-camera.y)*factor;}
   renderFrame(now);
   if(now>toastEnd)$('toast').classList.remove('show');
@@ -183,7 +218,13 @@ function tick(now){
 }
 
 async function moveTo(x,y){
-  if(!ready)return;const p=imagePoint(x,y),s=map.tileSize;
+  if(!ready)return;
+  if(liveSession){
+    const view=liveSession.snapshot();
+    if(view.phase==='finished'||!view.playerActive){toast('本局已结束或已淘汰');return;}
+    if(view.phase==='prepare'&&view.playerRole==='hunter'){toast('准备阶段追捕者不得移动');return;}
+  }
+  const p=imagePoint(x,y),s=map.tileSize;
   try{await tiles.load(Math.floor(p.x/s),Math.floor(p.y/s));}catch{return;}
   const depth=tiles.depthAt(p.x,p.y);if(depth==null){toast('这里不在可移动的地图内');return;}
   const world=unproject(map,p.x,p.y,depth);
@@ -259,6 +300,18 @@ async function boot(){
       width:nav.width,height:nav.height,
       walkable:nav.walkable,
       bushes:nav.bushes
+    };
+    window.__hextechLive={
+      start(config){
+        if(!ready)throw new Error('峡谷尚未加载');
+        if(config.playerHero!=='盖伦')throw new Error('当前实时演练仅支持盖伦模型');
+        const start={x:actor.x,z:actor.z};
+        liveSession=createLiveSession(nav,{...config,start});
+        path=[];liveLastPhase='';liveNotice=0;
+        return liveSession.snapshot();
+      },
+      stop(){liveSession=null;liveLastPhase='';path=[];return true;},
+      snapshot(){return liveSession?.snapshot()??null;}
     };
     fpsTime=performance.now();requestAnimationFrame(tick);
     window.__hextechPerf=()=>({
