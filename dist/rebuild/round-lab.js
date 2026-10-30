@@ -40,11 +40,12 @@ if(root){
       '本局结束 · 积分结算';
     el('round-players').innerHTML=state.players.map(p=>'<div class="round-player"><span>'+p.hero+' · '+(p.role==='hunter'?'追捕者':'躲藏者')+(p.human?'（玩家）':'（AI 占位）')+'</span>'+
       (p.role==='hider'&&state.phase==='chase'&&!p.caught?'<button data-catch="'+p.id+'" type="button">模拟抓获</button>':'<small>'+(p.caught?'已抓获':'未抓获')+'</small>')+'</div>').join('');
-    el('round-players').querySelectorAll('[data-catch]').forEach(b=>b.onclick=()=>{catchHider(state,b.dataset.catch);redraw();});
+    el('round-players').querySelectorAll('[data-catch]').forEach(b=>b.onclick=()=>{if(catchHider(state,b.dataset.catch)&&worldActors){const a=worldActors.get(b.dataset.catch);if(a){a.active=false;a.route=[];}}redraw();if(worldActors)showPositions();});
     el('round-result').innerHTML=state.result?'<h3>单局积分排名</h3>'+
       state.result.entries.map(p=>'<div class="round-player"><b>第 '+p.rank+' 名</b><span>'+p.hero+' · '+p.score+' 分</span></div>').join('')+
       '<p>全抓奖励：'+state.result.bonus+' 分；重新创建即可开始新局。</p>':'';
     el('round-step').disabled=state.phase==='finished';
+    el('round-nav-step').disabled=!worldActors||state.phase==='finished';
     el('round-skip').disabled=state.phase==='finished';
     el('round-shorten').disabled=state.phase!=='chase'||clockUsed;
     el('round-extend').disabled=state.phase!=='chase'||clockUsed;
@@ -77,12 +78,13 @@ if(root){
     }).join('\n');
   }
   el('round-nav-step').onclick=()=>{
-    if(!worldActors||!state)return;
+    if(!worldActors||!state||state.phase==='finished')return;
     const nav=window.__hextechNavigation;
     // Independent grid-based vision is calculated from each AI actor's viewpoint.
     const start=nav.playerStart();
     const destinations=[{x:start.x+600,z:start.z+600},{x:start.x-600,z:start.z+300},{x:start.x+200,z:start.z+800}];
-    for(let step=0;step<20;step++){
+    for(let step=0;step<20 && state.phase!=='finished';step++){
+      advanceRound(state,.25);
       for(const a of worldActors.values()){
         if(a.id==='player')continue;
         const index=Number(a.id.slice(3))-1;
@@ -93,7 +95,7 @@ if(root){
         stepActor(a,nav,.25,state);
       }
     }
-    showPositions();
+    redraw();showPositions();
   };
   el('round-step').onclick=()=>{if(state){advanceRound(state,30);redraw();}};
   el('round-skip').onclick=()=>{if(state){advanceRound(state,state.remaining);redraw();}};
