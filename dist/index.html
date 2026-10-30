@@ -18,12 +18,13 @@
     </div>
   </header>
   <div class="region"><span>SUMMONER’S RIFT</span><b>召唤师峡谷</b></div>
-  <div class="stage"><i></i>峡谷探索 · 视觉验证</div>
+  <div class="stage"><i></i>峡谷探索 · 对局规则预演</div>
   <nav class="locations" aria-label="查看地图位置">
     <button class="location" data-location="red">查看 · 红 Buff<small>RED BRAMBLEBACK</small></button>
     <button class="location" data-location="river">查看 · 龙坑河道<small>DRAGON RIVER</small></button>
     <button class="location" data-location="blue">查看 · 蓝 Buff<small>BLUE SENTINEL</small></button>
   </nav>
+  <aside id="round-lab" class="round-lab" aria-label="对局规则预演"></aside>
   <output id="fps" aria-label="帧率">— FPS</output>
   <div id="unit-label" class="unit-name" hidden>盖伦<small id="unit-state">待命</small></div>
   <div class="legend"><kbd>鼠标右键</kbd> 移动　<kbd>左键拖动</kbd> 镜头　<kbd>滚轮</kbd> 缩放　<kbd>S</kbd> 停止</div>
@@ -44,4 +45,5 @@
   <div id="loading"><div class="loading-card"><div class="brand-mark" aria-hidden="true"></div><h2>进入峡谷</h2><p id="load-status">正在读取场景与英雄…</p><div class="loading-bar"><i id="load-progress"></i></div><small>SUMMONER’S RIFT · EXPLORATION</small><p><button class="quiet" id="retry" hidden>重新加载</button></p></div></div>
   <dialog id="help-dialog"><h2>探索召唤师峡谷</h2><table><tr><td>鼠标右键</td><td>移动盖伦，自动绕开岩壁</td></tr><tr><td>S</td><td>停止移动</td></tr><tr><td>左键拖动</td><td>自由移动镜头</td></tr><tr><td>滚轮</td><td>放大或缩小视野</td></tr><tr><td>Y / 空格</td><td>切换镜头跟随 / 回到盖伦</td></tr><tr><td>A</td><td>预览原始攻击动作，无伤害</td></tr><tr><td>小地图 / 地点</td><td>查看地图位置，不移动英雄</td></tr></table><p>当前交付用于确认峡谷画面、英雄比例和操作手感。地图下半区可移动；抓捕、战争迷雾、野怪实体、AI、技能和海克斯尚未接入。攻击按钮只播放动作。</p><footer><button class="quiet" id="close-help">继续探索</button></footer></dialog>
   <script type="module" src="rebuild/app.js"></script>
+  <script type="module" src="rebuild/round-lab.js"></script>
 </body></html>
