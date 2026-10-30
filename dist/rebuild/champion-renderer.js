@@ -11,8 +11,8 @@ export function renderableOpponents(session) {
   return [...session.actors.values()].filter(actor=>actor.id!=='player'&&actor.active&&ids.has(actor.id));
 }
 export class ChampionAtlasRenderer {
-  constructor({map,tiles,ctx,screen,loadImage,base='assets/visual/'}) {
-    Object.assign(this,{map,tiles,ctx,screen,loadImage,base});
+  constructor({map,tiles,ctx,screen,loadImage,heightAt,base='assets/visual/'}) {
+    Object.assign(this,{map,tiles,ctx,screen,loadImage,heightAt,base});
     this.resources=new Map();this.failures=new Map();this.cache=new Map();
     this.work=document.createElement('canvas');this.work.width=this.work.height=256;
     this.wctx=this.work.getContext('2d',{willReadFrequently:true});
@@ -75,7 +75,7 @@ export class ChampionAtlasRenderer {
     const frameIndex=Math.min(info.frames-1,Math.floor((animTime%info.duration)/info.duration*info.frames));
     const heading=Math.atan2(actor.facing?.x||0,actor.facing?.z||1);
     const frame=this.frame(hero,clip,directionIndex(heading,meta.directions),frameIndex);
-    const world={x:actor.x,y:this.tiles.heightAt?this.tiles.heightAt(actor.x,actor.z):actor.y||0,z:actor.z};
+    const world={x:actor.x,y:this.heightAt(actor.x,actor.z),z:actor.z};
     const point=project(this.map,world),p=this.screen(point);
     const ratio=this.map.ppu/meta.ppu,scale=ratio*zoom;
     if(p.x<-256||p.x>this.ctx.canvas.width+256||p.y<-256||p.y>this.ctx.canvas.height+256)return false;
