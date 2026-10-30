@@ -1,9 +1,9 @@
 {
   "name": "hextech-seekers",
-  "version": "0.6.0-navigation-preview.1",
+  "version": "0.7.0-vision-preview.1",
   "private": true,
   "type": "module",
-  "description": "Rift exploration, round rules preview and nav-grounded AI/capture diagnostics",
+  "description": "Rift exploration with match, navigation and independent vision/AI perception diagnostics",
   "scripts": {
     "start": "node scripts/serve.mjs",
     "test": "node --test",
