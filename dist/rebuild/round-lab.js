@@ -30,7 +30,7 @@ if(root){
           <p>实时集成演练：使用原峡谷盖伦操控、真实经过时间、AI 导航及独立视线。其他角色只显示视野内诊断圈，不是英雄模型；准备阶段追捕者不能移动。</p>
           <button type="button" id="round-live-start">启动实时演练（盖伦）</button>
           <button type="button" id="round-live-stop" disabled>停止实时演练</button>
-          <pre id="round-live-status">尚未启动</pre>
+          <pre id="round-live-status">尚未启动</pre><p id="round-asset-status" class="round-notice">尚未核对原始英雄素材</p>
         </div>
       </div>
     </section>`;
@@ -113,6 +113,7 @@ if(root){
         playerRole:el('round-role').value,playerHero:'盖伦'
       });
       el('round-live-start').disabled=true;el('round-live-stop').disabled=false;
+      el('round-asset-status').textContent='正在核对原始英雄动画资源…';
       el('round-live-status').textContent='运行中：'+snapshot.phase+'。右键移动、A 普攻；仅可攻击视线内的诊断目标。';
     }catch(error){el('round-live-status').textContent='无法启动：'+error.message;}
   };
@@ -120,7 +121,14 @@ if(root){
     window.__hextechLive?.stop();el('round-live-start').disabled=false;
     el('round-live-stop').disabled=true;el('round-live-status').textContent='已退出实时演练';
   };
-  window.addEventListener('hextech:live-update',event=>{
+  window.addEventListener('hextech:hero-assets',event=>{
+    const missing=Object.entries(event.detail).filter(([,loaded])=>!loaded).map(([hero])=>hero);
+    const detail=missing.length
+      ?'原始动画资产尚未生成：'+missing.join('、')+'。仅显示明确标注的诊断圈。'
+      :'全部选中英雄原始动画资源加载成功。';
+    el('round-asset-status').textContent=detail;
+  });
+    window.addEventListener('hextech:live-update',event=>{
     const view=event.detail;
     el('round-live-status').textContent=
       '阶段：'+(view.phase==='prepare'?'准备':view.phase==='chase'?'追捕':'结算')+
