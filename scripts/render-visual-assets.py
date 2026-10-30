@@ -230,7 +230,16 @@ def render_champion(renderer, source_assets, output, hero='garen'):
     geo=manifest['geometry'];vertices=arr(geo['position']).reshape(-1,3);uv=arr(geo['uv']).reshape(-1,2)
     normals=arr(geo['normal']).reshape(-1,3);weights=arr(geo['skinWeight']).reshape(-1,4);joints=arr(geo['skinIndex']).reshape(-1,4);indices=arr(geo['index'])
     bind=np.array([b['bind'] for b in manifest['bones']]).reshape(-1,4,4);inverse=np.linalg.inv(bind)
-    local_bind=np.array([b['local'] for b in manifest['bones']]).reshape(-1,4,4)
+    # Older mesh v1 variants have bind world matrices but no local matrices.
+    # Reconstruct the local rest pose from parent^-1 @ child world bind.
+    local_bind=np.empty_like(bind)
+    for i,b in enumerate(manifest['bones']):
+        if b.get('local') is not None:
+            local_bind[i]=np.asarray(b['local'],dtype=np.float64).reshape(4,4)
+        elif b['parent']>=0:
+            local_bind[i]=inverse[b['parent']]@bind[i]
+        else:
+            local_bind[i]=bind[i]
     homogeneous=np.column_stack([vertices,np.ones(len(vertices))])
     def pose(clip,t):
         local=local_bind.copy()
