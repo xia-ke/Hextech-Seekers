@@ -1,12 +1,13 @@
 {
   "name": "hextech-seekers",
-  "version": "0.3.0",
+  "version": "0.4.0-visual.1",
   "private": true,
   "type": "module",
-  "description": "A 3D Hextech hide-and-seek fan game with shared team vision and fog of war",
+  "description": "Hextech Seekers rebuild: original Rift scene and Garen exploration milestone",
   "scripts": {
     "start": "node scripts/serve.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "test:visual": "node --test tests/exploration.test.mjs"
   },
   "engines": {
     "node": ">=20"

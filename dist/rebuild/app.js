@@ -1,0 +1,232 @@
+import { NavGrid } from './navigation.js';
+import { project, unproject, viewDepth, decodeDepth, directionIndex, SIN, COS } from './projection.js';
+
+const $ = id => document.getElementById(id);
+const canvas = $('world'), ctx = canvas.getContext('2d', {alpha:false});
+const mini = $('minimap'), mctx = mini.getContext('2d');
+const mapBase = 'assets/visual/summoners-rift/', heroBase = 'assets/visual/garen/';
+const locations = {red:{x:7765,z:-4020},river:{x:9838,z:-4398},blue:{x:11032,z:-6991}};
+let map, nav, sprite, overview, minimap, tiles, actor;
+let width=0,height=0,dpr=1,zoom=.8,follow=true,ready=false,last=0,animTime=0,attackEnd=0;
+let camera={x:0,y:0},path=[],heading=Math.PI,marker=null,toastEnd=0,drag=null;
+let fpsFrames=0,fpsTime=0,uiTime=0;
+const atlases = new Map(), frameCache = new Map();
+const work=document.createElement('canvas');work.width=work.height=256;
+const wctx=work.getContext('2d',{willReadFrequently:true});
+const masked=document.createElement('canvas');masked.width=masked.height=256;
+const maskctx=masked.getContext('2d');
+const maskedPixels=maskctx.createImageData(256,256);
+let maskKey='',maskX=NaN,maskZ=NaN,maskedTileVersion=-1;
+
+async function json(url){const r=await fetch(url);if(!r.ok)throw new Error('资源读取失败：'+url);return r.json();}
+async function binary(url){const r=await fetch(url);if(!r.ok)throw new Error('资源读取失败：'+url);return r.arrayBuffer();}
+function loadImage(url){return new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('图像读取失败：'+url));img.src=url;});}
+function progress(text,value){$('load-status').textContent=text;$('load-progress').style.width=value+'%';}
+function toast(text){$('toast').textContent=text;$('toast').classList.add('show');toastEnd=performance.now()+2200;}
+function setFollow(value){follow=value;$('follow').setAttribute('aria-pressed',String(value));}
+function recenter(){if(!ready)return;setFollow(true);camera=project(map,actor);paint();}
+function stop(){path=[];attackEnd=0;animTime=0;updateUI();paint();}
+function attack(){if(!ready)return;path=[];animTime=0;attackEnd=performance.now()+sprite.clips.attack1.duration*1000;toast('攻击动作预览 · 当前无伤害或抓捕判定');updateUI();paint();}
+function screen(p){return{x:(p.x-camera.x)*zoom+width/2,y:(p.y-camera.y)*zoom+height*.47};}
+function imagePoint(x,y){return{x:(x-width/2)/zoom+camera.x,y:(y-height*.47)/zoom+camera.y};}
+function cameraBounds(){camera.x=Math.max(0,Math.min(map.width,camera.x));camera.y=Math.max(0,Math.min(map.height,camera.y));}
+
+class TileCache {
+  constructor(meta){this.meta=meta;this.entries=new Map();this.allowed=new Set(meta.tiles.map(p=>p.join('-')));this.version=0;this.failed=false;}
+  async load(col,row){
+    const key=col+'-'+row;if(!this.allowed.has(key))return null;
+    const prior=this.entries.get(key);if(prior){prior.used=performance.now();return prior.promise;}
+    const entry={col,row,used:performance.now()};this.entries.set(key,entry);
+    entry.promise=Promise.all([loadImage(mapBase+key+'.webp'),loadImage(mapBase+key+'-depth.png')]).then(([img,depth])=>{
+      const c=document.createElement('canvas');c.width=c.height=this.meta.tileSize;
+      const cx=c.getContext('2d',{willReadFrequently:true});cx.drawImage(depth,0,0);
+      const pixels=cx.getImageData(0,0,c.width,c.height).data;
+      entry.depth=new Uint16Array(c.width*c.height);entry.depth.fill(65535);
+      for(let i=0;i<entry.depth.length;i++)if(pixels[i*4+3])entry.depth[i]=pixels[i*4]<<8|pixels[i*4+1];
+      entry.image=img;this.version++;return entry;
+    }).catch(error=>{entry.error=error;if(!this.failed){this.failed=true;toast('部分场景资源未能加载，请刷新页面重试');}throw error;});
+    return entry.promise;
+  }
+  depthAt(x,y){
+    const size=this.meta.tileSize,col=Math.floor(x/size),row=Math.floor(y/size),e=this.entries.get(col+'-'+row);
+    if(!e?.depth)return null;
+    const value=e.depth[(Math.floor(y)-row*size)*size+Math.floor(x)-col*size];
+    return value===65535?null:value/4-12000;
+  }
+  visible(){
+    const a=imagePoint(0,0),b=imagePoint(width,height),s=this.meta.tileSize,visible=[];
+    for(let row=Math.floor(a.y/s);row<=Math.floor(b.y/s);row++)for(let col=Math.floor(a.x/s);col<=Math.floor(b.x/s);col++){
+      if(!this.allowed.has(col+'-'+row))continue;
+      this.load(col,row).catch(()=>{});visible.push([col,row]);
+    }
+    return visible;
+  }
+  trim(visible){
+    if(this.entries.size<22)return;
+    const keep=new Set(visible.map(v=>v.join('-')));
+    const oldest=[...this.entries.entries()].filter(([k,e])=>e.image&&!keep.has(k)).sort((a,b)=>a[1].used-b[1].used);
+    while(this.entries.size>20&&oldest.length)this.entries.delete(oldest.shift()[0]);
+  }
+}
+
+function frame(clip,direction,index){
+  const key=clip+':'+direction+':'+index;if(frameCache.has(key))return frameCache.get(key);
+  const atlas=atlases.get(clip),size=sprite.tileSize;
+  wctx.clearRect(0,0,size,size);wctx.drawImage(atlas.image,direction*size,index*size,size,size,0,0,size,size);
+  const rgba=wctx.getImageData(0,0,size,size).data;
+  wctx.clearRect(0,0,size,size);wctx.drawImage(atlas.depth,direction*size,index*size,size,size,0,0,size,size);
+  const depth=wctx.getImageData(0,0,size,size).data;
+  const result={key,rgba,depth};frameCache.set(key,result);
+  if(frameCache.size>32)frameCache.delete(frameCache.keys().next().value);return result;
+}
+
+function drawActor(now){
+  const clip=now<attackEnd?'attack1':path.length?'run':'idle1',info=sprite.clips[clip];
+  const index=Math.min(info.frames-1,Math.floor((animTime%info.duration)/info.duration*info.frames));
+  const direction=directionIndex(heading,sprite.directions),f=frame(clip,direction,index);
+  const point=project(map,actor),p=screen(point),ratio=map.ppu/sprite.ppu,scale=ratio*zoom;
+  if(p.x<-200||p.x>width+200||p.y<-200||p.y>height+200){$('unit-label').hidden=true;return;}
+  // Compare original world depth per pixel; trees and walls can cover the hero.
+  if(maskKey!==f.key||maskX!==actor.x||maskZ!==actor.z||maskedTileVersion!==tiles.version){
+    const dst=maskedPixels.data;dst.set(f.rgba);const baseDepth=viewDepth(actor),size=sprite.tileSize;
+    for(let y=0;y<size;y++)for(let x=0;x<size;x++){
+      const i=(y*size+x)*4;if(!dst[i+3])continue;
+      const terrain=tiles.depthAt(point.x+(x-sprite.pivot[0])*ratio,point.y+(y-sprite.pivot[1])*ratio);
+      const local=decodeDepth(f.depth[i],f.depth[i+1],1024,16);
+      if(terrain!=null&&terrain>baseDepth+local+5)dst[i+3]=0;
+    }
+    maskctx.putImageData(maskedPixels,0,0);maskKey=f.key;maskX=actor.x;maskZ=actor.z;maskedTileVersion=tiles.version;
+  }
+  ctx.fillStyle='#00100d50';ctx.beginPath();ctx.ellipse(p.x,p.y+1,25*zoom,9*zoom,0,0,Math.PI*2);ctx.fill();
+  ctx.drawImage(masked,p.x-sprite.pivot[0]*scale,p.y-sprite.pivot[1]*scale,256*scale,256*scale);
+  const label=$('unit-label');label.hidden=false;label.style.left=p.x+'px';label.style.top=(p.y-100*zoom)+'px';
+}
+
+function drawMap(){
+  ctx.fillStyle='#071618';ctx.fillRect(0,0,width,height);
+  const top=screen({x:0,y:0});ctx.drawImage(overview,top.x,top.y,map.width*zoom,map.height*zoom);
+  const visible=tiles.visible(),s=map.tileSize;
+  for(const [col,row]of visible){const e=tiles.entries.get(col+'-'+row);if(!e?.image)continue;
+    const p=screen({x:col*s,y:row*s});ctx.drawImage(e.image,p.x,p.y,s*zoom+.25,s*zoom+.25);
+  }
+  tiles.trim(visible);
+}
+
+function drawMarker(now){
+  if(!marker||now-marker.time>1200)return;
+  const p=screen(project(map,marker)),fade=1-(now-marker.time)/1200;
+  ctx.save();ctx.globalAlpha=fade;ctx.strokeStyle='#91df82';ctx.lineWidth=1.6;
+  ctx.beginPath();ctx.ellipse(p.x,p.y,15*zoom,8*zoom,0,0,Math.PI*2);ctx.stroke();
+  for(let i=0;i<4;i++){const a=i*Math.PI/2;ctx.beginPath();ctx.moveTo(p.x+Math.cos(a)*22*zoom,p.y+Math.sin(a)*13*zoom);ctx.lineTo(p.x+Math.cos(a)*14*zoom,p.y+Math.sin(a)*8*zoom);ctx.stroke();}ctx.restore();
+}
+
+function drawMinimap(){
+  const s=mini.width;mctx.clearRect(0,0,s,s);mctx.drawImage(minimap,0,0,s,s);
+  mctx.fillStyle='#001118a6';mctx.beginPath();mctx.moveTo(0,0);mctx.lineTo(s,0);mctx.lineTo(0,s);mctx.fill();
+  const mx=p=>p.x/15000*s,my=p=>(15000+p.z)/15000*s;
+  const corners=[[0,0],[width,0],[width,height],[0,height]].map(([x,y])=>{
+    const p=imagePoint(x,y),py=p.y/map.ppu+map.minPY;
+    return{x:p.x/map.ppu+map.minX,z:(py+actor.y*COS)/SIN};
+  });
+  mctx.strokeStyle='#e7dec3a0';mctx.lineWidth=1.5;mctx.beginPath();corners.forEach((p,i)=>i?mctx.lineTo(mx(p),my(p)):mctx.moveTo(mx(p),my(p)));mctx.closePath();mctx.stroke();
+  mctx.fillStyle='#001614';mctx.beginPath();mctx.arc(mx(actor),my(actor),8,0,Math.PI*2);mctx.fill();
+  mctx.fillStyle='#f1d69a';mctx.beginPath();mctx.arc(mx(actor),my(actor),5,0,Math.PI*2);mctx.fill();
+}
+
+function updateUI(){
+  if(!ready)return;const moving=path.length>0,attacking=performance.now()<attackEnd;
+  $('movement-status').textContent=attacking?'动作预览':moving?'正在移动':'自由探索';
+  $('unit-state').textContent=attacking?'动作预览':moving?'移动中':'待命';
+  $('coords').textContent='X '+Math.round(actor.x)+' · Z '+Math.round(-actor.z);
+}
+
+function paint(){if(!ready)return;drawMap();drawMarker(performance.now());drawActor(performance.now());drawMinimap();}
+
+function tick(now){
+  requestAnimationFrame(tick);if(!ready)return;
+  // Path following consumes distance across waypoints, even at low frame rates.
+  // Visibility changes reset the clock, so returning to a tab cannot teleport.
+  const dt=last?Math.min((now-last)/1000,1):0;last=now;animTime+=dt;
+  let remaining=340*dt;
+  while(path.length&&remaining>0){const target=path[0],dx=target.x-actor.x,dz=target.z-actor.z,distance=Math.hypot(dx,dz);
+    if(distance>.01)heading=Math.atan2(dx,dz);
+    if(distance<=remaining){actor.x=target.x;actor.z=target.z;path.shift();remaining-=distance;}
+    else{actor.x+=dx/distance*remaining;actor.z+=dz/distance*remaining;remaining=0;}
+  }
+  actor.y=nav.heightAt(actor.x,actor.z);
+  if(follow){const p=project(map,actor),factor=1-Math.exp(-dt*12);camera.x+=(p.x-camera.x)*factor;camera.y+=(p.y-camera.y)*factor;}
+  const renderStart=performance.now();drawMap();drawMarker(now);drawActor(now);drawMinimap();
+  const renderMS=performance.now()-renderStart;
+  if(now>toastEnd)$('toast').classList.remove('show');
+  if(now-uiTime>200){updateUI();uiTime=now;}
+  fpsFrames++;if(now-fpsTime>1000){$('fps').textContent=Math.round(fpsFrames*1000/(now-fpsTime))+' FPS · '+renderMS.toFixed(1)+' ms';fpsFrames=0;fpsTime=now;}
+}
+
+async function moveTo(x,y){
+  if(!ready)return;const p=imagePoint(x,y),s=map.tileSize;
+  try{await tiles.load(Math.floor(p.x/s),Math.floor(p.y/s));}catch{return;}
+  const depth=tiles.depthAt(p.x,p.y);if(depth==null){toast('这里不在可移动的地图内');return;}
+  const world=unproject(map,p.x,p.y,depth);
+  if(world.x+world.z < -120){toast('当前可探索区域为峡谷下半区');return;}
+  const target=nav.nearest(world.x,world.z,10);
+  if(!target||Math.hypot(target.x-world.x,target.z-world.z)>400){toast('这里是不可通行的地形');return;}
+  const route=nav.path(actor,target);if(!route?.length){toast('当前无法到达该位置');return;}
+  path=route;attackEnd=0;marker={...target,y:nav.heightAt(target.x,target.z),time:performance.now()};updateUI();paint();
+}
+
+function resize(){width=innerWidth;height=innerHeight;dpr=Math.min(devicePixelRatio||1,1.5);canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);ctx.imageSmoothingEnabled=true;}
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('pointerdown',e=>{
+  if(!ready)return;canvas.focus({preventScroll:true});
+  if(e.button===2){moveTo(e.clientX,e.clientY);return;}
+  if(e.button!==0)return;drag={startX:e.clientX,startY:e.clientY,cam:{...camera},moved:false,touch:e.pointerType==='touch'};canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove',e=>{if(!drag)return;
+  const dx=e.clientX-drag.startX,dy=e.clientY-drag.startY;
+  if(Math.hypot(dx,dy)>5){drag.moved=true;setFollow(false);camera.x=drag.cam.x-dx/zoom;camera.y=drag.cam.y-dy/zoom;cameraBounds();paint();}
+});
+canvas.addEventListener('pointerup',e=>{if(drag?.touch&&!drag.moved)moveTo(e.clientX,e.clientY);drag=null;});
+canvas.addEventListener('pointercancel',()=>drag=null);
+canvas.addEventListener('wheel',e=>{e.preventDefault();if(!ready)return;
+  const p=imagePoint(e.clientX,e.clientY);zoom=Math.max(.55,Math.min(1.8,zoom*Math.exp(-e.deltaY*.001)));
+  if(!follow){camera.x=p.x-(e.clientX-width/2)/zoom;camera.y=p.y-(e.clientY-height*.47)/zoom;cameraBounds();}paint();
+},{passive:false});
+mini.addEventListener('pointerdown',e=>{if(!ready)return;
+  const rect=mini.getBoundingClientRect(),x=(e.clientX-rect.left)/rect.width*15000,z=(e.clientY-rect.top)/rect.height*15000-15000;
+  camera=project(map,{x,z,y:nav.heightAt(x,z)});setFollow(false);cameraBounds();paint();
+});
+for(const button of document.querySelectorAll('[data-location]'))button.addEventListener('click',()=>{
+  if(!ready)return;const p=locations[button.dataset.location];camera=project(map,{...p,y:nav.heightAt(p.x,p.z)});setFollow(false);toast('查看地图位置 · 空格回到盖伦');paint();
+});
+$('follow').addEventListener('click',()=>{if(!ready)return;setFollow(!follow);if(follow)recenter();});
+$('recenter').addEventListener('click',recenter);$('center-action').addEventListener('click',recenter);
+$('stop').addEventListener('click',stop);$('attack').addEventListener('click',attack);
+$('help').addEventListener('click',()=>$('help-dialog').showModal());
+$('close-help').addEventListener('click',()=>$('help-dialog').close());
+$('retry').addEventListener('click',()=>location.reload());
+document.addEventListener('keydown',e=>{
+  if($('help-dialog').open||e.ctrlKey||e.metaKey||e.altKey)return;
+  if(e.code==='Space'){e.preventDefault();recenter();}if(e.code==='KeyS')stop();if(e.code==='KeyA')attack();
+  if(e.code==='KeyY'){setFollow(!follow);if(follow)recenter();}
+});
+document.addEventListener('visibilitychange',()=>last=0);window.addEventListener('resize',resize);
+
+async function boot(){
+  try{
+    resize();[map,sprite]=await Promise.all([json(mapBase+'map.json'),json(heroBase+'sprite.json')]);
+    if(map.pitch!==sprite.pitch)throw new Error('场景与英雄镜头参数不一致');
+    progress('正在读取峡谷地形与移动网格…',20);
+    const [navData,over,miniImage]=await Promise.all([binary(mapBase+map.nav.binary),loadImage(mapBase+'overview.webp'),loadImage(mapBase+'minimap.webp')]);
+    nav=new NavGrid(map.nav,navData);overview=over;minimap=miniImage;tiles=new TileCache(map);
+    actor=nav.nearest(7500,-4400);if(!actor)throw new Error('初始位置不在移动网格内');actor.y=nav.heightAt(actor.x,actor.z);camera=project(map,actor);
+    progress('正在读取盖伦模型动作…',45);
+    let loaded=0;await Promise.all(Object.entries(sprite.clips).map(async([name,clip])=>{
+      const [image,depth]=await Promise.all([loadImage(heroBase+clip.image),loadImage(heroBase+clip.depth)]);atlases.set(name,{image,depth});progress('正在读取盖伦模型动作…',45+(++loaded)*10);
+    }));
+    progress('正在展开周围的峡谷场景…',80);
+    await Promise.all(tiles.visible().map(([x,y])=>tiles.load(x,y)));
+    progress('峡谷已就绪',100);ready=true;$('loading').hidden=true;updateUI();
+    fpsTime=performance.now();requestAnimationFrame(tick);
+  }catch(error){console.error(error);$('loading').classList.add('error');progress('加载中断：'+error.message,0);$('retry').hidden=false;}
+}
+boot();
