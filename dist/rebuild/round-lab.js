@@ -1,4 +1,5 @@
 import {HEROES, setupRound, advanceRound, catchHider, finishRound, adjustChaseDuration} from './match.js';
+import {createActors,chooseAiDestination,stepActor} from './encounter.js';
 const root=document.getElementById('round-lab');
 if(root){
   const heroes=HEROES.map(h=>'<option value="'+h+'">'+h+'</option>').join('');
@@ -22,10 +23,11 @@ if(root){
           <button id="round-extend" type="button">模拟时光发条 +1 分钟</button>
         </div>
         <div id="round-players"></div>
+        <div class="round-ai" id="round-ai"><p>实际导航 AI 移动演练：需要峡谷加载完成，不包含视野、攻击或模型渲染。</p><button type="button" id="round-nav-init">初始化导航角色</button><button type="button" id="round-nav-step" disabled>模拟移动 5 秒</button><pre id="round-nav-status">尚未初始化</pre></div>
         <div id="round-result"></div>
       </div>
     </section>`;
-  const el=id=>document.getElementById(id);let state=null,clockUsed=false;
+  const el=id=>document.getElementById(id);let state=null,clockUsed=false,worldActors=null;
   const toggle=el('round-toggle'),panel=el('round-panel');
   toggle.onclick=()=>{panel.hidden=!panel.hidden;toggle.setAttribute('aria-expanded',String(!panel.hidden));};
   const time=seconds=>Math.floor(seconds/60)+':'+String(Math.floor(seconds%60)).padStart(2,'0');
@@ -48,7 +50,48 @@ if(root){
   };
   el('round-start').onclick=()=>{
     state=setupRound({totalPlayers:Number(el('round-count').value),playerRole:el('round-role').value,playerHero:el('round-hero').value});
-    clockUsed=false;redraw();
+    clockUsed=false;worldActors=null;el('round-nav-step').disabled=true;el('round-nav-status').textContent='尚未初始化';redraw();
+  };
+  el('round-nav-init').onclick=()=>{
+    if(!state){el('round-nav-status').textContent='请先创建规则预演对局';return;}
+    const nav=window.__hextechNavigation;
+    if(!nav){el('round-nav-status').textContent='峡谷尚未加载完成，暂无法使用原始导航网格';return;}
+    try{
+      const start=nav.playerStart();
+      // Dedicated diagnostic positions; not the actual champion placements or models.
+      worldActors=createActors(state,nav,p=>{
+        if(p.human)return start;
+        const i=Number(p.id.slice(3));
+        return {x:start.x+(i%2?650:-650),z:start.z+(i*250)};
+      });
+      el('round-nav-step').disabled=false;showPositions();
+    }catch(error){worldActors=null;el('round-nav-status').textContent='导航初始化失败：'+error.message;}
+  };
+  function showPositions(){
+    if(!worldActors)return;
+    el('round-nav-status').textContent=[...worldActors.values()].map(a=>{
+      const p=state.players.find(p=>p.id===a.id);
+      return p.hero+' · '+(a.active?'可行动':'已淘汰')+' · X '+Math.round(a.x)+' / Z '+Math.round(a.z)+' · 路径点 '+a.route.length;
+    }).join('\n');
+  }
+  el('round-nav-step').onclick=()=>{
+    if(!worldActors||!state)return;
+    const nav=window.__hextechNavigation;
+    // No vision provider yet: AI may only patrol, never magically chase an unseen target.
+    const start=nav.playerStart();
+    const destinations=[{x:start.x+600,z:start.z+600},{x:start.x-600,z:start.z+300},{x:start.x+200,z:start.z+800}];
+    for(let step=0;step<20;step++){
+      for(const a of worldActors.values()){
+        if(a.id==='player')continue;
+        const index=Number(a.id.slice(3))-1;
+        chooseAiDestination(a,worldActors,nav,state,{
+          visible:()=>false,
+          patrol:()=>{const p=destinations[index%destinations.length];return nav.nearest(p.x,p.z,20);}
+        });
+        stepActor(a,nav,.25,state);
+      }
+    }
+    showPositions();
   };
   el('round-step').onclick=()=>{if(state){advanceRound(state,30);redraw();}};
   el('round-skip').onclick=()=>{if(state){advanceRound(state,state.remaining);redraw();}};
