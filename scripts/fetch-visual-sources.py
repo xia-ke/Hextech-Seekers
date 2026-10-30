@@ -20,9 +20,18 @@ SOURCES=[
 # Download only requested original meshes/animations/textures; no remote code.
 # Hashes for new source files are recorded in the output source manifest after download.
 ISSUE006_CHAMPIONS = {
-    'blitzcrank': {'id': 53, 'stem': '53_0', 'texture': 'steamgolem'},
-    'riven': {'id': 92, 'stem': '92_0', 'texture': 'riven_base_tx_cm'},
-    'yasuo': {'id': 157, 'stem': '157_0', 'texture': 'yasuo_base_tx_cm'},
+    'blitzcrank': {'id': 53, 'stem': '53_0', 'texture': 'steamgolem',
+       'git_blobs': {'53_0.lmesh':'f0c774049ee3584043b63dfb69f0d7fe41494932',
+                     '53_0.lanim':'af6a76df7f3e12d5dea3d703fcb669d0b16d7a66',
+                     'steamgolem.png':'e2276239b1d5f6736fe1b808429e032df78e6a19'}},
+    'riven': {'id': 92, 'stem': '92_0', 'texture': 'riven_base_tx_cm',
+       'git_blobs': {'92_0.lmesh':'af4d2ae254167e96732b29bb51941255d591bbb6',
+                     '92_0.lanim':'80f1726bb7fc3341156702f2beb48b95b538148d',
+                     'riven_base_tx_cm.png':'fef63e6c7bee3afc2ee5a48ff3fdf75f9bc83eb5'}},
+    'yasuo': {'id': 157, 'stem': '157_0', 'texture': 'yasuo_base_tx_cm',
+       'git_blobs': {'157_0.lmesh':'0378995c6bd8c3d7c09272f45c529ef14a8fa6ff',
+                     '157_0.lanim':'0c29aa26204483f82b33144715a679120bec3427',
+                     'yasuo_base_tx_cm.png':'4c98ee56cce40f7a48faff90b5521187efbb3b74'}},
 }
 
 def fetch_issue006(root, champions):
@@ -51,7 +60,12 @@ def fetch_issue006(root, champions):
                     temp.replace(target)
                 finally:
                     temp.unlink(missing_ok=True)
-            hashes[name]=hashlib.sha256(target.read_bytes()).hexdigest()
+            raw=target.read_bytes()
+            git_hash=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+            if git_hash != item['git_blobs'][name]:
+                target.unlink(missing_ok=True)
+                raise ValueError('Pinned source Git blob mismatch: '+hero+'/'+name)
+            hashes[name]=hashlib.sha256(raw).hexdigest()
             print('Verified source',hero,name,hashes[name],flush=True)
         entries[hero]={'commit':HERO_COMMIT,'files':hashes,'stem':item['stem']}
     output=root/'champions'/'source-manifest.json'
