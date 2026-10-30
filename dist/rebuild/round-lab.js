@@ -26,6 +26,12 @@ if(root){
         <div id="round-players"></div>
         <div class="round-ai" id="round-ai"><p>实际峡谷导航与独立视线 AI 演练：需要峡谷加载完成；不包含完整原版视野、攻击或角色模型渲染。</p><button type="button" id="round-nav-init">初始化导航角色</button><button type="button" id="round-nav-step" disabled>模拟移动 5 秒</button><pre id="round-nav-status">尚未初始化</pre></div>
         <div id="round-result"></div>
+        <div class="round-ai">
+          <p>实时集成演练：使用原峡谷盖伦操控、真实经过时间、AI 导航及独立视线。其他角色只显示视野内诊断圈，不是英雄模型；准备阶段追捕者不能移动。</p>
+          <button type="button" id="round-live-start">启动实时演练（盖伦）</button>
+          <button type="button" id="round-live-stop" disabled>停止实时演练</button>
+          <pre id="round-live-status">尚未启动</pre>
+        </div>
       </div>
     </section>`;
   const el=id=>document.getElementById(id);let state=null,clockUsed=false,worldActors=null,vision=null;
@@ -97,7 +103,35 @@ if(root){
     }
     redraw();showPositions();
   };
-  el('round-step').onclick=()=>{if(state){advanceRound(state,30);redraw();}};
+  el('round-live-start').onclick=()=>{
+    const api=window.__hextechLive;
+    if(!api){el('round-live-status').textContent='峡谷尚未加载完成';return;}
+    if(el('round-hero').value!=='盖伦'){el('round-live-status').textContent='当前只有盖伦完成正式动作资源；请选择盖伦';return;}
+    try{
+      const snapshot=api.start({
+        totalPlayers:Number(el('round-count').value),
+        playerRole:el('round-role').value,playerHero:'盖伦'
+      });
+      el('round-live-start').disabled=true;el('round-live-stop').disabled=false;
+      el('round-live-status').textContent='运行中：'+snapshot.phase+'。右键移动、A 普攻；仅可攻击视线内的诊断目标。';
+    }catch(error){el('round-live-status').textContent='无法启动：'+error.message;}
+  };
+  el('round-live-stop').onclick=()=>{
+    window.__hextechLive?.stop();el('round-live-start').disabled=false;
+    el('round-live-stop').disabled=true;el('round-live-status').textContent='已退出实时演练';
+  };
+  window.addEventListener('hextech:live-update',event=>{
+    const view=event.detail;
+    el('round-live-status').textContent=
+      '阶段：'+(view.phase==='prepare'?'准备':view.phase==='chase'?'追捕':'结算')+
+      ' · 剩余 '+time(view.remaining)+' · '+(view.playerActive?'可行动':'已被抓获')+
+      ' · 本人视野内敌人：'+(view.visible.map(x=>x.hero).join('、')||'无')+
+      (view.result?'\n积分：'+view.result.entries.map(p=>p.hero+' '+p.score+'分').join(' / '):'');
+    if(view.phase==='finished'){
+      el('round-live-stop').disabled=false;
+    }
+  });
+  el('round-step').onclick={if(state){advanceRound(state,30);redraw();}};
   el('round-skip').onclick=()=>{if(state){advanceRound(state,state.remaining);redraw();}};
   for(const [id,amount] of [['round-shorten',-60],['round-extend',60]]){
     el(id).onclick=()=>{if(state&&!clockUsed&&adjustChaseDuration(state,amount)){clockUsed=true;redraw();}};
