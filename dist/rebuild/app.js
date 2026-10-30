@@ -212,7 +212,11 @@ function tick(now){
     else{actor.x+=dx/distance*remaining;actor.z+=dz/distance*remaining;remaining=0;}
   }
   actor.y=nav.heightAt(actor.x,actor.z);
-  if(liveSession){
+  // Freeze only the LOCAL visual test, not the publicly hosted match simulation.
+  const qaFrozen=window.__hextechFreezeQA===true &&
+    ['127.0.0.1','localhost'].includes(location.hostname) &&
+    new URLSearchParams(location.search).has('visualQA');
+  if(liveSession&&!qaFrozen){
     liveSession.syncPlayer(actor,{x:Math.sin(heading),z:Math.cos(heading)});
     const view=liveSession.tick(dt);
     if(view.phase!==liveLastPhase){
@@ -322,13 +326,14 @@ async function boot(){
         if(!ready)throw new Error('峡谷尚未加载');
         if(config.playerHero!=='盖伦')throw new Error('当前实时演练仅支持盖伦模型');
         const start={x:actor.x,z:actor.z};
+        window.__hextechFreezeQA=false;
         liveSession=createLiveSession(nav,{...config,start});
         path=[];liveLastPhase='';liveNotice=0;
         championRenderer.loadRoster(liveSession.match.players.map(p=>p.hero))
           .then(status=>window.dispatchEvent(new CustomEvent('hextech:hero-assets',{detail:status})));
         return liveSession.snapshot();
       },
-      stop(){liveSession=null;liveLastPhase='';path=[];return true;},
+      stop(){liveSession=null;liveLastPhase='';window.__hextechFreezeQA=false;path=[];return true;},
       snapshot(){return liveSession?.snapshot()??null;},
       assets(){return championRenderer?Object.fromEntries([...championRenderer.resources.keys()].map(hero=>[hero,true])):{};},
       stageForVisualQA(){
@@ -337,6 +342,7 @@ async function boot(){
            !new URLSearchParams(location.search).has('visualQA'))
           throw new Error('Local visual QA mode required');
         if(!liveSession)throw new Error('No live match');
+        window.__hextechFreezeQA=true;
         const player=liveSession.actors.get('player');
         const others=[...liveSession.actors.values()].filter(a=>a.id!=='player');
         const spots=[];
