@@ -37,6 +37,7 @@ test('movement obeys speed, destination and navigation',()=>{
 });
 test('capture rejects invisible targets, blocked line and wrong facing',()=>{
  const {match,hunter,hider}=make();advanceRound(match,120);
+ hunter.facing={x:1,z:0};
  assert.equal(meleeHit(hunter,hider,match,{visible:()=>false,clearPath:()=>true}).reason,'not-visible');
  assert.equal(meleeHit(hunter,hider,match,{visible:()=>true,clearPath:()=>false}).reason,'obstructed');
  hunter.facing={x:-1,z:0};
