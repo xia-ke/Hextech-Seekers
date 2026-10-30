@@ -1,5 +1,6 @@
 import {HEROES, setupRound, advanceRound, catchHider, finishRound, adjustChaseDuration} from './match.js';
 import {createActors,chooseAiDestination,stepActor} from './encounter.js';
+import {makeVision} from './vision-baseline.js';
 const root=document.getElementById('round-lab');
 if(root){
   const heroes=HEROES.map(h=>'<option value="'+h+'">'+h+'</option>').join('');
@@ -7,7 +8,7 @@ if(root){
     <button id="round-toggle" class="quiet" type="button" aria-expanded="false">对局规则预演</button>
     <section id="round-panel" class="round-panel" hidden aria-label="第二阶段对局规则预演">
       <h2>单局规则预演 <small>ISSUE 002 · 尚非完整对局</small></h2>
-      <p class="round-notice">在真实峡谷探索画面旁验证阵营、计时和积分；抓捕按钮仅是手动模拟事件，不会命中游戏角色。AI、正式抓捕和视野尚未接入。</p>
+      <p class="round-notice">在真实峡谷探索画面旁验证阵营、计时和积分；抓捕按钮仅是手动模拟事件，不会命中游戏角色。正式抓捕和完整原版视野尚未接入；本页可运行导航与基础视线诊断。</p>
       <div class="round-form">
         <label>总人数<select id="round-count"><option value="2">2 人</option><option value="3">3 人</option><option value="4">4 人</option></select></label>
         <label>玩家阵营<select id="round-role"><option value="hunter">追捕者</option><option value="hider">躲藏者</option></select></label>
@@ -23,11 +24,11 @@ if(root){
           <button id="round-extend" type="button">模拟时光发条 +1 分钟</button>
         </div>
         <div id="round-players"></div>
-        <div class="round-ai" id="round-ai"><p>实际导航 AI 移动演练：需要峡谷加载完成，不包含视野、攻击或模型渲染。</p><button type="button" id="round-nav-init">初始化导航角色</button><button type="button" id="round-nav-step" disabled>模拟移动 5 秒</button><pre id="round-nav-status">尚未初始化</pre></div>
+        <div class="round-ai" id="round-ai"><p>实际峡谷导航与独立视线 AI 演练：需要峡谷加载完成；不包含完整原版视野、攻击或角色模型渲染。</p><button type="button" id="round-nav-init">初始化导航角色</button><button type="button" id="round-nav-step" disabled>模拟移动 5 秒</button><pre id="round-nav-status">尚未初始化</pre></div>
         <div id="round-result"></div>
       </div>
     </section>`;
-  const el=id=>document.getElementById(id);let state=null,clockUsed=false,worldActors=null;
+  const el=id=>document.getElementById(id);let state=null,clockUsed=false,worldActors=null,vision=null;
   const toggle=el('round-toggle'),panel=el('round-panel');
   toggle.onclick=()=>{panel.hidden=!panel.hidden;toggle.setAttribute('aria-expanded',String(!panel.hidden));};
   const time=seconds=>Math.floor(seconds/60)+':'+String(Math.floor(seconds%60)).padStart(2,'0');
@@ -50,7 +51,7 @@ if(root){
   };
   el('round-start').onclick=()=>{
     state=setupRound({totalPlayers:Number(el('round-count').value),playerRole:el('round-role').value,playerHero:el('round-hero').value});
-    clockUsed=false;worldActors=null;el('round-nav-step').disabled=true;el('round-nav-status').textContent='尚未初始化';redraw();
+    clockUsed=false;worldActors=null;vision=null;el('round-nav-step').disabled=true;el('round-nav-status').textContent='尚未初始化';redraw();
   };
   el('round-nav-init').onclick=()=>{
     if(!state){el('round-nav-status').textContent='请先创建规则预演对局';return;}
@@ -64,20 +65,21 @@ if(root){
         const i=Number(p.id.slice(3));
         return {x:start.x+(i%2?650:-650),z:start.z+(i*250)};
       });
+      vision=makeVision(nav);
       el('round-nav-step').disabled=false;showPositions();
-    }catch(error){worldActors=null;el('round-nav-status').textContent='导航初始化失败：'+error.message;}
+    }catch(error){worldActors=null;vision=null;el('round-nav-status').textContent='导航初始化失败：'+error.message;}
   };
   function showPositions(){
     if(!worldActors)return;
     el('round-nav-status').textContent=[...worldActors.values()].map(a=>{
       const p=state.players.find(p=>p.id===a.id);
-      return p.hero+' · '+(a.active?'可行动':'已淘汰')+' · X '+Math.round(a.x)+' / Z '+Math.round(a.z)+' · 路径点 '+a.route.length;
+      return p.hero+' · '+(a.active?'可行动':'已淘汰')+' · X '+Math.round(a.x)+' / Z '+Math.round(a.z)+' · 路径点 '+a.route.length+' · 视野内敌人 '+(vision?vision.visibleOpponents(a,worldActors).map(v=>state.players.find(p=>p.id===v.id)?.hero).join('、')||'无':'未启用');
     }).join('\n');
   }
   el('round-nav-step').onclick=()=>{
     if(!worldActors||!state)return;
     const nav=window.__hextechNavigation;
-    // No vision provider yet: AI may only patrol, never magically chase an unseen target.
+    // Independent grid-based vision is calculated from each AI actor's viewpoint.
     const start=nav.playerStart();
     const destinations=[{x:start.x+600,z:start.z+600},{x:start.x-600,z:start.z+300},{x:start.x+200,z:start.z+800}];
     for(let step=0;step<20;step++){
@@ -85,7 +87,7 @@ if(root){
         if(a.id==='player')continue;
         const index=Number(a.id.slice(3))-1;
         chooseAiDestination(a,worldActors,nav,state,{
-          visible:()=>false,
+          visible:(viewer,target)=>vision.canSee(viewer,target),
           patrol:()=>{const p=destinations[index%destinations.length];return nav.nearest(p.x,p.z,20);}
         });
         stepActor(a,nav,.25,state);
