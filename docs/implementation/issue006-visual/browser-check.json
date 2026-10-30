@@ -1,0 +1,64 @@
+{
+  "asset_status": {
+    "盖伦": true,
+    "布里茨": true,
+    "锐雯": true,
+    "亚索": true
+  },
+  "snapshot": {
+    "phase": "prepare",
+    "remaining": 103.30060000000097,
+    "elapsed": 16.699400000000047,
+    "playerActive": true,
+    "playerRole": "hunter",
+    "visible": [],
+    "result": null,
+    "players": [
+      {
+        "id": "player",
+        "hero": "盖伦",
+        "role": "hunter",
+        "caught": false
+      },
+      {
+        "id": "ai-1",
+        "hero": "布里茨",
+        "role": "hider",
+        "caught": false
+      },
+      {
+        "id": "ai-2",
+        "hero": "锐雯",
+        "role": "hider",
+        "caught": false
+      },
+      {
+        "id": "ai-3",
+        "hero": "亚索",
+        "role": "hider",
+        "caught": false
+      }
+    ]
+  },
+  "performance": {
+    "fpsText": "15 FPS · draw p95 1.5ms · RAF p95 267ms",
+    "rafP50": 16.700000000000728,
+    "rafP95": 266.7000000000007,
+    "drawP95": 1.5,
+    "mapP95": 0.1000000000349246,
+    "actorP95": 1.400000000023283,
+    "longGaps": 60,
+    "samples": 120,
+    "viewport": {
+      "width": 1600,
+      "height": 900,
+      "dpr": 1
+    },
+    "visibility": "visible"
+  },
+  "page_errors": [],
+  "viewport": {
+    "width": 1600,
+    "height": 900
+  }
+}
