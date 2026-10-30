@@ -1,9 +1,9 @@
 {
   "name": "hextech-seekers",
-  "version": "0.5.0-round-preview.1",
+  "version": "0.6.0-navigation-preview.1",
   "private": true,
   "type": "module",
-  "description": "Rift exploration plus Issue 002 deterministic round rules preview",
+  "description": "Rift exploration, round rules preview and nav-grounded AI/capture diagnostics",
   "scripts": {
     "start": "node scripts/serve.mjs",
     "test": "node --test",
