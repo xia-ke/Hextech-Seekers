@@ -126,14 +126,17 @@ function drawMap(){
   tiles.trim(visible);
 }
 
-function drawLiveDiagnostics(){
+function drawLiveDiagnostics(layer){
   if(!liveSession)return;
   const visible=renderableOpponents(liveSession);
   const roster=new Map(liveSession.match.players.map(p=>[p.id,p.hero]));
   // Render only opponents the player's own vision can see. Never draw hidden labels.
   visible.sort((a,b)=>project(map,{x:a.x,z:a.z,y:nav.heightAt(a.x,a.z)}).y-
                      project(map,{x:b.x,z:b.z,y:nav.heightAt(b.x,b.z)}).y);
+  const playerDepth=project(map,actor).y;
   for(const enemy of visible){
+    const enemyDepth=project(map,{x:enemy.x,z:enemy.z,y:nav.heightAt(enemy.x,enemy.z)}).y;
+    if((enemyDepth<=playerDepth?'behind':'front')!==layer)continue;
     const hero=roster.get(enemy.id);
     if(championRenderer?.resources.has(hero)){
       championRenderer.draw(enemy,hero,{zoom,animTime});
@@ -180,7 +183,7 @@ function updateUI(){
 function paint(){if(!ready)return;}
 function renderFrame(now){
   const start=performance.now();drawMap();
-  const afterMap=performance.now();drawMarker(now);drawActor(now);drawLiveDiagnostics();
+  const afterMap=performance.now();drawMarker(now);drawLiveDiagnostics('behind');drawActor(now);drawLiveDiagnostics('front');
   const afterActor=performance.now();
   if(now-miniTime>=100){drawMinimap();miniTime=now;}
   sample(metrics.mapCosts,afterMap-start);
