@@ -254,7 +254,11 @@ async function boot(){
       path:(a,b)=>nav.path(a,b),
       lineClear:(a,b)=>nav.lineClear(a,b),
       playerStart:()=>({x:actor.x,z:actor.z}),
-      heightAt:(x,z)=>nav.heightAt(x,z)
+      heightAt:(x,z)=>nav.heightAt(x,z),
+      cell:(x,z)=>nav.cell(x,z),
+      width:nav.width,height:nav.height,
+      walkable:nav.walkable,
+      bushes:nav.bushes
     };
     fpsTime=performance.now();requestAnimationFrame(tick);
     window.__hextechPerf=()=>({
