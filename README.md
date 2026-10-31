@@ -74,11 +74,11 @@ npm run test:visual
 
 新增 [Issue 004 报告](docs/implementation/issue-004.md)。基于原始地图网格和草丛 ID 的独立视线计算已接入 AI 规则诊断：每名角色只依靠自己的观察结果选择追逐或逃离，未看见敌人时只巡逻。新增 8 项视野测试，总计 22 项规则／移动／视线检查已在隔离 JS 执行环境中通过。**仍仅为视线基线，尚无正式战争迷雾与其他英雄模型渲染。**
 
-## Issue 005 — 实时盖伦对局诊断
+## Issue 005 — 实时对局诊断
 
-[实施报告](docs/implementation/issue-005.md)：右上角规则面板可启动“实时演练（盖伦）”，以真实经过时间驱动准备／追捕计时、AI 基础寻路与抓捕、盖伦右键移动和 A 键判定；视野内敌人仅用**开发诊断圈**表示，尚非英雄模型。仅支持盖伦玩家演练（追捕者或躲藏者），仍不构成完整可玩 V1。新增 6 项逻辑测试，合计 28 项规则／移动／视野／实时集成检查在 JS 执行环境通过。尚未完成真实浏览器全页面验收或同步 Sites。
+[实施报告](docs/implementation/issue-005.md)：右上角规则面板可启动实时演练，支持盖伦、布里茨、锐雯、亚索作为玩家角色，以真实经过时间驱动准备／追捕计时、AI 基础寻路与抓捕、玩家右键移动和普攻动画；视野内敌人使用各自原始英雄模型。该模式仍为诊断性集成，不构成完整可玩 V1。新增 6 项逻辑测试，合计 28 项规则／移动／视野／实时集成检查在 JS 执行环境通过。尚未完成真实浏览器全页面验收或同步 Sites。
 
-## Issue 006 — 原始三英雄资源与可见实体渲染（PARTIAL）
+## Issue 006 — 四英雄原始资源、玩家操控与可见实体渲染（PARTIAL）
 
 已实现 [Issue 006 实施报告](docs/implementation/issue-006.md) 所述的原始资源下载、哈希核验、骨骼动画图集生成脚本和视野过滤的多角色 Canvas2D 渲染接入。布里茨、锐雯、亚索的原始模型与动画固定来源已确认，构建命令如下：
 
@@ -87,12 +87,12 @@ python3 -m pip install -r scripts/visual-requirements.txt
 python3 scripts/build-issue006-champions.py --source /tmp/hextech-issue006
 ```
 
-**三位英雄的真实动作图集和深度图已在 GitHub Actions 中生成并提交到 main；Chromium 已完成四套资源加载和基础视觉冒烟验收。** 运行素材缺失时会提示“原始模型未安装”，不会拿盖伦或几何占位替代。当前实时演练可选择盖伦、布里茨、锐雯、亚索四名英雄，使用各自原始模型与攻击动作；完整仓库 Node 测试 35/35 通过，EGL 构建与 Chromium 自动视觉冒烟验收已完成。无头 Chromium RAF 存在长停顿，性能和原版画风最终验收仍未通过。验收证据见 [Issue 006 浏览器截图](docs/implementation/issue006-visual/chromium-game-preview.jpg) 与 [四英雄图集](docs/implementation/issue006-visual/champion-gallery.png)。GitHub 与体验站点未同步部署。
+**三位英雄的真实动作图集和深度图已在 GitHub Actions 中生成并提交到 main；Chromium 已完成四套资源加载和基础视觉冒烟验收。** 运行素材缺失时会提示“原始模型未安装”，不会拿盖伦或几何占位替代。当前实时演练可选择盖伦、布里茨、锐雯、亚索四名英雄，使用各自原始模型与攻击动作；最新完整仓库 Node 测试与 Chromium 逐英雄操作验收以本报告最新 CI 为准。无头 Chromium RAF 存在长停顿，性能和原版画风最终验收仍未通过。验收证据见 [Issue 006 浏览器截图](docs/implementation/issue006-visual/chromium-game-preview.jpg) 与 [四英雄图集](docs/implementation/issue006-visual/champion-gallery.png)。GitHub 与体验站点未同步部署。
 
 ## Issue 006 四英雄玩家操控与 Chromium 实机复核（0.9.2）
 
 可在右上角“对局规则预演”中配置 2–4 人、阵营和**四名英雄任意一名**，创建对局后进入实时演练。所选英雄可右键移动、A 键触发本人的原始攻击动画；底部英雄名称及模型头像随选择更新。NPC 仍按各自视野显示，已淘汰角色不渲染。不同演员使用独立遮挡缓存，避免图像互相覆盖。
 
-[Issue 006 最新 CI（36/36 Node 测试、Chromium 通过）](https://github.com/xia-ke/Hextech-Seekers/actions/runs/41160403395)。四英雄玩家截图： [盖伦](docs/implementation/issue006-visual/playable-garen.png) · [布里茨](docs/implementation/issue006-visual/playable-blitzcrank.png) · [锐雯](docs/implementation/issue006-visual/playable-riven.png) · [亚索](docs/implementation/issue006-visual/playable-yasuo.png)。[浏览器性能与可见目标数据](docs/implementation/issue006-visual/browser-check.json)。本次无头软件渲染测得 9 FPS、draw p95 2.8ms、RAF p95 266.6ms；仅证明此环境的实测值，**不等于正式游戏流畅度验收已通过**。
+最新验收流程已扩展为：准备阶段推进到追捕、将 AI 躲藏者放置在合法视野与近战距离、逐英雄启动攻击并断言接触帧成功抓捕；另检查各英雄可视比例归一化。最新 CI 链接以本次提交后的 Actions 结果为准。四英雄玩家截图： [盖伦](docs/implementation/issue006-visual/playable-garen.png) · [布里茨](docs/implementation/issue006-visual/playable-blitzcrank.png) · [锐雯](docs/implementation/issue006-visual/playable-riven.png) · [亚索](docs/implementation/issue006-visual/playable-yasuo.png)。[浏览器性能与可见目标数据](docs/implementation/issue006-visual/browser-check.json)。本次无头软件渲染测得 9 FPS、draw p95 2.8ms、RAF p95 266.6ms；仅证明此环境的实测值，**不等于正式游戏流畅度验收已通过**。
 
-当前仍没有英雄主动技能、海克斯施放、原版级战争迷雾和逐帧普攻命中判定。Issue 006 继续为 PARTIAL；Github 主分支更新不代表体验站点已经发布。
+当前仍没有英雄主动技能、海克斯施放和原版级战争迷雾。普攻现已按原始攻击图集第 7/12 帧临时触发判定，但各英雄真实武器接触帧尚未逐帧标定。Issue 006 继续为 PARTIAL；Github 主分支更新不代表体验站点已经发布。
