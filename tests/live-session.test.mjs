@@ -163,3 +163,26 @@ test('hero attack profiles have independent weapon reach and width',()=>{
  const values=Object.values(ATTACK_PROFILES).map(p=>[p.range,p.halfWidth]);
  assert.equal(new Set(values.map(v=>v.join(':'))).size,4);
 });
+
+test('hider entering a separate brush before the contact frame cannot be captured',()=>{
+ const nav=grid(),s=createLiveSession(nav,{start:{x:150,z:150},spawns:spawn});
+ for(let i=0;i<120;i++)s.tick(1);
+ const target=s.actors.get('ai-1');target.x=250;target.z=150;target.route=[];
+ s.syncPlayer({x:150,z:150},{x:1,z:0});
+ s.beginPlayerAttack({duration:1,hitAt:.5,hitbox:{range:180,halfWidth:36}});
+ nav.bushes[1*36+2]=7;
+ s.tick(.51);
+ assert.equal(target.active,true);
+ assert.equal(s.snapshot().attack.result.reason,'no-visible-target-in-range');
+});
+test('wall corner occlusion prevents a melee catch within geometric attack reach',()=>{
+ const nav=grid();nav.walkable[1*36+2]=0;
+ const s=createLiveSession(nav,{start:{x:150,z:150},spawns:spawn});
+ for(let i=0;i<120;i++)s.tick(1);
+ const target=s.actors.get('ai-1');target.x=250;target.z=250;target.route=[];
+ s.syncPlayer({x:150,z:150},{x:1,z:1});
+ s.beginPlayerAttack({duration:1,hitAt:.5,hitbox:{range:180,halfWidth:60}});
+ s.tick(.51);
+ assert.equal(target.active,true);
+ assert.equal(s.snapshot().attack.result.reason,'no-visible-target-in-range');
+});
