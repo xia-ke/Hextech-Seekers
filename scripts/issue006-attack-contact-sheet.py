@@ -26,10 +26,9 @@ for hero in HEROES:
         raise SystemExit(f'{hero}: attack1 atlas dimensions mismatch')
     panel=Image.new('RGBA',(FRAMES*CELL,HEADER+len(DIRECTIONS)*(CELL+GAP)),(28,31,38,255))
     draw=ImageDraw.Draw(panel)
-    draw.text((8,8),f"{hero} | clip={clip['duration']:.3f}s | frames={FRAMES}",font=font,fill='white')
+    draw.text((8,8),f"{hero} | clip={clip['duration']:.3f}s | rows D0/D4/D8/D12",font=font,fill='white')
     for row,direction in enumerate(DIRECTIONS):
         y=HEADER+row*(CELL+GAP)
-        draw.text((4,y+4),f"D{direction}",font=font,fill=(255,220,120,255))
         for frame in range(FRAMES):
             x=frame*CELL
             crop=atlas.crop((direction*meta['tileSize'],frame*meta['tileSize'],
