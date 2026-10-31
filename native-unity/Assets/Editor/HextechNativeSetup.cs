@@ -50,6 +50,7 @@ namespace HextechSeekers.Native.Editor
             sun.transform.rotation = Quaternion.Euler(46, -35, 0);
             var bootstrap = new GameObject("HextechNativeBootstrap");
             bootstrap.AddComponent<RiftBootstrap>();
+            bootstrap.AddComponent<NativeVisualAcceptance>();
             EditorSceneManager.SaveScene(scene, ScenePath);
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
             AssetDatabase.SaveAssets();
