@@ -83,6 +83,7 @@ try:
                 raise AssertionError('Playable hero mismatch: '+str(status))
             assert page.locator('.champion strong').inner_text()==player_hero
             assert page.locator('.portrait img').get_attribute('alt')==player_hero
+            page.wait_for_function("() => {const img=document.querySelector('.portrait img');return img&&img.complete&&img.naturalWidth>0}",timeout=5000)
             portrait_pixels=page.locator('.portrait img').evaluate("""img=>{
               const c=document.createElement('canvas');c.width=c.height=128;
               const x=c.getContext('2d');x.drawImage(img,0,0,128,128);
