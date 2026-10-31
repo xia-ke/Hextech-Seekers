@@ -1,0 +1,50 @@
+[
+  {
+    "hero": "盖伦",
+    "attack_id": 1,
+    "hit_at": 1.1666666666666667,
+    "duration": 2,
+    "result": {
+      "ok": true,
+      "reason": "captured",
+      "target": "ai-1"
+    },
+    "finished": true
+  },
+  {
+    "hero": "布里茨",
+    "attack_id": 1,
+    "hit_at": 0.5444444444444445,
+    "duration": 0.9333333333333333,
+    "result": {
+      "ok": true,
+      "reason": "captured",
+      "target": "ai-1"
+    },
+    "finished": true
+  },
+  {
+    "hero": "锐雯",
+    "attack_id": 1,
+    "hit_at": 0.9916666666666667,
+    "duration": 1.7,
+    "result": {
+      "ok": true,
+      "reason": "captured",
+      "target": "ai-1"
+    },
+    "finished": true
+  },
+  {
+    "hero": "亚索",
+    "attack_id": 1,
+    "hit_at": 0.9722222222222223,
+    "duration": 1.6666666666666667,
+    "result": {
+      "ok": true,
+      "reason": "captured",
+      "target": "ai-1"
+    },
+    "finished": true
+  }
+]
