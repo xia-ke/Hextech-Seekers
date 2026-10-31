@@ -28,7 +28,7 @@ if(root){
         <div id="round-result"></div>
         <div class="round-ai">
           <p>实时集成演练：使用原峡谷盖伦操控、真实经过时间、AI 导航及独立视线。其他角色只显示视野内诊断圈，不是英雄模型；准备阶段追捕者不能移动。</p>
-          <button type="button" id="round-live-start">启动实时演练（盖伦）</button>
+          <button type="button" id="round-live-start">启动实时演练（所选英雄）</button>
           <button type="button" id="round-live-stop" disabled>停止实时演练</button>
           <pre id="round-live-status">尚未启动</pre><p id="round-asset-status" class="round-notice">尚未核对原始英雄素材</p>
         </div>
@@ -106,11 +106,12 @@ if(root){
   el('round-live-start').onclick=()=>{
     const api=window.__hextechLive;
     if(!api){el('round-live-status').textContent='峡谷尚未加载完成';return;}
-    if(el('round-hero').value!=='盖伦'){el('round-live-status').textContent='当前只有盖伦完成正式动作资源；请选择盖伦';return;}
+    const chosenHero=el('round-hero').value;
+    if(!api.assets()[chosenHero]){el('round-live-status').textContent='原始英雄动画资源尚未加载：'+chosenHero;return;}
     try{
       const snapshot=api.start({
         totalPlayers:Number(el('round-count').value),
-        playerRole:el('round-role').value,playerHero:'盖伦'
+        playerRole:el('round-role').value,playerHero:chosenHero
       });
       el('round-live-start').disabled=true;el('round-live-stop').disabled=false;
       el('round-asset-status').textContent='正在核对原始英雄动画资源…';
@@ -139,7 +140,7 @@ if(root){
       el('round-live-stop').disabled=false;
     }
   });
-  el('round-step').onclick={if(state){advanceRound(state,30);redraw();}};
+  el('round-step').onclick=()=>{if(state){advanceRound(state,30);redraw();}};
   el('round-skip').onclick=()=>{if(state){advanceRound(state,state.remaining);redraw();}};
   for(const [id,amount] of [['round-shorten',-60],['round-extend',60]]){
     el(id).onclick=()=>{if(state&&!clockUsed&&adjustChaseDuration(state,amount)){clockUsed=true;redraw();}};
