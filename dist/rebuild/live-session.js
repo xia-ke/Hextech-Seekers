@@ -6,7 +6,7 @@ import {makeVision} from './vision-baseline.js';
 
 export function createLiveSession(nav,{totalPlayers=2,playerRole='hunter',playerHero='盖伦',start,spawns,visionRange}={}) {
   // All four roster heroes share the same round rules; original visual assets are checked by the UI before starting.
-  if(!start || !nav?.canWalk(start.x,start.z))throw new Error('Valid Garen start required');
+  if(!start || !nav?.canWalk(start.x,start.z))throw new Error('Valid player start required');
   const match=setupRound({totalPlayers,playerRole,playerHero});
   const vision=makeVision(nav,visionRange?{range:visionRange}:{});
   const actors=createActors(match,nav,p=>{
