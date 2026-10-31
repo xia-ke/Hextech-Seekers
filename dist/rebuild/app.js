@@ -256,6 +256,8 @@ function renderFrame(now){
 
 function tick(now){
   requestAnimationFrame(tick);if(!ready)return;
+  if(document.hidden){last=now;previousFrame=0;return;}
+  const logicStart=performance.now();
   // Path following consumes distance across waypoints, even at low frame rates.
   // Visibility changes reset the clock, so returning to a tab cannot teleport.
   if(previousFrame){
@@ -299,7 +301,7 @@ function tick(now){
     }
   }
   if(follow){const p=project(map,actor),factor=1-Math.exp(-dt*12);camera.x+=(p.x-camera.x)*factor;camera.y+=(p.y-camera.y)*factor;}
-  const beforeDraw=performance.now();sample(metrics.logicCosts,beforeDraw-now);
+  const beforeDraw=performance.now();sample(metrics.logicCosts,beforeDraw-logicStart);
   renderFrame(now);
   if(now>toastEnd)$('toast').classList.remove('show');
   if(now-uiTime>200){updateUI();uiTime=now;}
