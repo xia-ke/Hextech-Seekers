@@ -14,7 +14,12 @@ let map, nav, sprite, overview, minimap, tiles, actor,liveSession=null,liveLastP
 let width=0,height=0,dpr=1,zoom=.8,follow=true,ready=false,last=0,animTime=0,attackAnimUntil=0,lastAttackNotice=0;
 let camera={x:0,y:0},path=[],heading=Math.PI,marker=null,toastEnd=0,drag=null;
 let fpsFrames=0,fpsTime=0,uiTime=0,miniTime=0,previousFrame=0;
-const metrics={rafGaps:[],drawCosts:[],mapCosts:[],actorCosts:[],logicCosts:[],longGaps:0};
+const metrics={rafGaps:[],drawCosts:[],mapCosts:[],actorCosts:[],logicCosts:[],longTasks:[],longGaps:0};
+if(typeof PerformanceObserver!=='undefined')try{
+  new PerformanceObserver(list=>{
+    for(const item of list.getEntries())sample(metrics.longTasks,item.duration);
+  }).observe({entryTypes:['longtask']});
+}catch{/* Not all browsers implement the longtask entry type. */}
 function sample(list,value){list.push(value);if(list.length>120)list.shift();}
 function percentile(list,p){if(!list.length)return 0;const sorted=[...list].sort((a,b)=>a-b);return sorted[Math.min(sorted.length-1,Math.floor((sorted.length-1)*p))];}
 const atlases = new Map(), frameCache = new Map();
@@ -515,13 +520,13 @@ async function boot(){
     window.__hextechPerfReset=()=>{
       if(!['127.0.0.1','localhost'].includes(location.hostname)||!new URLSearchParams(location.search).has('visualQA'))
         throw new Error('Local profiling only');
-      for(const key of ['rafGaps','drawCosts','mapCosts','actorCosts','logicCosts'])metrics[key].length=0;
+      for(const key of ['rafGaps','drawCosts','mapCosts','actorCosts','logicCosts','longTasks'])metrics[key].length=0;
       metrics.longGaps=0;previousFrame=0;fpsFrames=0;fpsTime=performance.now();
       return true;
     };
     window.__hextechPerf=()=>({
       fpsText:$('fps').textContent,tileCache:{...tiles.depthLoader.report(),total:tiles.entries.size,ready:[...tiles.entries.values()].filter(x=>x.depth&&x.image).length},
-      logicP95:percentile(metrics.logicCosts,.95),rafP50:percentile(metrics.rafGaps,.5),
+      logicP95:percentile(metrics.logicCosts,.95),longTaskCount:metrics.longTasks.length,longTaskP95:percentile(metrics.longTasks,.95),rafP50:percentile(metrics.rafGaps,.5),
       rafP95:percentile(metrics.rafGaps,.95),drawP95:percentile(metrics.drawCosts,.95),
       mapP95:percentile(metrics.mapCosts,.95),actorP95:percentile(metrics.actorCosts,.95),
       longGaps:metrics.longGaps,samples:metrics.rafGaps.length,
