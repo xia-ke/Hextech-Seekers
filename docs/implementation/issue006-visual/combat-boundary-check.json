@@ -1,0 +1,55 @@
+[
+  {
+    "scenario": "front",
+    "staged": {
+      "mode": "front",
+      "distance": 100,
+      "visible": true,
+      "target": "ai-1"
+    },
+    "result": {
+      "ok": true,
+      "reason": "captured",
+      "target": "ai-1"
+    }
+  },
+  {
+    "scenario": "back",
+    "staged": {
+      "mode": "back",
+      "distance": 100,
+      "visible": true,
+      "target": "ai-1"
+    },
+    "result": {
+      "ok": false,
+      "reason": "outside-facing"
+    }
+  },
+  {
+    "scenario": "side",
+    "staged": {
+      "mode": "side",
+      "distance": 100,
+      "visible": true,
+      "target": "ai-1"
+    },
+    "result": {
+      "ok": false,
+      "reason": "outside-hitbox"
+    }
+  },
+  {
+    "scenario": "escape",
+    "staged": {
+      "mode": "escape",
+      "distance": 100,
+      "visible": true,
+      "target": "ai-1"
+    },
+    "result": {
+      "ok": false,
+      "reason": "out-of-range"
+    }
+  }
+]

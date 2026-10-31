@@ -1,14 +1,14 @@
 {
   "asset_status": {
     "盖伦": true,
-    "布里茨": true,
     "锐雯": true,
+    "布里茨": true,
     "亚索": true
   },
   "visual_scales": {
     "盖伦": 1,
-    "布里茨": 1.725,
     "锐雯": 2.2742,
+    "布里茨": 1.725,
     "亚索": 0.94
   },
   "attack_results": [
@@ -22,7 +22,7 @@
         "reason": "captured",
         "target": "ai-1"
       },
-      "finished": true
+      "finished": false
     },
     {
       "hero": "布里茨",
@@ -46,7 +46,7 @@
         "reason": "captured",
         "target": "ai-1"
       },
-      "finished": true
+      "finished": false
     },
     {
       "hero": "亚索",
@@ -58,7 +58,62 @@
         "reason": "captured",
         "target": "ai-1"
       },
-      "finished": true
+      "finished": false
+    }
+  ],
+  "combat_boundary_results": [
+    {
+      "scenario": "front",
+      "staged": {
+        "mode": "front",
+        "distance": 100,
+        "visible": true,
+        "target": "ai-1"
+      },
+      "result": {
+        "ok": true,
+        "reason": "captured",
+        "target": "ai-1"
+      }
+    },
+    {
+      "scenario": "back",
+      "staged": {
+        "mode": "back",
+        "distance": 100,
+        "visible": true,
+        "target": "ai-1"
+      },
+      "result": {
+        "ok": false,
+        "reason": "outside-facing"
+      }
+    },
+    {
+      "scenario": "side",
+      "staged": {
+        "mode": "side",
+        "distance": 100,
+        "visible": true,
+        "target": "ai-1"
+      },
+      "result": {
+        "ok": false,
+        "reason": "outside-hitbox"
+      }
+    },
+    {
+      "scenario": "escape",
+      "staged": {
+        "mode": "escape",
+        "distance": 100,
+        "visible": true,
+        "target": "ai-1"
+      },
+      "result": {
+        "ok": false,
+        "reason": "out-of-range"
+      }
     }
   ],
   "snapshot": {
@@ -117,13 +172,13 @@
     ]
   },
   "performance": {
-    "fpsText": "12 FPS · draw p95 6.4ms · RAF p95 283ms",
-    "rafP50": 16.69999999999709,
-    "rafP95": 283.29999999999563,
-    "drawP95": 6.400000000023283,
+    "fpsText": "17 FPS · draw p95 2.2ms · RAF p95 167ms",
+    "rafP50": 16.700000000000728,
+    "rafP95": 150.10000000000218,
+    "drawP95": 2,
     "mapP95": 0.1000000000349246,
-    "actorP95": 5.599999999976717,
-    "longGaps": 58,
+    "actorP95": 1.900000000023283,
+    "longGaps": 70,
     "samples": 120,
     "viewport": {
       "width": 1600,
