@@ -129,3 +129,22 @@ npm start
 - 单独通过的 Node 网格回归包含墙体对角遮挡和目标进入另一组草丛时禁止抓捕；这两项**尚无对应真实峡谷 Chromium 视觉布位验收**，不可混称。
 - 此次无头 Chromium 1600×900 样本：性能报告 `fpsText=17 FPS`、`rafP95≈150.1ms`、`drawP95≈2ms`。RAF 仍存在严重长尾，**未达到流畅度硬验收**。
 - 运行证据：[Actions #41175482257](https://github.com/xia-ke/Hextech-Seekers/actions/runs/41175482257)；Issue 006 整体维持 PARTIAL。下一阶段优先补齐真实地图墙体与草丛的浏览器布位验收，并定位 RAF 长停顿，然后完善 AI 追捕行为。
+
+
+## 2026-10-31 实际峡谷渲染与帧率稳定性优化（0.9.3）
+
+本轮交付内容：
+
+1. `depth-codec.js` 用纯函数复现原来的 RGBA→16 位深度解码和透明哨兵值，提供回归测试。`tile-depth-worker.js` 在独立 Worker 中执行 PNG/WebP 资源获取、`createImageBitmap` 解码、`OffscreenCanvas` 深度 readback 和 Uint16 转换，通过可转移 `ImageBitmap`／`ArrayBuffer` 向主线程交付；`tile-depth-loader.js` 有错误回退到原图像加载路线。WebP 彩色贴图和深度图使用相同的原始美术资源，没有降分辨率。
+2. `app.js` 将 Rift 瓦片加载接入异步解码；通过视口整数地图片块边界复用可见列表，避免每个 RAF 都重新计算和调用图片加载；缓存淘汰时关闭被转移的 ImageBitmap；标签页隐藏时停止无意义绘制。
+3. 增加 `__hextechPerf()` 的 `tileCache.workerColors`、`workerDecoded`、回退数、解码错误、逻辑 P95、主线程 long task 数与 RAF P95，并通过仅 localhost 的 `visualQA` 环境重置采样。
+4. 试验 `overview-viewport.js` 在 CPU 端裁剪大地图底图源矩形；A/B 验证没表现出改善，**生产默认已恢复原来的整张底图绘制**，裁剪功能仅能在 localhost 调试时临时打开。新增裁剪坐标边界测试。
+5. Chromium 自动测试现在区分空闲视角、同页裁剪试验、恢复正常绘制和跨三个峡谷区域的镜头移动，并将数据保存为 `docs/implementation/issue006-visual/render-performance.json`。
+
+### 真实执行及结论
+
+- 成功 CI：[Worker 深度图验证 run 41176184817](https://github.com/xia-ke/Hextech-Seekers/actions/runs/41176184817)；空闲视角 47 FPS、RAF P95 16.8ms、Canvas draw P95 1.2ms，跨区域跳转 10 FPS、RAF P95 200ms；深度 Worker 解码 14 张，错误及回退 0。
+- 最新成功 CI：[双 Worker + 底图 A/B run 41176994917](https://github.com/xia-ke/Hextech-Seekers/actions/runs/41176994917)，完整 `node --test` **61/61 PASS**，Chromium 视觉/抓捕回归通过、`page_errors=[]`。空闲 34 FPS、RAF P95 16.8ms；三地区跳转样本 9 FPS、RAF P95 316.7ms、Canvas draw P95 5.5ms、`logicP95≈0.2ms`、`longTaskCount=0`。14 张彩色图及 14 张深度图均通过 Worker 处理（`workerErrors=0`，`fallbackColors=0`，`fallbackDecoded=0`）。
+- 同一次浏览器运行的裁剪 A/B：裁剪时约 10 FPS、恢复整图时约 8 FPS，后续样本持续变慢，说明无头 Chromium/SwiftShader 运行过程中存在与渲染模式切换无关的帧调度波动。这些有限样本**不能单独证明整图与裁剪的 GPU 性能优劣**，因此不默认启用没有正面证据的优化。
+- 本轮确认：原始峡谷美术、四英雄与地形深度遮挡仍能通过 Chromium 测试，CPU 端图像解码已移出主线程。与此同时，**仍未达到实际镜头移动时稳定 60FPS 的目标**。由于绘制和游戏逻辑耗时远小于 RAF 长尾，更高优先级的后续工作是有真实 GPU 加速的 Chrome/Firefox 复测、记录浏览器 Compositor/GPU trace，确认软件渲染与图片纹理上传或屏幕捕获对帧调度的影响，再决定是否实施 WebGL 纹理分块绘制或异步资源预热；不能将无头 SwiftShader 的 FPS 直接归因于游戏 JavaScript。
+- GitHub 源码和 CI 已更新；独立 Sites 没有部署，Issue 006 的正式流畅度与完整游戏验收继续为 PARTIAL。
