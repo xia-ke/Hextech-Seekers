@@ -1,0 +1,127 @@
+using System;
+using System.IO;
+using System.Threading.Tasks;
+using GLTFast;
+using UnityEngine;
+
+namespace HextechSeekers.Native
+{
+    /// <summary>Stage 1: real original 3D Rift + navigation/camera smoke test.
+    /// Hero artwork is intentionally not replaced by another hero or a fake model.
+    /// A visible cyan navigation ring is strictly a debug marker.</summary>
+    public sealed class RiftBootstrap : MonoBehaviour
+    {
+        public string mapFile = "Rift/map.glb";
+        public string navigationFile = "Rift/navigation.bin";
+        public Vector2 initialPosition = new Vector2(7765f, -4020f);
+        public float moveSpeed = 340f;
+        public float worldScale = 1f;
+        public float mapYawCorrection = 180f;
+        public float cameraOrthographicSize = 520f;
+        public float cameraPitch = 55f;
+        public bool diagnosticMarkers = true;
+
+        Camera sceneCamera;
+        RiftGrid nav;
+        Vector2 location;
+        Vector2[] route = Array.Empty<Vector2>();
+        int waypoint;
+        Transform marker;
+        GameObject loadedMap;
+        GltfImport mapImport;
+        bool ready;
+        string problem = "Initializing 3D Rift...";
+
+        async void Start()
+        {
+            Application.targetFrameRate = 60;
+            QualitySettings.vSyncCount = 0;
+            sceneCamera = Camera.main;
+            if (!sceneCamera) { problem = "Missing MainCamera"; Debug.LogError(problem); return; }
+            try
+            {
+                string root = Application.streamingAssetsPath;
+                string navPath = Path.Combine(root, navigationFile);
+                string glbPath = Path.Combine(root, mapFile);
+                if (!File.Exists(navPath) || !File.Exists(glbPath))
+                    throw new FileNotFoundException("Run tools/prepare_assets.py before loading the Rift scene. Both original map.glb and navigation.bin are required.");
+                nav = new RiftGrid(File.ReadAllBytes(navPath));
+                if (!nav.TryNearest(initialPosition, out location))
+                    throw new InvalidDataException("Spawn is outside the original lower-jungle navigation region");
+                loadedMap = new GameObject("ORIGINAL_RIFT_3D_Map11");
+                loadedMap.transform.SetParent(transform, false);
+                loadedMap.transform.localRotation = Quaternion.Euler(0, mapYawCorrection, 0);
+                loadedMap.transform.localScale = Vector3.one * worldScale;
+                mapImport = new GltfImport();
+                // Only import our verified, pinned GLB file, not a network model.
+                string uri = new Uri(Path.GetFullPath(glbPath)).AbsoluteUri;
+                if (!await mapImport.Load(uri) || !await mapImport.InstantiateMainSceneAsync(loadedMap.transform))
+                    throw new InvalidDataException("Failed to instantiate original 3D map.glb in glTFast");
+                if (diagnosticMarkers)
+                {
+                    GameObject primitive = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                    primitive.name = "NAVIGATION_DEBUG_MARKER_NOT_A_CHAMPION";
+                    primitive.transform.SetParent(transform, false);
+                    primitive.transform.localScale = new Vector3(28, 1, 28);
+                    var renderer = primitive.GetComponent<Renderer>();
+                    renderer.material.color = Color.cyan;
+                    marker = primitive.transform;
+                    var collider = primitive.GetComponent<Collider>();
+                    if (collider) Destroy(collider);
+                }
+                ready = true;
+                problem = string.Empty;
+                Debug.Log("Hextech Native Phase1: original GLB loaded; original navigation ready. Hero rig not yet imported.");
+            }
+            catch (Exception e)
+            {
+                problem = e.Message;
+                Debug.LogException(e);
+            }
+        }
+        void LateUpdate()
+        {
+            if (!ready) return;
+            if (Input.GetMouseButtonDown(1)) SetDestination();
+            if (waypoint < route.Length)
+            {
+                float delta = moveSpeed * Time.deltaTime;
+                while (delta > 0 && waypoint < route.Length)
+                {
+                    Vector2 to = route[waypoint] - location;
+                    float distance = to.magnitude;
+                    if (distance <= delta) { location = route[waypoint++]; delta -= distance; }
+                    else { location += to.normalized * delta; delta = 0; }
+                }
+            }
+            var at = ToScene(location);
+            if (marker) marker.position = at + Vector3.up * 4;
+            var forward = Quaternion.Euler(cameraPitch, 0, 0) * Vector3.forward;
+            sceneCamera.transform.position = at - forward * 900f;
+            sceneCamera.transform.rotation = Quaternion.Euler(cameraPitch, 0, 0);
+            sceneCamera.orthographic = true;
+            sceneCamera.orthographicSize = cameraOrthographicSize;
+        }
+        Vector3 ToScene(Vector2 p) => new Vector3(p.x, nav.HeightAt(p), p.y);
+        void SetDestination()
+        {
+            Ray ray = sceneCamera.ScreenPointToRay(Input.mousePosition);
+            // Phase1 plane hit: nav height snapping is authoritative, not visual terrain mesh collision.
+            var plane = new Plane(Vector3.up, ToScene(location));
+            if (!plane.Raycast(ray, out float t)) return;
+            Vector3 point = ray.GetPoint(t);
+            var result = new System.Collections.Generic.List<Vector2>();
+            if (!nav.TryPath(location, new Vector2(point.x, point.z), result)) return;
+            route = result.ToArray(); waypoint = 0;
+        }
+        void OnGUI()
+        {
+            GUI.color = Color.white;
+            GUI.Label(new Rect(18, 16, 1100, 32), "HEXTECH SEEKERS — NATIVE / PHASE 1 · ORIGINAL 3D RIFT");
+            if (!ready) { GUI.Label(new Rect(18, 44, Screen.width - 36, 90), "Not ready: " + problem); return; }
+            GUI.Label(new Rect(18, 44, 900, 30), $"RMB move | World x={location.x:F0} z={location.y:F0} | Path nodes={route.Length - waypoint}");
+            GUI.Label(new Rect(18, 72, 950, 30), "Cyan disc = NAV DEBUG ONLY · Original hero mesh/animation import is not complete");
+        }
+        void OnDestroy() { if (loadedMap) Destroy(loadedMap); mapImport?.Dispose(); }
+    }
+}

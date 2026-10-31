@@ -1,0 +1,11 @@
+Library/
+Temp/
+Obj/
+Logs/
+UserSettings/
+Build/
+Assets/StreamingAssets/Rift/map.glb
+Assets/StreamingAssets/Rift/navigation.bin
+Assets/StreamingAssets/Rift/asset-provenance.json
+*.csproj
+*.sln
