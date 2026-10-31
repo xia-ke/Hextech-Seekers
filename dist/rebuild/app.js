@@ -387,6 +387,7 @@ async function boot(){
       snapshot(){return liveSession?.snapshot()??null;},
       selectedHero(){return liveSession?playerHero:null;},
       assets(){return championRenderer?Object.fromEntries([...championRenderer.resources.keys()].map(hero=>[hero,true])):{};},
+      scales(){return championRenderer?Object.fromEntries([...championRenderer.resources].map(([hero,r])=>[hero,r.meta.visualScale||1])):{};},
       advanceForVisualQA(seconds){
         if(!['127.0.0.1','localhost'].includes(location.hostname)||!new URLSearchParams(location.search).has('visualQA')||!liveSession)
           throw new Error('Local visual QA mode required');
