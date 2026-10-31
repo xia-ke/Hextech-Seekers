@@ -54,6 +54,28 @@ try:
         page.locator('#round-hero').select_option('盖伦')
         page.locator('#round-start').click()
         page.locator('#round-live-start').click()
+        # A separate settled viewport sample, outside screenshot/UI interaction.
+        # RAF scheduling is measured independently from actual Canvas draw work.
+        page.evaluate('window.__hextechPerfReset()')
+        page.wait_for_timeout(3500)
+        idle_perf=page.evaluate('window.__hextechPerf()')
+        page.locator('[data-location="river"]').click()
+        page.wait_for_timeout(1800)
+        page.locator('[data-location="blue"]').click()
+        page.wait_for_timeout(1800)
+        page.locator('[data-location="red"]').click()
+        page.wait_for_timeout(2200)
+        movement_perf=page.evaluate('window.__hextechPerf()')
+        page.locator('#recenter').click()
+        (OUT/'render-performance.json').write_text(json.dumps({
+          'environment':'Chromium headless software GL / 1600x900',
+          'idle':idle_perf,'camera_travel':movement_perf
+        },ensure_ascii=False,indent=2))
+        # This CI platform supports module Workers + OffscreenCanvas. Check
+        # we really exercised background depth decoding instead of silently
+        # measuring the blocking fallback implementation.
+        if movement_perf['tileCache']['workerDecoded']<1:
+            raise AssertionError('Rift depth worker was not used: '+str(movement_perf['tileCache']))
         page.wait_for_function("Object.keys(window.__hextechLive.assets()).length === 4",timeout=120000)
         page.wait_for_timeout(300)
         assets=page.evaluate('window.__hextechLive.assets()')
