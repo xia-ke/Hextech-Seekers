@@ -62,6 +62,7 @@ jobs:
           cp artifacts/issue006/browser-check.json docs/implementation/issue006-visual/browser-check.json
           cp artifacts/issue006/attack-check.json docs/implementation/issue006-visual/attack-check.json
           cp artifacts/issue006/atlas-check.json docs/implementation/issue006-visual/atlas-check.json
+          git restore --worktree dist/assets/native
           git add dist/assets/visual/garen/sprite.json dist/assets/visual/blitzcrank dist/assets/visual/riven dist/assets/visual/yasuo docs/implementation/issue006-visual
           git diff --cached --quiet && exit 0
           git commit -m "assets: verify four original champions in Chromium (Issue 006)"
