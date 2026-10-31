@@ -49,6 +49,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           mkdir -p docs/implementation/issue006-visual
           cp artifacts/issue006/champion-gallery.png docs/implementation/issue006-visual/champion-gallery.png
+          cp artifacts/issue006/playable-*.png docs/implementation/issue006-visual/
           cp artifacts/issue006/chromium-game.png docs/implementation/issue006-visual/chromium-game.png
           cp artifacts/issue006/chromium-game-preview.jpg docs/implementation/issue006-visual/chromium-game-preview.jpg
           cp artifacts/issue006/browser-check.json docs/implementation/issue006-visual/browser-check.json
