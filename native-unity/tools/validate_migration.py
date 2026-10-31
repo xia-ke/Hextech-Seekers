@@ -70,7 +70,7 @@ class Phase1Tests(unittest.TestCase):
         self.assertIn('testMode: editmode',workflow)
         self.assertIn('Verify Unity license is configured',workflow)
         probe=(ROOT/'Assets/Scripts/NativeVisualAcceptance.cs').read_text()
-        for value in ('-hextechVisualQA','native-idle.png','CAPTURED_REQUIRES_VISUAL_REVIEW',
+        for value in ('-hextechVisualQA','"native-" + state + ".png"','CAPTURED_REQUIRES_VISUAL_REVIEW',
                       'ScreenCapture.CaptureScreenshot','Player'):
             if value=='Player':continue
             self.assertIn(value,probe)
