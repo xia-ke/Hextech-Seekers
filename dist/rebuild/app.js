@@ -104,7 +104,7 @@ class TileCache {
     const entry={col,row,used:performance.now()};this.entries.set(key,entry);
     const root=mapBase+key;
     entry.promise=Promise.all([
-      loadImage(root+'.webp'),
+      this.depthLoader.loadColor(root+'.webp',this.meta.tileSize),
       this.depthLoader.decode(root+'-depth.png',this.meta.tileSize)
     ]).then(([image,depth])=>{
       entry.image=image;entry.depth=depth;this.version++;return entry;
@@ -138,7 +138,11 @@ class TileCache {
     if(this.entries.size<22)return;
     const keep=new Set(visible.map(v=>v.join('-')));
     const oldest=[...this.entries.entries()].filter(([k,e])=>e.image&&!keep.has(k)).sort((a,b)=>a[1].used-b[1].used);
-    while(this.entries.size>20&&oldest.length)this.entries.delete(oldest.shift()[0]);
+    while(this.entries.size>20&&oldest.length){
+      const [key,entry]=oldest.shift();
+      entry.image?.close?.();
+      this.entries.delete(key);
+    }
   }
 }
 
