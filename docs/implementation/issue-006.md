@@ -55,3 +55,12 @@ npm start
 - `tests/live-session.test.mjs` 增加四英雄实时配置用例；已在 GitHub Actions 的完整仓库 Node 环境观察到 **36/36 PASS**。Chromium 自动化新增分别启动四英雄、触发攻击、核对英雄名称与头像，并输出逐英雄场景截图。
 - 保持限制：仅基础视线而非原版战争迷雾、没有完整英雄主动技能／海克斯、没有泉水起点、没有精确普攻命中动画帧；Issue 006 仍为 PARTIAL。无头 Chromium 历史约 5 FPS，不可宣称已修复流畅度。
 - GitHub Actions 的早期作业存在并发推送截图的 non-fast-forward 失败。已加入并发互斥和证据提交前的 `git rebase`；最终以最新版 CI 和实际截图文件为准。
+
+
+## 四英雄玩家操控验收结果（2026-10-31）
+
+- 最新完整 CI：[run 41160403395](https://github.com/xia-ke/Hextech-Seekers/actions/runs/41160403395) **SUCCESS**。在 Linux EGL 真实构建原始英雄图集后执行 `node --test`：**36/36 PASS**，Chromium 实际操作四名玩家英雄、逐一触发 A 攻击并验证 UI 名称／头像，`page_errors=[]`；四英雄原始模型资源加载为 true。
+- 逐英雄 Chromium 截图保存在 `docs/implementation/issue006-visual/playable-{garen,blitzcrank,riven,yasuo}.png`；同步保存峡谷同屏图、原始模型展示和浏览器验收 JSON。检查脚本采用本地 `visualQA`，不是正式对局的 AI 布位。
+- 视野内目标名单为布里茨、锐雯、亚索；无头浏览器取样：`FPS 9`、`draw p95 2.8ms`、`RAF p95 266.6ms`。对比此前 5 FPS 的环境观察，并不足以隔离浏览器调度、截图条件和缓存优化的作用，故不宣称性能已达到目标。
+- 已解决 Actions 证据提交的并发竞态：分支并发取消、重新基于最新 `main` 变基后提交；本轮对应证据已真正写入 GitHub。体验站点仍未独立发布。
+- Issue 006 的“原始四英雄图集、玩家角色选择、基本动画渲染、基础视野隐藏、Chromium 冒烟验收”已落实；**尚未完成**原版战争迷雾、英雄技能、完整攻击命中帧、真正泉水与性能硬验收。因此 Issue 006 整体标记 PARTIAL，不称作完整 V1。
