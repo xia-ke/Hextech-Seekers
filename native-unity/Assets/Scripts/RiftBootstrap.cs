@@ -31,6 +31,8 @@ namespace HextechSeekers.Native
         GameObject loadedMap;
         GltfImport mapImport;
         bool ready;
+        public bool IsReady => ready;
+        public GarenRigRuntime HeroRig => heroRig;
         string problem = "Initializing 3D Rift...";
 
         async void Start()
@@ -105,6 +107,15 @@ namespace HextechSeekers.Native
             sceneCamera.transform.rotation = Quaternion.Euler(cameraPitch, 0, 0);
             sceneCamera.orthographic = true;
             sceneCamera.orthographicSize = cameraOrthographicSize;
+        }
+        public bool VisualQAMove(float distance)
+        {
+            if (!ready || nav == null || !nav.TryNearest(location + new Vector2(distance, 0), out var destination))
+                return false;
+            var result = new System.Collections.Generic.List<Vector2>();
+            if (!nav.TryPath(location, destination, result) || result.Count == 0) return false;
+            route = result.ToArray(); waypoint = 0;
+            return true;
         }
         Vector3 ToScene(Vector2 p) => new Vector3(p.x, nav.HeightAt(p), p.y);
         void SetDestination()
