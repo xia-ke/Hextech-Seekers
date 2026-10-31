@@ -31,6 +31,41 @@ test('live hunter A capture uses real facing and visibility, and ends round',()=
  assert.equal(s.snapshot().visible.length,0);
  assert.equal(s.snapshot().result.entries.find(p=>p.role==='hunter').score,2);
 });
+test('player capture resolves only when the attack contact frame is reached',()=>{
+ const s=createLiveSession(grid(),{start:{x:150,z:150},spawns:spawn});
+ for(let i=0;i<120;i++)s.tick(1);
+ const enemy=s.actors.get('ai-1');enemy.x=250;enemy.z=150;enemy.route=[];
+ s.syncPlayer({x:150,z:150},{x:1,z:0});
+ const started=s.beginPlayerAttack({duration:1,hitAt:.5});
+ assert.equal(started.ok,true);
+ assert.equal(s.snapshot().phase,'chase');
+ assert.equal(enemy.active,true);
+ s.tick(.49);
+ assert.equal(enemy.active,true);
+ assert.equal(s.snapshot().attack.resolved,false);
+ s.tick(.02);
+ assert.equal(s.snapshot().attack.resolved,true);
+ assert.equal(s.snapshot().attack.result.ok,true);
+ assert.equal(enemy.active,false);
+});
+test('attack rechecks target range at the contact frame instead of capturing at click time',()=>{
+ const s=createLiveSession(grid(),{start:{x:150,z:150},spawns:spawn});
+ for(let i=0;i<120;i++)s.tick(1);
+ const enemy=s.actors.get('ai-1');enemy.x=250;enemy.z=150;enemy.route=[];
+ s.syncPlayer({x:150,z:150},{x:1,z:0});
+ assert.equal(s.beginPlayerAttack({duration:1,hitAt:.5}).ok,true);
+ enemy.x=500;
+ s.tick(.51);
+ assert.equal(enemy.active,true);
+ assert.equal(s.snapshot().attack.result.reason,'out-of-range');
+});
+test('player cannot start attacks during preparation or overlap attack windups',()=>{
+ const s=createLiveSession(grid(),{start:{x:150,z:150},spawns:spawn});
+ assert.equal(s.beginPlayerAttack().reason,'not-hunter-or-not-chasing');
+ for(let i=0;i<120;i++)s.tick(1);
+ assert.equal(s.beginPlayerAttack({duration:1,hitAt:.5}).ok,true);
+ assert.equal(s.beginPlayerAttack({duration:1,hitAt:.5}).reason,'attack-in-progress');
+});
 test('hider player may move during preparation; enemy AI hunter stays in place',()=>{
  const nav=grid(),s=createLiveSession(nav,{start:{x:250,z:150},playerRole:'hider',spawns:spawn});
  const hunter=s.actors.get('ai-1'),startX=hunter.x;
