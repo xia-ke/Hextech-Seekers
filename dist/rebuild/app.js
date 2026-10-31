@@ -426,6 +426,8 @@ async function boot(){
         if(liveSession.snapshot().phase!=='chase'||player.role!=='hunter')throw new Error('QA attack requires a chasing hunter');
         const target=[...liveSession.actors.values()].find(a=>a.active&&a.role==='hider');
         if(!target)throw new Error('No active hider available');
+        // Isolate the boundary fixture: another hider must not absorb the swing.
+        for(const other of liveSession.actors.values())if(other.id!==player.id&&other.id!==target.id){other.active=false;other.route=[];}
         let point=null;
         // Choose a grounded, genuinely visible location, not an assumed open cell.
         for(const radius of [95,105,115,125]){
