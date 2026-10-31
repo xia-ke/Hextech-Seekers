@@ -377,12 +377,12 @@ async function boot(){
         const start={x:actor.x,z:actor.z};
         window.__hextechFreezeQA=false;
         liveSession=createLiveSession(nav,{...config,start});
-        path=[];liveLastPhase='';liveNotice=0;
+        path=[];liveLastPhase='';liveNotice=0;lastAttackNotice=0;attackEnd=0;
         championRenderer.loadRoster(liveSession.match.players.map(p=>p.hero))
           .then(status=>window.dispatchEvent(new CustomEvent('hextech:hero-assets',{detail:status})));
         return liveSession.snapshot();
       },
-      stop(){liveSession=null;playerHero='盖伦';updateHeroHud('盖伦');liveLastPhase='';window.__hextechFreezeQA=false;path=[];return true;},
+      stop(){liveSession=null;playerHero='盖伦';updateHeroHud('盖伦');liveLastPhase='';lastAttackNotice=0;attackEnd=0;window.__hextechFreezeQA=false;path=[];return true;},
       snapshot(){return liveSession?.snapshot()??null;},
       selectedHero(){return liveSession?playerHero:null;},
       assets(){return championRenderer?Object.fromEntries([...championRenderer.resources.keys()].map(hero=>[hero,true])):{};},
