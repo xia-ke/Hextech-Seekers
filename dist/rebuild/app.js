@@ -2,6 +2,7 @@ import { NavGrid } from './navigation.js';
 import {createLiveSession} from './live-session.js';
 import {ChampionAtlasRenderer,renderableOpponents} from './champion-renderer.js';
 import {attackTimingFor} from './attack-profile.js';
+import {TileDepthLoader} from './tile-depth-loader.js';
 import { project, unproject, viewDepth, decodeDepth, directionIndex, SIN, COS } from './projection.js';
 
 const $ = id => document.getElementById(id);
@@ -13,7 +14,7 @@ let map, nav, sprite, overview, minimap, tiles, actor,liveSession=null,liveLastP
 let width=0,height=0,dpr=1,zoom=.8,follow=true,ready=false,last=0,animTime=0,attackAnimUntil=0,lastAttackNotice=0;
 let camera={x:0,y:0},path=[],heading=Math.PI,marker=null,toastEnd=0,drag=null;
 let fpsFrames=0,fpsTime=0,uiTime=0,miniTime=0,previousFrame=0;
-const metrics={rafGaps:[],drawCosts:[],mapCosts:[],actorCosts:[],longGaps:0};
+const metrics={rafGaps:[],drawCosts:[],mapCosts:[],actorCosts:[],logicCosts:[],longGaps:0};
 function sample(list,value){list.push(value);if(list.length>120)list.shift();}
 function percentile(list,p){if(!list.length)return 0;const sorted=[...list].sort((a,b)=>a-b);return sorted[Math.min(sorted.length-1,Math.floor((sorted.length-1)*p))];}
 const atlases = new Map(), frameCache = new Map();
@@ -89,19 +90,22 @@ function imagePoint(x,y){return{x:(x-width/2)/zoom+camera.x,y:(y-height*.47)/zoo
 function cameraBounds(){camera.x=Math.max(0,Math.min(map.width,camera.x));camera.y=Math.max(0,Math.min(map.height,camera.y));}
 
 class TileCache {
-  constructor(meta){this.meta=meta;this.entries=new Map();this.allowed=new Set(meta.tiles.map(p=>p.join('-')));this.version=0;this.failed=false;}
+  constructor(meta){this.meta=meta;this.entries=new Map();this.allowed=new Set(meta.tiles.map(p=>p.join('-')));this.version=0;this.failed=false;this.depthLoader=new TileDepthLoader(loadImage);this.visibleKey='';this.visibleTiles=[];}
   async load(col,row){
     const key=col+'-'+row;if(!this.allowed.has(key))return null;
     const prior=this.entries.get(key);if(prior){prior.used=performance.now();return prior.promise;}
     const entry={col,row,used:performance.now()};this.entries.set(key,entry);
-    entry.promise=Promise.all([loadImage(mapBase+key+'.webp'),loadImage(mapBase+key+'-depth.png')]).then(([img,depth])=>{
-      const c=document.createElement('canvas');c.width=c.height=this.meta.tileSize;
-      const cx=c.getContext('2d',{willReadFrequently:true});cx.drawImage(depth,0,0);
-      const pixels=cx.getImageData(0,0,c.width,c.height).data;
-      entry.depth=new Uint16Array(c.width*c.height);entry.depth.fill(65535);
-      for(let i=0;i<entry.depth.length;i++)if(pixels[i*4+3])entry.depth[i]=pixels[i*4]<<8|pixels[i*4+1];
-      entry.image=img;this.version++;return entry;
-    }).catch(error=>{entry.error=error;if(!this.failed){this.failed=true;toast('部分场景资源未能加载，请刷新页面重试');}throw error;});
+    const root=mapBase+key;
+    entry.promise=Promise.all([
+      loadImage(root+'.webp'),
+      this.depthLoader.decode(root+'-depth.png',this.meta.tileSize)
+    ]).then(([image,depth])=>{
+      entry.image=image;entry.depth=depth;this.version++;return entry;
+    }).catch(error=>{
+      this.entries.delete(key);
+      if(!this.failed){this.failed=true;toast('部分场景资源未能加载，请刷新页面重试');}
+      throw error;
+    });
     return entry.promise;
   }
   depthAt(x,y){
@@ -111,11 +115,16 @@ class TileCache {
     return value===65535?null:value/4-12000;
   }
   visible(){
-    const a=imagePoint(0,0),b=imagePoint(width,height),s=this.meta.tileSize,visible=[];
-    for(let row=Math.floor(a.y/s);row<=Math.floor(b.y/s);row++)for(let col=Math.floor(a.x/s);col<=Math.floor(b.x/s);col++){
+    const a=imagePoint(0,0),b=imagePoint(width,height),s=this.meta.tileSize;
+    const left=Math.floor(a.x/s),right=Math.floor(b.x/s),top=Math.floor(a.y/s),bottom=Math.floor(b.y/s);
+    const key=left+':'+right+':'+top+':'+bottom;
+    if(key===this.visibleKey)return this.visibleTiles;
+    const visible=[];
+    for(let row=top;row<=bottom;row++)for(let col=left;col<=right;col++){
       if(!this.allowed.has(col+'-'+row))continue;
       this.load(col,row).catch(()=>{});visible.push([col,row]);
     }
+    this.visibleKey=key;this.visibleTiles=visible;
     return visible;
   }
   trim(visible){
@@ -290,6 +299,7 @@ function tick(now){
     }
   }
   if(follow){const p=project(map,actor),factor=1-Math.exp(-dt*12);camera.x+=(p.x-camera.x)*factor;camera.y+=(p.y-camera.y)*factor;}
+  const beforeDraw=performance.now();sample(metrics.logicCosts,beforeDraw-now);
   renderFrame(now);
   if(now>toastEnd)$('toast').classList.remove('show');
   if(now-uiTime>200){updateUI();uiTime=now;}
@@ -500,8 +510,16 @@ async function boot(){
       }
     };
     fpsTime=performance.now();requestAnimationFrame(tick);
+    window.__hextechPerfReset=()=>{
+      if(!['127.0.0.1','localhost'].includes(location.hostname)||!new URLSearchParams(location.search).has('visualQA'))
+        throw new Error('Local profiling only');
+      for(const key of ['rafGaps','drawCosts','mapCosts','actorCosts','logicCosts'])metrics[key].length=0;
+      metrics.longGaps=0;previousFrame=0;fpsFrames=0;fpsTime=performance.now();
+      return true;
+    };
     window.__hextechPerf=()=>({
-      fpsText:$('fps').textContent,rafP50:percentile(metrics.rafGaps,.5),
+      fpsText:$('fps').textContent,tileCache:{...tiles.depthLoader.report(),total:tiles.entries.size,ready:[...tiles.entries.values()].filter(x=>x.depth&&x.image).length},
+      logicP95:percentile(metrics.logicCosts,.95),rafP50:percentile(metrics.rafGaps,.5),
       rafP95:percentile(metrics.rafGaps,.95),drawP95:percentile(metrics.drawCosts,.95),
       mapP95:percentile(metrics.mapCosts,.95),actorP95:percentile(metrics.actorCosts,.95),
       longGaps:metrics.longGaps,samples:metrics.rafGaps.length,
