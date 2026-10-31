@@ -75,6 +75,8 @@ try:
             }""",player_hero)
             if status != {'selected':player_hero,'player':player_hero}:
                 raise AssertionError('Playable hero mismatch: '+str(status))
+            assert page.locator('.champion strong').inner_text()==player_hero
+            assert page.locator('.portrait img').get_attribute('alt')==player_hero
             page.locator('#attack').click()
             page.wait_for_timeout(120)
         page.evaluate("""()=>{
