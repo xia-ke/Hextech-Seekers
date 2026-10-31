@@ -57,7 +57,7 @@ export function createLiveSession(nav,{totalPlayers=2,playerRole='hunter',player
     attackState={id:++attackSequence,elapsed:0,duration,hitAt,resolved:false,result:null};
     return {ok:true,reason:'started',attackId:attackState.id,duration,hitAt};
   }
-  function tick(seconds) {
+  function tick(seconds,{freezeAI=false}={}) {
     if(!Number.isFinite(seconds)||seconds<0)throw new RangeError('Invalid delta');
     if(match.phase==='finished')return snapshot();
     // Bounded substeps prevent crossing both a phase boundary and an AI attack
@@ -79,7 +79,7 @@ export function createLiveSession(nav,{totalPlayers=2,playerRole='hunter',player
       }
       if(match.phase==='finished')break;
       aiDecisionAccumulator+=dt;aiAttackAccumulator+=dt;
-      if(aiDecisionAccumulator>=.5){
+      if(!freezeAI&&aiDecisionAccumulator>=.5){
         aiDecisionAccumulator=0;
         for(const a of actors.values()){
           if(a.id==='player'||!a.active)continue;
@@ -93,10 +93,10 @@ export function createLiveSession(nav,{totalPlayers=2,playerRole='hunter',player
           });
         }
       }
-      for(const a of actors.values()){
+      if(!freezeAI)for(const a of actors.values()){
         if(a.id!=='player'&&a.active)stepActor(a,nav,dt,match);
       }
-      if(aiAttackAccumulator>=.25&&match.phase==='chase') {
+      if(!freezeAI&&aiAttackAccumulator>=.25&&match.phase==='chase') {
         aiAttackAccumulator=0;
         for(const a of actors.values()){
           if(!a.active||a.id==='player'||a.role!=='hunter')continue;
