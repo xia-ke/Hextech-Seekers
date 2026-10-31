@@ -15,6 +15,7 @@ let map, nav, sprite, overview, minimap, tiles, actor,liveSession=null,liveLastP
 let width=0,height=0,dpr=1,zoom=.8,follow=true,ready=false,last=0,animTime=0,attackAnimUntil=0,lastAttackNotice=0;
 let camera={x:0,y:0},path=[],heading=Math.PI,marker=null,toastEnd=0,drag=null;
 let fpsFrames=0,fpsTime=0,uiTime=0,miniTime=0,previousFrame=0;
+let overviewCropQA=false;
 const metrics={rafGaps:[],drawCosts:[],mapCosts:[],actorCosts:[],logicCosts:[],longTasks:[],longGaps:0};
 if(typeof PerformanceObserver!=='undefined')try{
   new PerformanceObserver(list=>{
@@ -187,8 +188,13 @@ function drawActor(now){
 
 function drawMap(){
   ctx.fillStyle='#071618';ctx.fillRect(0,0,width,height);
-  const crop=overviewViewport(map,overview.naturalWidth,overview.naturalHeight,camera,zoom,width,height);
-  if(crop)ctx.drawImage(overview,crop.sx,crop.sy,crop.sw,crop.sh,crop.dx,crop.dy,crop.dw,crop.dh);
+  if(overviewCropQA){
+    const crop=overviewViewport(map,overview.naturalWidth,overview.naturalHeight,camera,zoom,width,height);
+    if(crop)ctx.drawImage(overview,crop.sx,crop.sy,crop.sw,crop.sh,crop.dx,crop.dy,crop.dw,crop.dh);
+  }else{
+    const top=screen({x:0,y:0});
+    ctx.drawImage(overview,top.x,top.y,map.width*zoom,map.height*zoom);
+  }
   const visible=tiles.visible(),s=map.tileSize;
   for(const [col,row]of visible){const e=tiles.entries.get(col+'-'+row);if(!e?.image)continue;
     const p=screen({x:col*s,y:row*s});ctx.drawImage(e.image,p.x,p.y,s*zoom+.25,s*zoom+.25);
@@ -519,6 +525,13 @@ async function boot(){
       }
     };
     fpsTime=performance.now();requestAnimationFrame(tick);
+    // Keep unverified source cropping behind localhost-only A/B experiments.
+    window.__hextechPerfOverviewCrop=(enabled)=>{
+      if(!['127.0.0.1','localhost'].includes(location.hostname)||!new URLSearchParams(location.search).has('visualQA'))
+        throw new Error('Local overview profiling only');
+      overviewCropQA=!!enabled;
+      return overviewCropQA;
+    };
     window.__hextechPerfReset=()=>{
       if(!['127.0.0.1','localhost'].includes(location.hostname)||!new URLSearchParams(location.search).has('visualQA'))
         throw new Error('Local profiling only');
