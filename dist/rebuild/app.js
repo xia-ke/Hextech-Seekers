@@ -375,14 +375,14 @@ async function boot(){
         playerHero=config.playerHero;
         updateHeroHud(playerHero);
         const start={x:actor.x,z:actor.z};
-        window.__hextechFreezeQA=false;
+        window.__hextechFreezeQA=false;window.__hextechFreezeAI=false;
         liveSession=createLiveSession(nav,{...config,start});
         path=[];liveLastPhase='';liveNotice=0;lastAttackNotice=0;attackAnimUntil=0;
         championRenderer.loadRoster(liveSession.match.players.map(p=>p.hero))
           .then(status=>window.dispatchEvent(new CustomEvent('hextech:hero-assets',{detail:status})));
         return liveSession.snapshot();
       },
-      stop(){liveSession=null;playerHero='盖伦';updateHeroHud('盖伦');liveLastPhase='';lastAttackNotice=0;attackAnimUntil=0;window.__hextechFreezeQA=false;path=[];return true;},
+      stop(){liveSession=null;playerHero='盖伦';updateHeroHud('盖伦');liveLastPhase='';lastAttackNotice=0;attackAnimUntil=0;window.__hextechFreezeQA=false;window.__hextechFreezeAI=false;path=[];return true;},
       snapshot(){return liveSession?.snapshot()??null;},
       selectedHero(){return liveSession?playerHero:null;},
       assets(){return championRenderer?Object.fromEntries([...championRenderer.resources.keys()].map(hero=>[hero,true])):{};},
@@ -403,6 +403,7 @@ async function boot(){
       stageAttackForVisualQA(){
         if(!['127.0.0.1','localhost'].includes(location.hostname)||!new URLSearchParams(location.search).has('visualQA')||!liveSession)
           throw new Error('Local visual QA mode required');
+        window.__hextechFreezeAI=true;
         const player=liveSession.actors.get('player');
         if(liveSession.snapshot().phase!=='chase'||player.role!=='hunter')throw new Error('QA attack requires a chasing hunter');
         const target=[...liveSession.actors.values()].find(a=>a.active&&a.role==='hider');
