@@ -9,7 +9,7 @@
       "reason": "captured",
       "target": "ai-1"
     },
-    "finished": false
+    "finished": true
   },
   {
     "hero": "布里茨",
@@ -33,7 +33,7 @@
       "reason": "captured",
       "target": "ai-1"
     },
-    "finished": false
+    "finished": true
   },
   {
     "hero": "亚索",
@@ -45,6 +45,6 @@
       "reason": "captured",
       "target": "ai-1"
     },
-    "finished": false
+    "finished": true
   }
 ]

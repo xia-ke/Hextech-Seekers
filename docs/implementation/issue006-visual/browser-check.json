@@ -2,14 +2,14 @@
   "asset_status": {
     "盖伦": true,
     "锐雯": true,
-    "亚索": true,
-    "布里茨": true
+    "布里茨": true,
+    "亚索": true
   },
   "visual_scales": {
     "盖伦": 1,
     "锐雯": 2.2742,
-    "亚索": 0.94,
-    "布里茨": 1.725
+    "布里茨": 1.725,
+    "亚索": 0.94
   },
   "attack_results": [
     {
@@ -22,7 +22,7 @@
         "reason": "captured",
         "target": "ai-1"
       },
-      "finished": false
+      "finished": true
     },
     {
       "hero": "布里茨",
@@ -46,7 +46,7 @@
         "reason": "captured",
         "target": "ai-1"
       },
-      "finished": false
+      "finished": true
     },
     {
       "hero": "亚索",
@@ -58,7 +58,7 @@
         "reason": "captured",
         "target": "ai-1"
       },
-      "finished": false
+      "finished": true
     }
   ],
   "combat_boundary_results": [
@@ -172,7 +172,7 @@
     ]
   },
   "performance": {
-    "fpsText": "13 FPS · draw p95 5.5ms · RAF p95 217ms",
+    "fpsText": "10 FPS · draw p95 8.9ms · RAF p95 283ms",
     "tileCache": {
       "workerDecoded": 14,
       "fallbackDecoded": 0,
@@ -183,13 +183,13 @@
     },
     "logicP95": 0.10000000000582077,
     "longTaskCount": 18,
-    "longTaskP95": 4016,
-    "rafP50": 16.700000000004366,
-    "rafP95": 200,
-    "drawP95": 3.2999999999883585,
+    "longTaskP95": 8933,
+    "rafP50": 16.70000000001164,
+    "rafP95": 283.3000000000029,
+    "drawP95": 8.89999999999418,
     "mapP95": 0.10000000000582077,
-    "actorP95": 3.2000000000116415,
-    "longGaps": 113,
+    "actorP95": 8.799999999988358,
+    "longGaps": 108,
     "samples": 120,
     "viewport": {
       "width": 1600,
