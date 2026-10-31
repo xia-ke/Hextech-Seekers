@@ -92,7 +92,7 @@ try:
             page.screenshot(path=str(OUT/('playable-'+{
                 '盖伦':'garen','布里茨':'blitzcrank','锐雯':'riven','亚索':'yasuo'
             }[player_hero]+'.png')),full_page=True)
-            page.wait_for_timeout(1250)
+            page.wait_for_function('window.__hextechLive.snapshot().attack?.resolved===true',timeout=8000)
             attack=page.evaluate('window.__hextechLive.snapshot().attack')
             if not attack or not attack.get('resolved') or not attack.get('result',{}).get('ok'):
                 raise AssertionError('Original attack contact did not capture staged target for '+player_hero+': '+str(attack))
