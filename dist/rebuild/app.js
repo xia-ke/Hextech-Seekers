@@ -8,7 +8,7 @@ const canvas = $('world'), ctx = canvas.getContext('2d', {alpha:false});
 const mini = $('minimap'), mctx = mini.getContext('2d');
 const mapBase = 'assets/visual/summoners-rift/', heroBase = 'assets/visual/garen/';
 const locations = {red:{x:7765,z:-4020},river:{x:9838,z:-4398},blue:{x:11032,z:-6991}};
-let map, nav, sprite, overview, minimap, tiles, actor,liveSession=null,liveLastPhase='',liveNotice=0,championRenderer=null;
+let map, nav, sprite, overview, minimap, tiles, actor,liveSession=null,liveLastPhase='',liveNotice=0,championRenderer=null,playerHero='盖伦';
 let width=0,height=0,dpr=1,zoom=.8,follow=true,ready=false,last=0,animTime=0,attackEnd=0;
 let camera={x:0,y:0},path=[],heading=Math.PI,marker=null,toastEnd=0,drag=null;
 let fpsFrames=0,fpsTime=0,uiTime=0,miniTime=0,previousFrame=0;
@@ -33,7 +33,9 @@ function recenter(){if(!ready)return;setFollow(true);camera=project(map,actor);p
 function stop(){path=[];attackEnd=0;animTime=0;updateUI();paint();}
 function attack(){
  if(!ready)return;
- path=[];animTime=0;attackEnd=performance.now()+sprite.clips.attack1.duration*1000;
+ const heroSprite=liveSession?championRenderer?.resources.get(playerHero)?.meta:sprite;
+ if(liveSession&&!heroSprite){toast('所选英雄原始攻击资源未就绪');return;}
+ path=[];animTime=0;attackEnd=performance.now()+heroSprite.clips.attack1.duration*1000;
  if(liveSession){const result=liveSession.playerAttack();toast(result.ok?'实时演练：抓捕成功':'实时演练：'+result.reason);}
  else toast('攻击动作预览 · 当前无伤害或抓捕判定');
  updateUI();paint();
@@ -95,6 +97,14 @@ function frame(clip,direction,index){
 }
 
 function drawActor(now){
+  if(liveSession && playerHero!=='盖伦'){
+    const entity=liveSession.actors.get('player');
+    if(entity?.active && championRenderer?.resources.has(playerHero)){
+      championRenderer.draw({...entity,x:actor.x,z:actor.z,facing:{x:Math.sin(heading),z:Math.cos(heading)},route:path},playerHero,{zoom,animTime,attack:now<attackEnd});
+      $('unit-label').hidden=true;
+    }
+    return;
+  }
   const clip=now<attackEnd?'attack1':path.length?'run':'idle1',info=sprite.clips[clip];
   const index=Math.min(info.frames-1,Math.floor((animTime%info.duration)/info.duration*info.frames));
   const direction=directionIndex(heading,sprite.directions),f=frame(clip,direction,index);
@@ -321,10 +331,13 @@ async function boot(){
       bushes:nav.bushes
     };
     championRenderer=new ChampionAtlasRenderer({map,tiles,ctx,screen,loadImage,heightAt:(x,z)=>nav.heightAt(x,z)});
+    championRenderer.loadRoster(['盖伦','布里茨','锐雯','亚索'])
+      .then(status=>window.dispatchEvent(new CustomEvent('hextech:hero-assets',{detail:status})));
     window.__hextechLive={
       start(config){
         if(!ready)throw new Error('峡谷尚未加载');
-        if(config.playerHero!=='盖伦')throw new Error('当前实时演练仅支持盖伦模型');
+        if(!championRenderer?.resources.has(config.playerHero))throw new Error('所选英雄原始动画未加载，请稍后重试');
+        playerHero=config.playerHero;
         const start={x:actor.x,z:actor.z};
         window.__hextechFreezeQA=false;
         liveSession=createLiveSession(nav,{...config,start});
@@ -333,7 +346,7 @@ async function boot(){
           .then(status=>window.dispatchEvent(new CustomEvent('hextech:hero-assets',{detail:status})));
         return liveSession.snapshot();
       },
-      stop(){liveSession=null;liveLastPhase='';window.__hextechFreezeQA=false;path=[];return true;},
+      stop(){liveSession=null;playerHero='盖伦';liveLastPhase='';window.__hextechFreezeQA=false;path=[];return true;},
       snapshot(){return liveSession?.snapshot()??null;},
       assets(){return championRenderer?Object.fromEntries([...championRenderer.resources.keys()].map(hero=>[hero,true])):{};},
       stageForVisualQA(){
