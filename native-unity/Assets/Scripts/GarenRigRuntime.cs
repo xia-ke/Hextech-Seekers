@@ -203,7 +203,9 @@ namespace HextechSeekers.Native
             builtMesh.RecalculateBounds();
             builtTexture = new Texture2D(2, 2, TextureFormat.RGBA32, true);
             if (!builtTexture.LoadImage(png)) throw new InvalidDataException("Garen original texture decode failed");
-            builtMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (!shader) throw new InvalidDataException("URP Lit shader missing; check project URP pipeline setup");
+            builtMaterial = new Material(shader);
             builtMaterial.name = "Original Garen diffuse";
             builtMaterial.SetTexture("_BaseMap", builtTexture);
             builtMaterial.SetFloat("_Cull", 0f); // initial handedness diagnostic; needs Unity visual confirmation
@@ -212,7 +214,8 @@ namespace HextechSeekers.Native
             skinned.sharedMaterial = builtMaterial;
             skinned.bones = skeleton;
             skinned.rootBone = skeleton[0];
-            skinned.localBounds = new Bounds(new Vector3(0, 110, 0), new Vector3(500, 440, 500));
+            skinned.localBounds = builtMesh.bounds;
+            skinned.localBounds = new Bounds(skinned.localBounds.center, skinned.localBounds.size + Vector3.one * 250f);
             skinned.updateWhenOffscreen = false;
             motions = new Dictionary<string, MotionClip>(StringComparer.OrdinalIgnoreCase);
             foreach (var clip in model.clips)
