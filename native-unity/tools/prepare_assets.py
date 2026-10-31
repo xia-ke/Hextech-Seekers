@@ -49,11 +49,25 @@ def prepare(repo=REPO, target=TARGET, skip_download=False):
             tmp.replace(model)
         finally:
             tmp.unlink(missing_ok=True)
+    # Keep the original converted 3D hero source buffers as binary, never sprites.
+    hero_source = repo / 'dist/assets/native'
+    hero_target = target.parent / 'Champions/Garen'
+    hero_target.mkdir(parents=True,exist_ok=True)
+    for name in ('garen.json','garen.bin','garen_base_tx_cm.png'):
+        source_file = hero_source / name
+        if not source_file.is_file():
+            raise RuntimeError('Missing original skinned Garen asset: ' + str(source_file))
+        output = hero_target / name
+        if not output.exists() or sha(source_file)!=sha(output):
+            shutil.copyfile(source_file,output)
+    hero_meta = json.loads((hero_target / 'garen.json').read_text())
+    if hero_meta.get('hero')!='Garen' or not any(c.get('name')=='attack1' for c in hero_meta.get('clips',[])):
+        raise RuntimeError('Original Garen rig is missing the attack1 animation')
     manifest = {'mapSource': MAP_URL, 'mapCommit': MAP_COMMIT, 'mapSha256': MAP_SHA,
                 'navigationBytes': NAV_COUNT, 'navigationSha256': sha(nav_dest),
-                'heroStage': 'NOT_IMPORTED', 'format': 'original glTF2 binary'}
+                'heroStage': 'ORIGINAL_GAREN_SKINNED_SOURCE_PREPARED', 'format': 'original glTF2 binary'}
     (target / 'asset-provenance.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+'\n')
-    print('PASS: original map and native nav verified:', target)
+    print('PASS: original Rift GLB, navigation and Garen skinned native buffers verified:', target)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
