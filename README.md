@@ -106,3 +106,7 @@ python3 scripts/build-issue006-champions.py --source /tmp/hextech-issue006
 ## 原生 Windows 迁移（Unity + URP）— Phase 1
 
 现有网页保留在 `dist/`，独立原生工程见 [native-unity/](native-unity/README.md)。已实现原始 `map.glb` 校验下载、GLTFast 3D 加载入口、原始 `navigation.bin` C# A*、55° 摄像机、Unity 场景生成和 Windows 构建入口；查看 [迁移审查与未完成项](docs/implementation/native-unity-phase1.md)。**尚未在 Unity Editor 编译、导入实际场景或生成 Windows 可执行程序；不要视为完整可玩游戏。**
+
+### Unity Native Phase 2 — original Garen rig
+
+Under [native-unity](native-unity/README.md), the original repository Garen skeletal buffers are now rebuilt as a Unity `SkinnedMeshRenderer` with 68 bones and source idle1/run/attack1 clips. Mouse right-click moves via original navigation; A triggers the original attack clip. [Phase 2 audit](docs/implementation/native-unity-phase2.md). CI validates source/data contracts but Unity Editor and Windows GPU runtime have **not** been verified.

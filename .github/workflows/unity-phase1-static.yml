@@ -1,4 +1,4 @@
-name: Native Unity phase 1 static contract
+name: Native Unity phase 2 source and asset contract
 on:
   push:
     paths:
