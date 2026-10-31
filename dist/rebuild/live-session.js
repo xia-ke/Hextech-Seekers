@@ -49,7 +49,7 @@ export function createLiveSession(nav,{totalPlayers=2,playerRole='hunter',player
   function beginPlayerAttack({duration=.7,hitAt=.35}={}) {
     if(match.phase!=='chase'||!player.active||player.role!=='hunter')
       return {ok:false,reason:'not-hunter-or-not-chasing'};
-    if(attackState&&!attackState.resolved)return {ok:false,reason:'attack-in-progress'};
+    if(attackState&&!attackState.finished)return {ok:false,reason:'attack-in-progress'};
     if(match.elapsed<nextPlayerAttackAt)return {ok:false,reason:'attack-cooldown'};
     if(!Number.isFinite(duration)||!Number.isFinite(hitAt)||duration<=0||hitAt<0||hitAt>duration)
       throw new RangeError('Invalid attack timing');
@@ -68,10 +68,10 @@ export function createLiveSession(nav,{totalPlayers=2,playerRole='hunter',player
       if(dt<=0)break;
       advanceRound(match,dt);
       remaining-=dt;
-      if(attackState&&!attackState.resolved){
+      if(attackState&&!attackState.finished){
         const before=attackState.elapsed;
         attackState.elapsed=Math.min(attackState.duration,attackState.elapsed+dt);
-        if(before<attackState.hitAt&&attackState.elapsed>=attackState.hitAt){
+        if(!attackState.resolved&&before<attackState.hitAt&&attackState.elapsed>=attackState.hitAt){
           attackState.result=playerAttack();
           attackState.resolved=true;
         }
