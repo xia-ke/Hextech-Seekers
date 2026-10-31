@@ -60,4 +60,6 @@ jobs:
           git add dist/assets/visual/blitzcrank dist/assets/visual/riven dist/assets/visual/yasuo docs/implementation/issue006-visual
           git diff --cached --quiet && exit 0
           git commit -m "assets: verify four original champions in Chromium (Issue 006)"
-          git push
+          git fetch origin main
+          git rebase -X theirs origin/main
+          git push origin HEAD:main
