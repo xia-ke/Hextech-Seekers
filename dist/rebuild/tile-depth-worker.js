@@ -7,11 +7,19 @@ self.onmessage=event=>{queue.push(event.data);if(!running)void pump();};
 async function pump(){
   running=true;
   while(queue.length){
-    const {id,url,size}=queue.shift();
+    const {id,url,size,kind='depth'}=queue.shift();
     try{
       const response=await fetch(url);
-      if(!response.ok)throw new Error('Depth fetch HTTP '+response.status);
+      if(!response.ok)throw new Error('Tile fetch HTTP '+response.status);
       const bitmap=await createImageBitmap(await response.blob());
+      if(kind==='color'){
+        if(bitmap.width!==size||bitmap.height!==size){
+          bitmap.close();throw new Error('Color tile size mismatch');
+        }
+        // Transfer decoded color pixels without a main-thread image decode.
+        self.postMessage({id,bitmap},[bitmap]);
+        continue;
+      }
       try{
         if(bitmap.width!==size||bitmap.height!==size)throw new Error('Depth size mismatch');
         const canvas=new OffscreenCanvas(size,size),ctx=canvas.getContext('2d',{willReadFrequently:true});
