@@ -30,7 +30,7 @@ function progress(text,value){$('load-status').textContent=text;$('load-progress
 function toast(text){$('toast').textContent=text;$('toast').classList.add('show');toastEnd=performance.now()+2200;}
 function setFollow(value){follow=value;$('follow').setAttribute('aria-pressed',String(value));}
 function recenter(){if(!ready)return;setFollow(true);camera=project(map,actor);paint();}
-function stop(){path=[];if(!liveSession||liveSession.snapshot().attack?.finished!==false)attackAnimUntil=0;animTime=0;updateUI();paint();}
+function stop(){const attackActive=!!liveSession&&liveSession.snapshot().attack?.finished===false;path=[];if(!attackActive){attackAnimUntil=0;animTime=0;}updateUI();paint();}
 function attack(){
  if(!ready)return;
  const heroSprite=liveSession?championRenderer?.resources.get(playerHero)?.meta:sprite;
