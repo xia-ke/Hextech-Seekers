@@ -2,14 +2,14 @@
   "asset_status": {
     "盖伦": true,
     "锐雯": true,
-    "布里茨": true,
-    "亚索": true
+    "亚索": true,
+    "布里茨": true
   },
   "visual_scales": {
     "盖伦": 1,
     "锐雯": 2.2742,
-    "布里茨": 1.725,
-    "亚索": 0.94
+    "亚索": 0.94,
+    "布里茨": 1.725
   },
   "attack_results": [
     {
@@ -172,13 +172,24 @@
     ]
   },
   "performance": {
-    "fpsText": "17 FPS · draw p95 2.2ms · RAF p95 167ms",
-    "rafP50": 16.700000000000728,
-    "rafP95": 150.10000000000218,
-    "drawP95": 2,
-    "mapP95": 0.1000000000349246,
-    "actorP95": 1.900000000023283,
-    "longGaps": 70,
+    "fpsText": "13 FPS · draw p95 5.5ms · RAF p95 217ms",
+    "tileCache": {
+      "workerDecoded": 14,
+      "fallbackDecoded": 0,
+      "workerErrors": 0,
+      "workerEnabled": true,
+      "total": 14,
+      "ready": 14
+    },
+    "logicP95": 0.10000000000582077,
+    "longTaskCount": 18,
+    "longTaskP95": 4016,
+    "rafP50": 16.700000000004366,
+    "rafP95": 200,
+    "drawP95": 3.2999999999883585,
+    "mapP95": 0.10000000000582077,
+    "actorP95": 3.2000000000116415,
+    "longGaps": 113,
     "samples": 120,
     "viewport": {
       "width": 1600,

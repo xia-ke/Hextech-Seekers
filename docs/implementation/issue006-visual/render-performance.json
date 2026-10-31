@@ -1,0 +1,57 @@
+{
+  "environment": "Chromium headless software GL / 1600x900",
+  "idle": {
+    "fpsText": "47 FPS · draw p95 1.2ms · RAF p95 17ms",
+    "tileCache": {
+      "workerDecoded": 4,
+      "fallbackDecoded": 0,
+      "workerErrors": 0,
+      "workerEnabled": true,
+      "total": 4,
+      "ready": 4
+    },
+    "logicP95": 0.10000000000582077,
+    "longTaskCount": 2,
+    "longTaskP95": 119,
+    "rafP50": 16.699999999999818,
+    "rafP95": 16.800000000000182,
+    "drawP95": 1.2000000000116415,
+    "mapP95": 0.10000000000582077,
+    "actorP95": 1.1999999999970896,
+    "longGaps": 5,
+    "samples": 120,
+    "viewport": {
+      "width": 1600,
+      "height": 900,
+      "dpr": 1
+    },
+    "visibility": "visible"
+  },
+  "camera_travel": {
+    "fpsText": "10 FPS · draw p95 1.2ms · RAF p95 200ms",
+    "tileCache": {
+      "workerDecoded": 14,
+      "fallbackDecoded": 0,
+      "workerErrors": 0,
+      "workerEnabled": true,
+      "total": 14,
+      "ready": 14
+    },
+    "logicP95": 0.19999999999708962,
+    "longTaskCount": 5,
+    "longTaskP95": 119,
+    "rafP50": 16.699999999999818,
+    "rafP95": 200,
+    "drawP95": 1.1999999999970896,
+    "mapP95": 0.3000000000029104,
+    "actorP95": 1,
+    "longGaps": 37,
+    "samples": 120,
+    "viewport": {
+      "width": 1600,
+      "height": 900,
+      "dpr": 1
+    },
+    "visibility": "visible"
+  }
+}
