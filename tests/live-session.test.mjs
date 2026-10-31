@@ -56,8 +56,15 @@ test('no vision through blocking wall and hidden targets never leak to player vi
  const enemy=s.actors.get('ai-1');enemy.x=350;enemy.z=150;enemy.route=[];
  assert.equal(s.snapshot().visible.length,0);
 });
-test('invalid input and unavailable champion models are rejected',()=>{
- assert.throws(()=>createLiveSession(grid(),{playerHero:'亚索',start:{x:150,z:150}}),/Garen/);
+test('all four original-asset heroes can be selected for live round',()=>{
+ for(const playerHero of ['盖伦','布里茨','锐雯','亚索']){
+   const session=createLiveSession(grid(),{playerHero,start:{x:150,z:150},spawns:spawn});
+   assert.equal(session.match.players[0].hero,playerHero);
+   assert.equal(session.snapshot().phase,'prepare');
+   assert.equal(session.actors.size,2);
+ }
+});
+test('invalid input and invalid phase stepping are rejected',()=>{
  const s=createLiveSession(grid(),{start:{x:150,z:150},spawns:spawn});
  assert.throws(()=>s.tick(-1),RangeError);
 });
