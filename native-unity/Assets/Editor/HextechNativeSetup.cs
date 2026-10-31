@@ -12,10 +12,10 @@ namespace HextechSeekers.Native.Editor
 {
     public static class HextechNativeSetup
     {
-        const string ScenePath = "Assets/Scenes/NativeRiftPhase1.unity";
+        const string ScenePath = "Assets/Scenes/NativeRiftPhase2.unity";
         const string RendererPath = "Assets/Settings/HextechURPRenderer.asset";
         const string PipelinePath = "Assets/Settings/HextechURPPipeline.asset";
-        [MenuItem("Hextech Seekers/1. Create Native Rift Phase 1")]
+        [MenuItem("Hextech Seekers/1. Create Native Rift Phase 2")]
         public static void CreateScene()
         {
             if (!AssetDatabase.IsValidFolder("Assets/Scenes")) AssetDatabase.CreateFolder("Assets", "Scenes");
@@ -64,6 +64,12 @@ namespace HextechSeekers.Native.Editor
             string nav = Path.Combine(Application.dataPath, "StreamingAssets", "Rift", "navigation.bin");
             if (!File.Exists(nav) || new FileInfo(nav).Length != RiftGrid.BinaryBytes)
                 throw new InvalidDataException("Original nav binary absent or wrong size");
+            string heroDir = Path.Combine(Application.dataPath, "StreamingAssets", "Champions", "Garen");
+            foreach (string name in new[] { "garen.json", "garen.bin", "garen_base_tx_cm.png" })
+            {
+                if (!File.Exists(Path.Combine(heroDir, name)))
+                    throw new FileNotFoundException("Missing original skinned Garen asset: " + name);
+            }
             string output = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "Build", "Windows", "HextechSeekers.exe");
             Directory.CreateDirectory(Path.GetDirectoryName(output));
             var options = new BuildPlayerOptions {
@@ -73,7 +79,7 @@ namespace HextechSeekers.Native.Editor
             var report = BuildPipeline.BuildPlayer(options);
             if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
                 throw new Exception("Windows native build failed: " + report.summary.result);
-            Debug.Log("Native Rift Phase1 Windows build: " + output);
+            Debug.Log("Native Rift Phase2 Windows build: " + output);
         }
     }
 }
