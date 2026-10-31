@@ -62,6 +62,7 @@ jobs:
           cp artifacts/issue006/chromium-game.png docs/implementation/issue006-visual/chromium-game.png
           cp artifacts/issue006/chromium-game-preview.jpg docs/implementation/issue006-visual/chromium-game-preview.jpg
           cp artifacts/issue006/browser-check.json docs/implementation/issue006-visual/browser-check.json
+          cp artifacts/issue006/render-performance.json docs/implementation/issue006-visual/render-performance.json
           cp artifacts/issue006/attack-check.json docs/implementation/issue006-visual/attack-check.json
           cp artifacts/issue006/combat-boundary-check.json docs/implementation/issue006-visual/combat-boundary-check.json
           cp artifacts/issue006/atlas-check.json docs/implementation/issue006-visual/atlas-check.json
