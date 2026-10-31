@@ -96,3 +96,9 @@ python3 scripts/build-issue006-champions.py --source /tmp/hextech-issue006
 最新验收流程已扩展为：准备阶段推进到追捕、将 AI 躲藏者放置在合法视野与近战距离、逐英雄启动攻击并断言接触帧成功抓捕；另检查各英雄可视比例归一化。最新 CI 链接以本次提交后的 Actions 结果为准。四英雄玩家截图： [盖伦](docs/implementation/issue006-visual/playable-garen.png) · [布里茨](docs/implementation/issue006-visual/playable-blitzcrank.png) · [锐雯](docs/implementation/issue006-visual/playable-riven.png) · [亚索](docs/implementation/issue006-visual/playable-yasuo.png)。[浏览器性能与可见目标数据](docs/implementation/issue006-visual/browser-check.json)。本次无头软件渲染测得 9 FPS、draw p95 2.8ms、RAF p95 266.6ms；仅证明此环境的实测值，**不等于正式游戏流畅度验收已通过**。
 
 当前仍没有英雄主动技能、海克斯施放和原版级战争迷雾。普攻现已按原始攻击图集第 7/12 帧临时触发判定，但各英雄真实武器接触帧尚未逐帧标定。Issue 006 继续为 PARTIAL；Github 主分支更新不代表体验站点已经发布。
+
+## Issue 006 — 峡谷纹理解码与帧率诊断（0.9.3）
+
+本轮将峡谷 WebP 彩色地图片块和 PNG 深度图在专用 Worker 中解码并传回主线程，同时缓存可见 tile 列表和回收 ImageBitmap。未修改原始峡谷画质、英雄贴图、地形深度或战斗规则。完成 61/61 Node 测试与 Chromium 视觉回归；[CI 结果](https://github.com/xia-ke/Hextech-Seekers/actions/runs/41176994917)、[独立的性能数据](docs/implementation/issue006-visual/render-performance.json)。
+
+**性能结论保留**：无头 SwiftShader 静止视角约 34 FPS、RAF P95 16.8ms；跨区域镜头跳转约 9 FPS、RAF P95 316.7ms，未达到稳定流畅要求。Worker 14 张彩色瓦片和 14 张深度瓦片真实执行（0 错误、0 回退）。无正面性能收益的整张底图裁剪实验默认关闭，仅 localhost 可测试。需要真实 GPU 浏览器 Profiling 后再决定渲染管线升级。Issue 006 仍为 PARTIAL，体验站点未同步。
