@@ -1,10 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import {HERO_ASSET_NAMES,renderableOpponents,ChampionAtlasRenderer,championVisualScale} from '../dist/rebuild/champion-renderer.js';
 
 test('all four unique roster names map to individual source asset folders',()=>{
  assert.deepEqual(Object.keys(HERO_ASSET_NAMES),['盖伦','布里茨','锐雯','亚索']);
  assert.equal(new Set(Object.values(HERO_ASSET_NAMES)).size,4);
+});
+test('all four committed sprite manifests carry measured visual scale metadata',async()=>{
+ const folders=['garen','blitzcrank','riven','yasuo'];
+ for(const hero of folders){
+   const meta=JSON.parse(await readFile(new URL('../dist/assets/visual/'+hero+'/sprite.json',import.meta.url),'utf8'));
+   assert.ok(Number.isFinite(meta.visualScale)&&meta.visualScale>0,hero+' missing visualScale');
+   assert.equal(meta.scaleReference.hero,'garen');
+   assert.ok(meta.scaleReference.referenceHeightPx>0);
+   assert.ok(meta.scaleReference.sourceHeightPx>0);
+ }
 });
 test('per-hero scale metadata normalizes original mesh height and rejects invalid values',()=>{
  assert.equal(championVisualScale({visualScale:1.725}),1.725);
