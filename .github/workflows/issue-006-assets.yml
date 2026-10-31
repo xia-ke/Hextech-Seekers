@@ -9,6 +9,7 @@ on:
       - 'scripts/convert-native-champion.py'
       - 'scripts/render-visual-assets.py'
       - 'scripts/issue006-visual-check.py'
+      - 'scripts/issue006-attack-contact-sheet.py'
       - 'dist/rebuild/**'
       - 'tests/champion-renderer.test.mjs'
       - 'tests/live-session.test.mjs'
@@ -38,6 +39,7 @@ jobs:
         run: |
           python scripts/build-issue006-champions.py --source /tmp/issue006-source
           node --test
+          python scripts/issue006-attack-contact-sheet.py
       - name: Check rendered assets with Chromium
         run: |
           python scripts/issue006-visual-check.py
@@ -62,6 +64,7 @@ jobs:
           cp artifacts/issue006/browser-check.json docs/implementation/issue006-visual/browser-check.json
           cp artifacts/issue006/attack-check.json docs/implementation/issue006-visual/attack-check.json
           cp artifacts/issue006/atlas-check.json docs/implementation/issue006-visual/atlas-check.json
+          cp artifacts/issue006/attack-contact-sheet.png docs/implementation/issue006-visual/attack-contact-sheet.png
           git restore --worktree dist/assets/native
           git add dist/assets/visual/garen/sprite.json dist/assets/visual/blitzcrank dist/assets/visual/riven dist/assets/visual/yasuo docs/implementation/issue006-visual
           git diff --cached --quiet && exit 0
