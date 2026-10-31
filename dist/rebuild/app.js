@@ -3,6 +3,7 @@ import {createLiveSession} from './live-session.js';
 import {ChampionAtlasRenderer,renderableOpponents} from './champion-renderer.js';
 import {attackTimingFor} from './attack-profile.js';
 import {TileDepthLoader} from './tile-depth-loader.js';
+import {overviewViewport} from './overview-viewport.js';
 import { project, unproject, viewDepth, decodeDepth, directionIndex, SIN, COS } from './projection.js';
 
 const $ = id => document.getElementById(id);
@@ -186,7 +187,8 @@ function drawActor(now){
 
 function drawMap(){
   ctx.fillStyle='#071618';ctx.fillRect(0,0,width,height);
-  const top=screen({x:0,y:0});ctx.drawImage(overview,top.x,top.y,map.width*zoom,map.height*zoom);
+  const crop=overviewViewport(map,overview.naturalWidth,overview.naturalHeight,camera,zoom,width,height);
+  if(crop)ctx.drawImage(overview,crop.sx,crop.sy,crop.sw,crop.sh,crop.dx,crop.dy,crop.dw,crop.dh);
   const visible=tiles.visible(),s=map.tileSize;
   for(const [col,row]of visible){const e=tiles.entries.get(col+'-'+row);if(!e?.image)continue;
     const p=screen({x:col*s,y:row*s});ctx.drawImage(e.image,p.x,p.y,s*zoom+.25,s*zoom+.25);
