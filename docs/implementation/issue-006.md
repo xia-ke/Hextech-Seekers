@@ -120,3 +120,12 @@ npm start
 - Node 补充对“目标进入另一组草丛”和“墙体斜角遮挡”的回归检查，确保即使几何距离满足条件，视野禁止时依然不能抓捕。这两个是网格逻辑测试，**不属于 Chromium 实机墙体与草丛视觉验收**。
 - 核心规则未修改：仍然是玩家独立视野、接触帧重新验证、地图线段遮挡、既有得分和阶段规则。测试用布位／冻结 AI 接口通过主机名与 URL 参数双重限制，不对正式站点开放。
 - **后续仍需：**真实峡谷特殊墙体地形及各草丛细节的 Chromium 可见性场景、攻击范围在实际视觉比例下的调参、性能硬验收；本阶段不会把临时 2D 胶囊代理描述为原版真实武器碰撞。
+
+
+## 实际验收结果：GitHub Actions run 41175482257（SUCCESS）
+
+- 真实 Ubuntu + EGL 原始素材重建成功，`node --test` **55/55 PASS**；Chromium 四英雄素材加载和页面操作通过，没有 `pageerror`。
+- 已提交 [真实峡谷战斗边界检查 JSON](issue006-visual/combat-boundary-check.json)。实测（地图坐标，测试起始目标距离均为 100）：`front → captured`、`back → outside-facing`、`side → outside-hitbox`、`escape → out-of-range`。逃离测试在起手后、接触帧前把目标移到视野内但攻击距离外，故正确判定未命中。
+- 单独通过的 Node 网格回归包含墙体对角遮挡和目标进入另一组草丛时禁止抓捕；这两项**尚无对应真实峡谷 Chromium 视觉布位验收**，不可混称。
+- 此次无头 Chromium 1600×900 样本：性能报告 `fpsText=17 FPS`、`rafP95≈150.1ms`、`drawP95≈2ms`。RAF 仍存在严重长尾，**未达到流畅度硬验收**。
+- 运行证据：[Actions #41175482257](https://github.com/xia-ke/Hextech-Seekers/actions/runs/41175482257)；Issue 006 整体维持 PARTIAL。下一阶段优先补齐真实地图墙体与草丛的浏览器布位验收，并定位 RAF 长停顿，然后完善 AI 追捕行为。
