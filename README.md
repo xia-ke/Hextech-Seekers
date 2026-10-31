@@ -1,6 +1,6 @@
 # Hextech Seekers · 海克斯捉迷藏
 
-当前版本 **0.9.1-asset-verified**：保留第一阶段召唤师峡谷与盖伦探索，并新增 Issue 002 单局规则状态机与页面右上角“对局规则预演”。预演可手动推进计时、模拟抓获、检查积分；**现已新增原导航约束的 AI 移动和近战命中合法性逻辑，但尚未连接实际角色渲染、AI 自动作战或原版视野，因此不是完整可玩对局**。
+当前版本 **0.9.2-four-heroes.1**：保留第一阶段召唤师峡谷与盖伦探索，并新增 Issue 002 单局规则状态机与页面右上角“对局规则预演”。预演可手动推进计时、模拟抓获、检查积分；**现已新增原导航约束的 AI 移动和近战命中合法性逻辑，但尚未连接实际角色渲染、AI 自动作战或原版视野，因此不是完整可玩对局**。
 
 使用来源固定的 Map11 原始地形、贴图和导航数据，以及盖伦原始骨骼动作。固定方向的斜俯视镜头支持缩放、拖动、跟随和回中。角色在下半区沿导航网格绕开岩壁，场景深度可遮挡英雄。
 
@@ -87,4 +87,12 @@ python3 -m pip install -r scripts/visual-requirements.txt
 python3 scripts/build-issue006-champions.py --source /tmp/hextech-issue006
 ```
 
-**三位英雄的真实动作图集和深度图已在 GitHub Actions 中生成并提交到 main；Chromium 已完成四套资源加载和基础视觉冒烟验收。** 运行素材缺失时会提示“原始模型未安装”，不会拿盖伦或几何占位替代。当前玩家实时演练仍仅支持盖伦；完整仓库 Node 测试 35/35 通过，EGL 构建与 Chromium 自动视觉冒烟验收已完成。无头 Chromium RAF 存在长停顿，性能和原版画风最终验收仍未通过。验收证据见 [Issue 006 浏览器截图](docs/implementation/issue006-visual/chromium-game-preview.jpg) 与 [四英雄图集](docs/implementation/issue006-visual/champion-gallery.png)。GitHub 与体验站点未同步部署。
+**三位英雄的真实动作图集和深度图已在 GitHub Actions 中生成并提交到 main；Chromium 已完成四套资源加载和基础视觉冒烟验收。** 运行素材缺失时会提示“原始模型未安装”，不会拿盖伦或几何占位替代。当前实时演练可选择盖伦、布里茨、锐雯、亚索四名英雄，使用各自原始模型与攻击动作；完整仓库 Node 测试 35/35 通过，EGL 构建与 Chromium 自动视觉冒烟验收已完成。无头 Chromium RAF 存在长停顿，性能和原版画风最终验收仍未通过。验收证据见 [Issue 006 浏览器截图](docs/implementation/issue006-visual/chromium-game-preview.jpg) 与 [四英雄图集](docs/implementation/issue006-visual/champion-gallery.png)。GitHub 与体验站点未同步部署。
+
+## Issue 006 四英雄玩家操控与 Chromium 实机复核（0.9.2）
+
+可在右上角“对局规则预演”中配置 2–4 人、阵营和**四名英雄任意一名**，创建对局后进入实时演练。所选英雄可右键移动、A 键触发本人的原始攻击动画；底部英雄名称及模型头像随选择更新。NPC 仍按各自视野显示，已淘汰角色不渲染。不同演员使用独立遮挡缓存，避免图像互相覆盖。
+
+[Issue 006 最新 CI（36/36 Node 测试、Chromium 通过）](https://github.com/xia-ke/Hextech-Seekers/actions/runs/41160403395)。四英雄玩家截图： [盖伦](docs/implementation/issue006-visual/playable-garen.png) · [布里茨](docs/implementation/issue006-visual/playable-blitzcrank.png) · [锐雯](docs/implementation/issue006-visual/playable-riven.png) · [亚索](docs/implementation/issue006-visual/playable-yasuo.png)。[浏览器性能与可见目标数据](docs/implementation/issue006-visual/browser-check.json)。本次无头软件渲染测得 9 FPS、draw p95 2.8ms、RAF p95 266.6ms；仅证明此环境的实测值，**不等于正式游戏流畅度验收已通过**。
+
+当前仍没有英雄主动技能、海克斯施放、原版级战争迷雾和逐帧普攻命中判定。Issue 006 继续为 PARTIAL；Github 主分支更新不代表体验站点已经发布。
