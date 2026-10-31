@@ -1,14 +1,14 @@
 {
   "asset_status": {
     "盖伦": true,
-    "锐雯": true,
     "布里茨": true,
+    "锐雯": true,
     "亚索": true
   },
   "visual_scales": {
     "盖伦": 1,
-    "锐雯": 2.2742,
     "布里茨": 1.725,
+    "锐雯": 2.2742,
     "亚索": 0.94
   },
   "attack_results": [
@@ -46,7 +46,7 @@
         "reason": "captured",
         "target": "ai-1"
       },
-      "finished": true
+      "finished": false
     },
     {
       "hero": "亚索",
@@ -58,7 +58,7 @@
         "reason": "captured",
         "target": "ai-1"
       },
-      "finished": true
+      "finished": false
     }
   ],
   "snapshot": {
@@ -117,13 +117,13 @@
     ]
   },
   "performance": {
-    "fpsText": "9 FPS · draw p95 3.4ms · RAF p95 267ms",
+    "fpsText": "12 FPS · draw p95 2.9ms · RAF p95 217ms",
     "rafP50": 16.69999999999709,
-    "rafP95": 266.6999999999971,
-    "drawP95": 3.5,
+    "rafP95": 216.70000000000437,
+    "drawP95": 2.900000000023283,
     "mapP95": 0.10000000000582077,
-    "actorP95": 3.2999999999883585,
-    "longGaps": 54,
+    "actorP95": 2.900000000023283,
+    "longGaps": 47,
     "samples": 120,
     "viewport": {
       "width": 1600,

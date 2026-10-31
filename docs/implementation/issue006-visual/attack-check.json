@@ -33,7 +33,7 @@
       "reason": "captured",
       "target": "ai-1"
     },
-    "finished": true
+    "finished": false
   },
   {
     "hero": "亚索",
@@ -45,6 +45,6 @@
       "reason": "captured",
       "target": "ai-1"
     },
-    "finished": true
+    "finished": false
   }
 ]
