@@ -67,6 +67,7 @@ try:
         if errors:raise AssertionError('Browser page errors: '+str(errors))
         # Exercise every original champion as the actual controllable player,
         # not merely as a loaded NPC atlas.
+        attack_results=[]
         for player_hero in ['盖伦','布里茨','锐雯','亚索']:
             status=page.evaluate("""hero=>{
               window.__hextechLive.stop();
@@ -96,6 +97,12 @@ try:
             attack=page.evaluate('window.__hextechLive.snapshot().attack')
             if not attack or not attack.get('resolved') or not attack.get('result',{}).get('ok'):
                 raise AssertionError('Original attack contact did not capture staged target for '+player_hero+': '+str(attack))
+            attack_results.append({
+                'hero':player_hero,'attack_id':attack['id'],
+                'hit_at':attack['hitAt'],'duration':attack['duration'],
+                'result':attack['result'],'finished':attack['finished']
+            })
+        (OUT/'attack-check.json').write_text(json.dumps(attack_results,ensure_ascii=False,indent=2))
         page.evaluate("""()=>{
           window.__hextechLive.stop();
           window.__hextechLive.start({
@@ -118,7 +125,7 @@ try:
         assert len(snapshot['visible'])==3,('Visible original sprites missing',snapshot['visible'])
         assert perf['samples']>0,perf
         (OUT/'browser-check.json').write_text(json.dumps(
-            {'asset_status':assets,'visual_scales':scales,'snapshot':snapshot,'performance':perf,
+            {'asset_status':assets,'visual_scales':scales,'attack_results':attack_results,'snapshot':snapshot,'performance':perf,
              'page_errors':errors,'viewport':{'width':1600,'height':900}},
             ensure_ascii=False,indent=2))
         # Separate atlas inspection sheet is a screenshot rendered by real Chromium.
