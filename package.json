@@ -1,9 +1,9 @@
 {
   "name": "hextech-seekers",
-  "version": "0.9.2-four-heroes.2",
+  "version": "0.9.2-four-heroes.3",
   "private": true,
   "type": "module",
-  "description": "Four original champions playable with animation-timed melee capture; full LoL vision and skills pending",
+  "description": "Four original champions with measured sprite normalization and frame-timed melee capture; official LoL vision and abilities pending",
   "scripts": {
     "start": "node scripts/serve.mjs",
     "test": "node --test",
