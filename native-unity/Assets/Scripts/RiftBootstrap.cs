@@ -19,14 +19,15 @@ namespace HextechSeekers.Native
         public float mapYawCorrection = 180f;
         public float cameraOrthographicSize = 520f;
         public float cameraPitch = 55f;
-        public bool diagnosticMarkers = true;
+
 
         Camera sceneCamera;
         RiftGrid nav;
         Vector2 location;
         Vector2[] route = Array.Empty<Vector2>();
         int waypoint;
-        Transform marker;
+        GarenRigRuntime heroRig;
+        Vector2 previousLocation;
         GameObject loadedMap;
         GltfImport mapImport;
         bool ready;
@@ -57,21 +58,15 @@ namespace HextechSeekers.Native
                 string uri = new Uri(Path.GetFullPath(glbPath)).AbsoluteUri;
                 if (!await mapImport.Load(uri) || !await mapImport.InstantiateMainSceneAsync(loadedMap.transform))
                     throw new InvalidDataException("Failed to instantiate original 3D map.glb in glTFast");
-                if (diagnosticMarkers)
-                {
-                    GameObject primitive = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                    primitive.name = "NAVIGATION_DEBUG_MARKER_NOT_A_CHAMPION";
-                    primitive.transform.SetParent(transform, false);
-                    primitive.transform.localScale = new Vector3(28, 1, 28);
-                    var renderer = primitive.GetComponent<Renderer>();
-                    renderer.material.color = Color.cyan;
-                    marker = primitive.transform;
-                    var collider = primitive.GetComponent<Collider>();
-                    if (collider) Destroy(collider);
-                }
+                // A real skinned original hero is a hard requirement for phase 2.
+                // Do not silently fall back to the old cyan diagnostic disc.
+                string heroPath = Path.Combine(root, "Champions", "Garen");
+                heroRig = GarenRigRuntime.Load(transform, heroPath);
+                previousLocation = location;
+                heroRig.transform.position = ToScene(location);
                 ready = true;
                 problem = string.Empty;
-                Debug.Log("Hextech Native Phase1: original GLB loaded; original navigation ready. Hero rig not yet imported.");
+                Debug.Log("Hextech Native Phase1: original GLB loaded; original navigation ready. Original Garen rig and three native animations loaded.");
             }
             catch (Exception e)
             {
@@ -83,6 +78,7 @@ namespace HextechSeekers.Native
         {
             if (!ready) return;
             if (Input.GetMouseButtonDown(1)) SetDestination();
+            if (Input.GetKeyDown(KeyCode.A)) heroRig.PlayAttack();
             if (waypoint < route.Length)
             {
                 float delta = moveSpeed * Time.deltaTime;
@@ -95,7 +91,15 @@ namespace HextechSeekers.Native
                 }
             }
             var at = ToScene(location);
-            if (marker) marker.position = at + Vector3.up * 4;
+            if (heroRig)
+            {
+                heroRig.transform.position = at;
+                Vector2 delta = location - previousLocation;
+                if (delta.sqrMagnitude > .0001f)
+                    heroRig.transform.rotation = Quaternion.LookRotation(new Vector3(delta.x,0,delta.y), Vector3.up);
+                heroRig.Tick(Time.deltaTime, waypoint < route.Length);
+                previousLocation = location;
+            }
             var forward = Quaternion.Euler(cameraPitch, 0, 0) * Vector3.forward;
             sceneCamera.transform.position = at - forward * 900f;
             sceneCamera.transform.rotation = Quaternion.Euler(cameraPitch, 0, 0);
@@ -120,7 +124,7 @@ namespace HextechSeekers.Native
             GUI.Label(new Rect(18, 16, 1100, 32), "HEXTECH SEEKERS — NATIVE / PHASE 1 · ORIGINAL 3D RIFT");
             if (!ready) { GUI.Label(new Rect(18, 44, Screen.width - 36, 90), "Not ready: " + problem); return; }
             GUI.Label(new Rect(18, 44, 900, 30), $"RMB move | World x={location.x:F0} z={location.y:F0} | Path nodes={route.Length - waypoint}");
-            GUI.Label(new Rect(18, 72, 950, 30), "Cyan disc = NAV DEBUG ONLY · Original hero mesh/animation import is not complete");
+            GUI.Label(new Rect(18, 72, 950, 30), "Original skinned Garen | RMB move | A attack | idle/run/attack1 clips");
         }
         void OnDestroy() { if (loadedMap) Destroy(loadedMap); mapImport?.Dispose(); }
     }
