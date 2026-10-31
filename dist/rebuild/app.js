@@ -60,9 +60,21 @@ function updateHeroHud(hero){
     else{
       const atlas=championRenderer?.resources.get(hero)?.atlases.get('idle1')?.image;
       if(atlas){
-        const preview=document.createElement('canvas');
-        preview.width=preview.height=256;
-        preview.getContext('2d').drawImage(atlas,0,0,256,256,0,0,256,256);
+        const probe=document.createElement('canvas');probe.width=probe.height=256;
+        const pctx=probe.getContext('2d',{willReadFrequently:true});
+        pctx.drawImage(atlas,0,0,256,256,0,0,256,256);
+        const pixels=pctx.getImageData(0,0,256,256).data;
+        let minX=256,minY=256,maxX=-1,maxY=-1;
+        for(let y=0;y<256;y++)for(let x=0;x<256;x++)if(pixels[(y*256+x)*4+3]>12){
+          minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);
+        }
+        const preview=document.createElement('canvas');preview.width=preview.height=256;
+        const out=preview.getContext('2d');
+        if(maxX>=minX&&maxY>=minY){
+          const bw=maxX-minX+1,bh=maxY-minY+1,scale=Math.min(216/bw,224/bh);
+          const w=bw*scale,h=bh*scale;
+          out.drawImage(atlas,minX,minY,bw,bh,(256-w)/2,(256-h)/2,w,h);
+        }else out.drawImage(atlas,0,0,256,256,0,0,256,256);
         portrait.src=preview.toDataURL('image/png');
       }
     }
