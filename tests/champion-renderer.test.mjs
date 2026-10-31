@@ -1,10 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {HERO_ASSET_NAMES,renderableOpponents,ChampionAtlasRenderer} from '../dist/rebuild/champion-renderer.js';
+import {HERO_ASSET_NAMES,renderableOpponents,ChampionAtlasRenderer,championVisualScale} from '../dist/rebuild/champion-renderer.js';
 
 test('all four unique roster names map to individual source asset folders',()=>{
  assert.deepEqual(Object.keys(HERO_ASSET_NAMES),['盖伦','布里茨','锐雯','亚索']);
  assert.equal(new Set(Object.values(HERO_ASSET_NAMES)).size,4);
+});
+test('per-hero scale metadata normalizes original mesh height and rejects invalid values',()=>{
+ assert.equal(championVisualScale({visualScale:1.725}),1.725);
+ assert.equal(championVisualScale({visualScale:2.2742}),2.2742);
+ assert.equal(championVisualScale({visualScale:0}),1);
+ assert.equal(championVisualScale({visualScale:NaN}),1);
+ assert.equal(championVisualScale({}),1);
 });
 test('hidden opponents, inactive targets, and player are never drawn',()=>{
  const actors=new Map([
