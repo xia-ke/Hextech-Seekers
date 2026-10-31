@@ -79,6 +79,9 @@ try:
             assert page.locator('.portrait img').get_attribute('alt')==player_hero
             page.locator('#attack').click()
             page.wait_for_timeout(120)
+            page.screenshot(path=str(OUT/('playable-'+{
+                '盖伦':'garen','布里茨':'blitzcrank','锐雯':'riven','亚索':'yasuo'
+            }[player_hero]+'.png')),full_page=True)
         page.evaluate("""()=>{
           window.__hextechLive.stop();
           window.__hextechLive.start({
