@@ -48,6 +48,7 @@ export function meleeHit(attacker,target,match,{visible,clearPath,range=CAPTURE_
   if(attacker.role!=='hunter'||target.role!=='hider')return {ok:false,reason:'wrong-role'};
   if(typeof visible!=='function'||!visible(attacker,target))return {ok:false,reason:'not-visible'};
   const dx=target.x-attacker.x,dz=target.z-attacker.z,dist=Math.hypot(dx,dz);
+  if(!Number.isFinite(dist))return {ok:false,reason:'invalid-position'};
   if(hitbox){
     const reach=Number(hitbox.range),halfWidth=Number(hitbox.halfWidth);
     if(!Number.isFinite(reach)||reach<=0||!Number.isFinite(halfWidth)||halfWidth<=0)
@@ -55,10 +56,16 @@ export function meleeHit(attacker,target,match,{visible,clearPath,range=CAPTURE_
     const facingLength=Math.hypot(attacker.facing?.x||0,attacker.facing?.z||0);
     if(facingLength<1e-6)return {ok:false,reason:'outside-facing'};
     const fx=attacker.facing.x/facingLength,fz=attacker.facing.z/facingLength;
+    // Front-facing capsule: flat-sided middle with a rounded far tip.
+    // Keep a hard front hemisphere guard so a target behind the attacker
+    // cannot be caught by the capsule's rounded base.
     const along=dx*fx+dz*fz;
-    if(along<0||along>reach)return {ok:false,reason:'out-of-range'};
+    if(along<0)return {ok:false,reason:'outside-facing'};
+    if(along>reach+halfWidth)return {ok:false,reason:'out-of-range'};
     const lateral=Math.abs(dx*fz-dz*fx);
-    if(lateral>halfWidth)return {ok:false,reason:'outside-hitbox'};
+    const tipOverhang=Math.max(0,along-reach);
+    if(Math.hypot(lateral,tipOverhang)>halfWidth)
+      return {ok:false,reason:'outside-hitbox'};
   }else{
     if(dist>range)return {ok:false,reason:'out-of-range'};
     if(dist>0.001 && (dx*attacker.facing.x+dz*attacker.facing.z)/dist<CAPTURE_ARC_COS)return {ok:false,reason:'outside-facing'};

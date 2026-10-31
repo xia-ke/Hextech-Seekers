@@ -71,7 +71,7 @@ test('attack rechecks target range at the contact frame instead of capturing at 
  enemy.x=500;
  s.tick(.51);
  assert.equal(enemy.active,true);
- assert.equal(s.snapshot().attack.result.reason,'no-visible-target-in-range');
+ assert.equal(s.snapshot().attack.result.reason,'out-of-range');
 });
 test('player cannot start attacks during preparation or overlap attack windups',()=>{
  const s=createLiveSession(grid(),{start:{x:150,z:150},spawns:spawn});

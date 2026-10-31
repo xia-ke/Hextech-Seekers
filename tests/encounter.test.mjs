@@ -68,3 +68,49 @@ test('hider AI flees visible hunter, and cannot use out-of-map target',()=>{
  assert.equal(chooseAiDestination(hider,actors,nav,match,{visible:()=>true}),true);
  assert.ok(hider.route[0].x>=hider.x);
 });
+
+test('rounded weapon tip accepts diagonal contact inside the capsule',()=>{
+ const {match,hunter,hider}=make();advanceRound(match,120);
+ hunter.facing={x:1,z:0};
+ hider.x=302;hider.z=124; // along 202; 22 beyond reach=180, lateral=24
+ const result=meleeHit(hunter,hider,match,{visible:()=>true,clearPath:()=>true,
+   hitbox:{range:180,halfWidth:36}});
+ assert.equal(result.ok,true);
+});
+test('outside rounded weapon tip cannot catch a diagonal target',()=>{
+ const {match,hunter,hider}=make();advanceRound(match,120);
+ hunter.facing={x:1,z:0};
+ hider.x=313;hider.z=132; // 33 beyond reach=180, 32 lateral; radius 36
+ const result=meleeHit(hunter,hider,match,{visible:()=>true,clearPath:()=>true,
+   hitbox:{range:180,halfWidth:36}});
+ assert.equal(result.reason,'outside-hitbox');
+ assert.equal(hider.active,true);
+});
+test('back-facing, extreme range and lateral boundary have independent results',()=>{
+ const {match,hunter,hider}=make();advanceRound(match,120);
+ hunter.facing={x:1,z:0};
+ const opts={visible:()=>true,clearPath:()=>true,hitbox:{range:180,halfWidth:36}};
+ hider.x=80;hider.z=100;
+ assert.equal(meleeHit(hunter,hider,match,opts).reason,'outside-facing');
+ hider.x=317;hider.z=100;
+ assert.equal(meleeHit(hunter,hider,match,opts).reason,'out-of-range');
+ hider.x=250;hider.z=137;
+ assert.equal(meleeHit(hunter,hider,match,opts).reason,'outside-hitbox');
+ hider.z=136;
+ assert.equal(meleeHit(hunter,hider,match,opts).ok,true);
+});
+test('line-of-sight and vision both remain mandatory for capsule attacks',()=>{
+ const {match,hunter,hider}=make();advanceRound(match,120);
+ hunter.facing={x:1,z:0};
+ const box={range:180,halfWidth:36};
+ assert.equal(meleeHit(hunter,hider,match,{hitbox:box,visible:()=>false,clearPath:()=>true}).reason,'not-visible');
+ assert.equal(meleeHit(hunter,hider,match,{hitbox:box,visible:()=>true,clearPath:()=>false}).reason,'obstructed');
+ assert.equal(hider.active,true);
+});
+test('non-finite position is rejected before any capture side effect',()=>{
+ const {match,hunter,hider}=make();advanceRound(match,120);
+ hunter.facing={x:1,z:0};hider.x=NaN;
+ assert.equal(meleeHit(hunter,hider,match,{visible:()=>true,clearPath:()=>true,
+  hitbox:{range:180,halfWidth:36}}).reason,'invalid-position');
+ assert.equal(hider.active,true);
+});
