@@ -40,6 +40,30 @@ function attack(){
  else toast('攻击动作预览 · 当前无伤害或抓捕判定');
  updateUI();paint();
 }
+function updateHeroHud(hero){
+  const display=document.querySelector('.champion strong');
+  const portrait=document.querySelector('.portrait img');
+  const bottom=document.querySelector('.bottom');
+  if(display)display.textContent=hero;
+  if(bottom)bottom.setAttribute('aria-label',hero+'操作面板');
+  const label=$('unit-label');
+  if(label)label.childNodes[0].textContent=hero;
+  if(portrait){
+    portrait.alt=hero;
+    if(hero==='盖伦')portrait.src='assets/Garen.png';
+    else{
+      const atlas=championRenderer?.resources.get(hero)?.atlases.get('idle1')?.image;
+      if(atlas){
+        const preview=document.createElement('canvas');
+        preview.width=preview.height=256;
+        preview.getContext('2d').drawImage(atlas,0,0,256,256,0,0,256,256);
+        portrait.src=preview.toDataURL('image/png');
+      }
+    }
+  }
+  const attackButton=$('attack');
+  if(attackButton)attackButton.setAttribute('aria-label',hero+'原始普攻动作（A）；追捕阶段命中可抓获躲藏者');
+}
 function screen(p){return{x:(p.x-camera.x)*zoom+width/2,y:(p.y-camera.y)*zoom+height*.47};}
 function imagePoint(x,y){return{x:(x-width/2)/zoom+camera.x,y:(y-height*.47)/zoom+camera.y};}
 function cameraBounds(){camera.x=Math.max(0,Math.min(map.width,camera.x));camera.y=Math.max(0,Math.min(map.height,camera.y));}
@@ -338,6 +362,7 @@ async function boot(){
         if(!ready)throw new Error('峡谷尚未加载');
         if(!championRenderer?.resources.has(config.playerHero))throw new Error('所选英雄原始动画未加载，请稍后重试');
         playerHero=config.playerHero;
+        updateHeroHud(playerHero);
         const start={x:actor.x,z:actor.z};
         window.__hextechFreezeQA=false;
         liveSession=createLiveSession(nav,{...config,start});
@@ -346,7 +371,7 @@ async function boot(){
           .then(status=>window.dispatchEvent(new CustomEvent('hextech:hero-assets',{detail:status})));
         return liveSession.snapshot();
       },
-      stop(){liveSession=null;playerHero='盖伦';liveLastPhase='';window.__hextechFreezeQA=false;path=[];return true;},
+      stop(){liveSession=null;playerHero='盖伦';updateHeroHud('盖伦');liveLastPhase='';window.__hextechFreezeQA=false;path=[];return true;},
       snapshot(){return liveSession?.snapshot()??null;},
       selectedHero(){return liveSession?playerHero:null;},
       assets(){return championRenderer?Object.fromEntries([...championRenderer.resources.keys()].map(hero=>[hero,true])):{};},
