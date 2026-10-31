@@ -54,7 +54,7 @@ export function createLiveSession(nav,{totalPlayers=2,playerRole='hunter',player
     if(!Number.isFinite(duration)||!Number.isFinite(hitAt)||duration<=0||hitAt<0||hitAt>duration)
       throw new RangeError('Invalid attack timing');
     nextPlayerAttackAt=match.elapsed+.8;
-    attackState={id:++attackSequence,elapsed:0,duration,hitAt,resolved:false,result:null};
+    attackState={id:++attackSequence,elapsed:0,duration,hitAt,resolved:false,finished:false,result:null};
     return {ok:true,reason:'started',attackId:attackState.id,duration,hitAt};
   }
   function tick(seconds,{freezeAI=false}={}) {
