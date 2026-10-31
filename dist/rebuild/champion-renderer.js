@@ -67,11 +67,11 @@ export class ChampionAtlasRenderer {
     if(this.cache.size>48)this.cache.delete(this.cache.keys().next().value);
     return frame;
   }
-  draw(actor,hero,{zoom,animTime=0,selected=false}={}){
+  draw(actor,hero,{zoom,animTime=0,attack=false}={}){
     const resource=this.resources.get(hero);
     if(!resource||!actor?.active)return false;
     const {meta}=resource;
-    const clip=actor.route?.length?'run':'idle1',info=meta.clips[clip];
+    const clip=attack?'attack1':actor.route?.length?'run':'idle1',info=meta.clips[clip];
     const frameIndex=Math.min(info.frames-1,Math.floor((animTime%info.duration)/info.duration*info.frames));
     const heading=Math.atan2(actor.facing?.x||0,actor.facing?.z||1);
     const frame=this.frame(hero,clip,directionIndex(heading,meta.directions),frameIndex);
