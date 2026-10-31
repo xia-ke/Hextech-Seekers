@@ -348,6 +348,7 @@ async function boot(){
       },
       stop(){liveSession=null;playerHero='盖伦';liveLastPhase='';window.__hextechFreezeQA=false;path=[];return true;},
       snapshot(){return liveSession?.snapshot()??null;},
+      selectedHero(){return liveSession?playerHero:null;},
       assets(){return championRenderer?Object.fromEntries([...championRenderer.resources.keys()].map(hero=>[hero,true])):{};},
       stageForVisualQA(){
         // Only on an expressly requested localhost Chromium QA run.
