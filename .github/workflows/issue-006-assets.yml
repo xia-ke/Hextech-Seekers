@@ -13,6 +13,9 @@ on:
       - 'tests/champion-renderer.test.mjs'
 permissions:
   contents: write
+concurrency:
+  group: issue006-assets-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   assets-and-chromium:
     runs-on: ubuntu-24.04
