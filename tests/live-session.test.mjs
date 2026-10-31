@@ -49,12 +49,13 @@ test('player capture resolves only when the attack contact frame is reached',()=
  assert.equal(enemy.active,false);
 });
 test('attack recovery remains locked after contact until the original clip ends',()=>{
- const s=createLiveSession(grid(),{start:{x:150,z:150},spawns:spawn});
+ const s=createLiveSession(grid(),{totalPlayers:3,start:{x:150,z:150},spawns:spawn});
  for(let i=0;i<120;i++)s.tick(1);
  const enemy=s.actors.get('ai-1');enemy.x=250;enemy.z=150;enemy.route=[];
  s.syncPlayer({x:150,z:150},{x:1,z:0});
  s.beginPlayerAttack({duration:1,hitAt:.5});
  s.tick(.51);
+ assert.equal(s.snapshot().phase,'chase');
  assert.equal(s.snapshot().attack.resolved,true);
  assert.equal(s.snapshot().attack.finished,false);
  assert.equal(s.beginPlayerAttack({duration:1,hitAt:.5}).reason,'attack-in-progress');
