@@ -258,7 +258,8 @@ function tick(now){
     new URLSearchParams(location.search).has('visualQA');
   if(liveSession&&!qaFrozen){
     liveSession.syncPlayer(actor,{x:Math.sin(heading),z:Math.cos(heading)});
-    const view=liveSession.tick(dt);
+    const qaFreezeAI=window.__hextechFreezeAI===true&&['127.0.0.1','localhost'].includes(location.hostname)&&new URLSearchParams(location.search).has('visualQA');
+    const view=liveSession.tick(dt,{freezeAI:qaFreezeAI});
     if(view.attack?.resolved && view.attack.id!==lastAttackNotice){
       lastAttackNotice=view.attack.id;
       const result=view.attack.result;
