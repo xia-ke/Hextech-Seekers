@@ -9,7 +9,7 @@ const mini = $('minimap'), mctx = mini.getContext('2d');
 const mapBase = 'assets/visual/summoners-rift/', heroBase = 'assets/visual/garen/';
 const locations = {red:{x:7765,z:-4020},river:{x:9838,z:-4398},blue:{x:11032,z:-6991}};
 let map, nav, sprite, overview, minimap, tiles, actor,liveSession=null,liveLastPhase='',liveNotice=0,championRenderer=null,playerHero='盖伦';
-let width=0,height=0,dpr=1,zoom=.8,follow=true,ready=false,last=0,animTime=0,attackEnd=0;
+let width=0,height=0,dpr=1,zoom=.8,follow=true,ready=false,last=0,animTime=0,attackEnd=0,lastAttackNotice=0;
 let camera={x:0,y:0},path=[],heading=Math.PI,marker=null,toastEnd=0,drag=null;
 let fpsFrames=0,fpsTime=0,uiTime=0,miniTime=0,previousFrame=0;
 const metrics={rafGaps:[],drawCosts:[],mapCosts:[],actorCosts:[],longGaps:0};
@@ -35,9 +35,15 @@ function attack(){
  if(!ready)return;
  const heroSprite=liveSession?championRenderer?.resources.get(playerHero)?.meta:sprite;
  if(liveSession&&!heroSprite){toast('所选英雄原始攻击资源未就绪');return;}
- path=[];animTime=0;attackEnd=performance.now()+heroSprite.clips.attack1.duration*1000;
- if(liveSession){const result=liveSession.playerAttack();toast(result.ok?'实时演练：抓捕成功':'实时演练：'+result.reason);}
- else toast('攻击动作预览 · 当前无伤害或抓捕判定');
+ const clip=heroSprite.clips.attack1,duration=clip.duration;
+ path=[];animTime=0;attackEnd=performance.now()+duration*1000;
+ if(liveSession){
+   // The contact point is currently a provisional midpoint of the original
+   // attack clip; per-hero hit-frame calibration remains a visual task.
+   const result=liveSession.beginPlayerAttack({duration,hitAt:duration*(7/12)});
+   if(!result.ok){attackEnd=0;toast('实时演练：'+result.reason);return;}
+   toast('普攻动作开始 · 命中帧待校准');
+ }else toast('攻击动作预览 · 当前无伤害或抓捕判定');
  updateUI();paint();
 }
 function updateHeroHud(hero){
@@ -62,7 +68,7 @@ function updateHeroHud(hero){
     }
   }
   const attackButton=$('attack');
-  if(attackButton)attackButton.setAttribute('aria-label',hero+'原始普攻动作（A）；追捕阶段命中可抓获躲藏者');
+  if(attackButton)attackButton.setAttribute('aria-label',hero+'原始普攻动作（A）；追捕阶段在有效命中帧抓获躲藏者');
 }
 function screen(p){return{x:(p.x-camera.x)*zoom+width/2,y:(p.y-camera.y)*zoom+height*.47};}
 function imagePoint(x,y){return{x:(x-width/2)/zoom+camera.x,y:(y-height*.47)/zoom+camera.y};}
@@ -253,6 +259,11 @@ function tick(now){
   if(liveSession&&!qaFrozen){
     liveSession.syncPlayer(actor,{x:Math.sin(heading),z:Math.cos(heading)});
     const view=liveSession.tick(dt);
+    if(view.attack?.resolved && view.attack.id!==lastAttackNotice){
+      lastAttackNotice=view.attack.id;
+      const result=view.attack.result;
+      toast(result?.ok?'普攻命中 · 抓捕成功':'普攻未命中 · '+(result?.reason||'目标已离开判定范围'));
+    }
     if(view.phase!==liveLastPhase){
       liveLastPhase=view.phase;
       toast(view.phase==='chase'?'追捕阶段开始':view.phase==='finished'?'实时演练已结算':'准备阶段开始');
