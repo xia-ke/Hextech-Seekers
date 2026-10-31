@@ -4,6 +4,11 @@ import {project,viewDepth,decodeDepth,directionIndex} from './projection.js';
 export const HERO_ASSET_NAMES=Object.freeze({
   '盖伦':'garen','布里茨':'blitzcrank','锐雯':'riven','亚索':'yasuo'
 });
+export function championVisualScale(meta){
+  const value=meta?.visualScale;
+  return Number.isFinite(value)&&value>0?value:1;
+}
+
 export function renderableOpponents(session) {
   if(!session)return [];
   // No direct access to hidden target locations is allowed in the drawing pipeline.
