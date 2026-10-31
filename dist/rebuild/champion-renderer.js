@@ -16,10 +16,8 @@ export class ChampionAtlasRenderer {
     this.resources=new Map();this.failures=new Map();this.cache=new Map();
     this.work=document.createElement('canvas');this.work.width=this.work.height=256;
     this.wctx=this.work.getContext('2d',{willReadFrequently:true});
-    this.mask=document.createElement('canvas');this.mask.width=this.mask.height=256;
-    this.maskctx=this.mask.getContext('2d');
-    this.maskData=this.maskctx.createImageData(256,256);
-    this.maskKey='';
+    // Per-actor occlusion buffer prevents other heroes invalidating this sprite.
+    this.masks=new Map();
   }
   async load(hero) {
     const slug=HERO_ASSET_NAMES[hero];
@@ -79,9 +77,17 @@ export class ChampionAtlasRenderer {
     const point=project(this.map,world),p=this.screen(point);
     const ratio=this.map.ppu/meta.ppu,scale=ratio*zoom;
     if(p.x<-256||p.x>this.ctx.canvas.width+256||p.y<-256||p.y>this.ctx.canvas.height+256)return false;
+    const maskId=actor.id||hero;
+    let mask=this.masks.get(maskId);
+    if(!mask){
+      const canvas=document.createElement('canvas');canvas.width=canvas.height=256;
+      const context=canvas.getContext('2d');
+      mask={canvas,context,data:context.createImageData(256,256),key:''};
+      this.masks.set(maskId,mask);
+    }
     const maskKey=frame.key+':'+actor.x.toFixed(2)+':'+actor.z.toFixed(2)+':'+this.tiles.version;
-    if(maskKey!==this.maskKey){
-      const pixels=this.maskData.data;pixels.set(frame.rgba);
+    if(maskKey!==mask.key){
+      const pixels=mask.data.data;pixels.set(frame.rgba);
       const baseDepth=viewDepth(world),size=meta.tileSize;
       for(const i of frame.opaque){
         const index=i>>2,x=index%size,y=(index/size)|0;
@@ -89,9 +95,9 @@ export class ChampionAtlasRenderer {
         const local=decodeDepth(frame.depth[i],frame.depth[i+1],1024,16);
         if(terrain!=null&&terrain>baseDepth+local+5)pixels[i+3]=0;
       }
-      this.maskctx.putImageData(this.maskData,0,0);this.maskKey=maskKey;
+      mask.context.putImageData(mask.data,0,0);mask.key=maskKey;
     }
-    this.ctx.drawImage(this.mask,p.x-meta.pivot[0]*scale,p.y-meta.pivot[1]*scale,sizeScale(meta,scale),sizeScale(meta,scale));
+    this.ctx.drawImage(mask.canvas,p.x-meta.pivot[0]*scale,p.y-meta.pivot[1]*scale,sizeScale(meta,scale),sizeScale(meta,scale));
     return true;
   }
 }
