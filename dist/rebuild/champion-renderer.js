@@ -75,7 +75,7 @@ export class ChampionAtlasRenderer {
     const frame=this.frame(hero,clip,directionIndex(heading,meta.directions),frameIndex);
     const world={x:actor.x,y:this.heightAt(actor.x,actor.z),z:actor.z};
     const point=project(this.map,world),p=this.screen(point);
-    const ratio=this.map.ppu/meta.ppu,worldScale=ratio*(meta.visualScale||1),scale=worldScale*zoom;
+    const ratio=this.map.ppu/meta.ppu,worldScale=ratio*championVisualScale(meta),scale=worldScale*zoom;
     if(p.x<-256||p.x>this.ctx.canvas.width+256||p.y<-256||p.y>this.ctx.canvas.height+256)return false;
     const maskId=actor.id||hero;
     let mask=this.masks.get(maskId);
