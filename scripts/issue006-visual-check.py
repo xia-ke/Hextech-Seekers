@@ -60,6 +60,30 @@ try:
         if len(assets)!=4 or not all(assets.values()):
             raise AssertionError('Original atlases did not load: '+str(assets))
         if errors:raise AssertionError('Browser page errors: '+str(errors))
+        # Exercise every original champion as the actual controllable player,
+        # not merely as a loaded NPC atlas.
+        for player_hero in ['盖伦','布里茨','锐雯','亚索']:
+            status=page.evaluate("""hero=>{
+              window.__hextechLive.stop();
+              window.__hextechLive.start({
+                totalPlayers:4,playerRole:'hunter',playerHero:hero
+              });
+              return {
+                selected:window.__hextechLive.selectedHero(),
+                player:window.__hextechLive.snapshot().players[0].hero
+              };
+            }""",player_hero)
+            if status != {'selected':player_hero,'player':player_hero}:
+                raise AssertionError('Playable hero mismatch: '+str(status))
+            page.locator('#attack').click()
+            page.wait_for_timeout(120)
+        page.evaluate("""()=>{
+          window.__hextechLive.stop();
+          window.__hextechLive.start({
+            totalPlayers:4,playerRole:'hunter',playerHero:'盖伦'
+          });
+        }""")
+        if errors:raise AssertionError('Browser errors after four playable heroes: '+str(errors))
         staged=page.evaluate('window.__hextechLive.stageForVisualQA()')
         if len(staged)!=3:raise AssertionError('Could not stage 3 visible real enemy sprites: '+str(staged))
         page.wait_for_timeout(250)
