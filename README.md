@@ -102,3 +102,7 @@ python3 scripts/build-issue006-champions.py --source /tmp/hextech-issue006
 本轮将峡谷 WebP 彩色地图片块和 PNG 深度图在专用 Worker 中解码并传回主线程，同时缓存可见 tile 列表和回收 ImageBitmap。未修改原始峡谷画质、英雄贴图、地形深度或战斗规则。完成 61/61 Node 测试与 Chromium 视觉回归；[CI 结果](https://github.com/xia-ke/Hextech-Seekers/actions/runs/41176994917)、[独立的性能数据](docs/implementation/issue006-visual/render-performance.json)。
 
 **性能结论保留**：无头 SwiftShader 静止视角约 34 FPS、RAF P95 16.8ms；跨区域镜头跳转约 9 FPS、RAF P95 316.7ms，未达到稳定流畅要求。Worker 14 张彩色瓦片和 14 张深度瓦片真实执行（0 错误、0 回退）。无正面性能收益的整张底图裁剪实验默认关闭，仅 localhost 可测试。需要真实 GPU 浏览器 Profiling 后再决定渲染管线升级。Issue 006 仍为 PARTIAL，体验站点未同步。
+
+## 原生 Windows 迁移（Unity + URP）— Phase 1
+
+现有网页保留在 `dist/`，独立原生工程见 [native-unity/](native-unity/README.md)。已实现原始 `map.glb` 校验下载、GLTFast 3D 加载入口、原始 `navigation.bin` C# A*、55° 摄像机、Unity 场景生成和 Windows 构建入口；查看 [迁移审查与未完成项](docs/implementation/native-unity-phase1.md)。**尚未在 Unity Editor 编译、导入实际场景或生成 Windows 可执行程序；不要视为完整可玩游戏。**

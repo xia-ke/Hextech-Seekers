@@ -7,6 +7,7 @@ on:
 jobs:
   validate-source-contract:
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -14,6 +15,8 @@ jobs:
           python-version: '3.12'
       - name: Verify existing web baseline is preserved and native import contracts match sources
         run: python -m unittest discover -s native-unity/tools -p 'validate_migration.py' -v
+      - name: Fetch and verify pinned original Map11 GLB for the native client
+        run: python native-unity/tools/prepare_assets.py
       - name: Check Python scripts compile without Unity
         run: python -m py_compile native-unity/tools/*.py
       - name: Validate Unity Package Manager manifest JSON
