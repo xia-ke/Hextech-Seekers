@@ -27,7 +27,7 @@ if(root){
         <div class="round-ai" id="round-ai"><p>实际峡谷导航与独立视线 AI 演练：需要峡谷加载完成；不包含完整原版视野、攻击或角色模型渲染。</p><button type="button" id="round-nav-init">初始化导航角色</button><button type="button" id="round-nav-step" disabled>模拟移动 5 秒</button><pre id="round-nav-status">尚未初始化</pre></div>
         <div id="round-result"></div>
         <div class="round-ai">
-          <p>实时集成演练：使用原峡谷盖伦操控、真实经过时间、AI 导航及独立视线。其他角色只显示视野内诊断圈，不是英雄模型；准备阶段追捕者不能移动。</p>
+          <p>实时集成演练：可选择盖伦、布里茨、锐雯、亚索，使用各自原始模型与普攻动画；按真实经过时间驱动 AI 导航、抓捕和基础独立视线。准备阶段追捕者不能移动；仍不是完整正式对局。</p>
           <button type="button" id="round-live-start">启动实时演练（所选英雄）</button>
           <button type="button" id="round-live-stop" disabled>停止实时演练</button>
           <pre id="round-live-status">尚未启动</pre><p id="round-asset-status" class="round-notice">尚未核对原始英雄素材</p>
