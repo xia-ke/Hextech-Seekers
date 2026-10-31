@@ -117,3 +117,24 @@ test('invalid input and invalid phase stepping are rejected',()=>{
  const s=createLiveSession(grid(),{start:{x:150,z:150},spawns:spawn});
  assert.throws(()=>s.tick(-1),RangeError);
 });
+
+import {ATTACK_PROFILES,attackTimingFor} from '../dist/rebuild/attack-profile.js';
+
+test('each original hero uses an individually calibrated attack contact frame',()=>{
+ const expected={'盖伦':4,'布里茨':8,'锐雯':4,'亚索':4};
+ assert.deepEqual(Object.fromEntries(Object.entries(ATTACK_PROFILES).map(([hero,p])=>[hero,p.contactFrame])),expected);
+});
+test('attack timing starts at the selected visible atlas frame, not one frame later',()=>{
+ const durations={'盖伦':2,'布里茨':14/15,'锐雯':17/10,'亚索':5/3};
+ for(const [hero,contactFrame] of Object.entries({'盖伦':4,'布里茨':8,'锐雯':4,'亚索':4})){
+   const timing=attackTimingFor(hero,{frames:12,duration:durations[hero]});
+   assert.equal(timing.contactFrame,contactFrame);
+   assert.ok(Math.abs(timing.hitAt/durations[hero]-(contactFrame-1)/12)<1e-12);
+   assert.equal(Math.floor(timing.hitAt/durations[hero]*12)+1,contactFrame);
+ }
+});
+test('attack profile rejects unknown heroes and mismatched animation atlases',()=>{
+ assert.throws(()=>attackTimingFor('未知英雄',{frames:12,duration:1}),/Unsupported attack profile/);
+ assert.throws(()=>attackTimingFor('盖伦',{frames:8,duration:1}),/12-frame/);
+ assert.throws(()=>attackTimingFor('盖伦',{frames:12,duration:0}),/Invalid attack clip/);
+});

@@ -1,6 +1,7 @@
 import { NavGrid } from './navigation.js';
 import {createLiveSession} from './live-session.js';
 import {ChampionAtlasRenderer,renderableOpponents} from './champion-renderer.js';
+import {attackTimingFor} from './attack-profile.js';
 import { project, unproject, viewDepth, decodeDepth, directionIndex, SIN, COS } from './projection.js';
 
 const $ = id => document.getElementById(id);
@@ -38,11 +39,12 @@ function attack(){
  const clip=heroSprite.clips.attack1,duration=clip.duration;
  path=[];animTime=0;attackAnimUntil=duration;
  if(liveSession){
-   // The contact point is currently a provisional midpoint of the original
-   // attack clip; per-hero hit-frame calibration remains a visual task.
-   const result=liveSession.beginPlayerAttack({duration,hitAt:duration*(7/12)});
+   // Each hero uses its own first sustained weapon-strike pose from the
+   // original 12-frame contact sheet. These are visual estimates, not LoL hitbox data.
+   const timing=attackTimingFor(playerHero,clip);
+   const result=liveSession.beginPlayerAttack({duration,hitAt:timing.hitAt});
    if(!result.ok){attackAnimUntil=0;toast('实时演练：'+result.reason);return;}
-   toast('普攻动作开始 · 命中帧待校准');
+   toast('普攻动作开始 · 第'+timing.contactFrame+'帧判定（视觉估算）');
  }else toast('攻击动作预览 · 当前无伤害或抓捕判定');
  updateUI();paint();
 }
