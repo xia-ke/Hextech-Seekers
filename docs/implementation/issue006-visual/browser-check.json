@@ -15,7 +15,7 @@
     {
       "hero": "盖伦",
       "attack_id": 1,
-      "hit_at": 1.1666666666666667,
+      "hit_at": 0.500002,
       "duration": 2,
       "result": {
         "ok": true,
@@ -27,7 +27,7 @@
     {
       "hero": "布里茨",
       "attack_id": 1,
-      "hit_at": 0.5444444444444445,
+      "hit_at": 0.5444453777777778,
       "duration": 0.9333333333333333,
       "result": {
         "ok": true,
@@ -39,26 +39,26 @@
     {
       "hero": "锐雯",
       "attack_id": 1,
-      "hit_at": 0.9916666666666667,
+      "hit_at": 0.4250016999999999,
       "duration": 1.7,
       "result": {
         "ok": true,
         "reason": "captured",
         "target": "ai-1"
       },
-      "finished": false
+      "finished": true
     },
     {
       "hero": "亚索",
       "attack_id": 1,
-      "hit_at": 0.9722222222222223,
+      "hit_at": 0.4166683333333333,
       "duration": 1.6666666666666667,
       "result": {
         "ok": true,
         "reason": "captured",
         "target": "ai-1"
       },
-      "finished": false
+      "finished": true
     }
   ],
   "snapshot": {
@@ -117,13 +117,13 @@
     ]
   },
   "performance": {
-    "fpsText": "12 FPS · draw p95 2.9ms · RAF p95 217ms",
+    "fpsText": "12 FPS · draw p95 6.4ms · RAF p95 283ms",
     "rafP50": 16.69999999999709,
-    "rafP95": 216.70000000000437,
-    "drawP95": 2.900000000023283,
-    "mapP95": 0.10000000000582077,
-    "actorP95": 2.900000000023283,
-    "longGaps": 47,
+    "rafP95": 283.29999999999563,
+    "drawP95": 6.400000000023283,
+    "mapP95": 0.1000000000349246,
+    "actorP95": 5.599999999976717,
+    "longGaps": 58,
     "samples": 120,
     "viewport": {
       "width": 1600,

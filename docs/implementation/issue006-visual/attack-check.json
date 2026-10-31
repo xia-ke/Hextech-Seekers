@@ -2,7 +2,7 @@
   {
     "hero": "盖伦",
     "attack_id": 1,
-    "hit_at": 1.1666666666666667,
+    "hit_at": 0.500002,
     "duration": 2,
     "result": {
       "ok": true,
@@ -14,7 +14,7 @@
   {
     "hero": "布里茨",
     "attack_id": 1,
-    "hit_at": 0.5444444444444445,
+    "hit_at": 0.5444453777777778,
     "duration": 0.9333333333333333,
     "result": {
       "ok": true,
@@ -26,25 +26,25 @@
   {
     "hero": "锐雯",
     "attack_id": 1,
-    "hit_at": 0.9916666666666667,
+    "hit_at": 0.4250016999999999,
     "duration": 1.7,
     "result": {
       "ok": true,
       "reason": "captured",
       "target": "ai-1"
     },
-    "finished": false
+    "finished": true
   },
   {
     "hero": "亚索",
     "attack_id": 1,
-    "hit_at": 0.9722222222222223,
+    "hit_at": 0.4166683333333333,
     "duration": 1.6666666666666667,
     "result": {
       "ok": true,
       "reason": "captured",
       "target": "ai-1"
     },
-    "finished": false
+    "finished": true
   }
 ]
