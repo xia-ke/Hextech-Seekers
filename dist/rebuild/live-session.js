@@ -1,5 +1,5 @@
-// Issue 005: live, single-clock simulation over the Rift navigation grid.
-// This remains an integration diagnostic until all champions and official vision are rendered.
+// Issue 005/006: single-clock Rift simulation with original champion assets.
+// Vision remains a conservative baseline; attack contact timing is explicitly provisional.
 import {setupRound,advanceRound} from './match.js';
 import {createActors,chooseAiDestination,stepActor,meleeHit,CAPTURE_RANGE} from './encounter.js';
 import {makeVision} from './vision-baseline.js';
@@ -18,6 +18,7 @@ export function createLiveSession(nav,{totalPlayers=2,playerRole='hunter',player
   });
   const player=actors.get('player');
   let aiDecisionAccumulator=0,aiAttackAccumulator=0,lastPlayerCaptureAt=-Infinity;
+  let nextPlayerAttackAt=-Infinity,attackSequence=0,attackState=null;
   function syncPlayer(position,facing) {
     if(!player.active||match.phase==='finished')return false;
     if(match.phase==='prepare'&&player.role==='hunter')return false;
@@ -45,6 +46,17 @@ export function createLiveSession(nav,{totalPlayers=2,playerRole='hunter',player
     if(hit.ok)lastPlayerCaptureAt=match.elapsed;
     return hit;
   }
+  function beginPlayerAttack({duration=.7,hitAt=.35}={}) {
+    if(match.phase!=='chase'||!player.active||player.role!=='hunter')
+      return {ok:false,reason:'not-hunter-or-not-chasing'};
+    if(attackState&&!attackState.resolved)return {ok:false,reason:'attack-in-progress'};
+    if(match.elapsed<nextPlayerAttackAt)return {ok:false,reason:'attack-cooldown'};
+    if(!Number.isFinite(duration)||!Number.isFinite(hitAt)||duration<=0||hitAt<0||hitAt>duration)
+      throw new RangeError('Invalid attack timing');
+    nextPlayerAttackAt=match.elapsed+.8;
+    attackState={id:++attackSequence,elapsed:0,duration,hitAt,resolved:false,result:null};
+    return {ok:true,reason:'started',attackId:attackState.id,duration,hitAt};
+  }
   function tick(seconds) {
     if(!Number.isFinite(seconds)||seconds<0)throw new RangeError('Invalid delta');
     if(match.phase==='finished')return snapshot();
@@ -56,6 +68,15 @@ export function createLiveSession(nav,{totalPlayers=2,playerRole='hunter',player
       if(dt<=0)break;
       advanceRound(match,dt);
       remaining-=dt;
+      if(attackState&&!attackState.resolved){
+        const before=attackState.elapsed;
+        attackState.elapsed=Math.min(attackState.duration,attackState.elapsed+dt);
+        if(before<attackState.hitAt&&attackState.elapsed>=attackState.hitAt){
+          attackState.result=playerAttack();
+          attackState.resolved=true;
+        }
+        if(attackState.elapsed>=attackState.duration)attackState.finished=true;
+      }
       if(match.phase==='finished')break;
       aiDecisionAccumulator+=dt;aiAttackAccumulator+=dt;
       if(aiDecisionAccumulator>=.5){
@@ -98,7 +119,8 @@ export function createLiveSession(nav,{totalPlayers=2,playerRole='hunter',player
       playerActive:player.active,playerRole:player.role,
       visible:visibleToPlayer(),
       result:match.result,
+      attack:attackState?{...attackState}:null,
       players:match.players.map(p=>({id:p.id,hero:p.hero,role:p.role,caught:p.caught}))};
   }
-  return {match,actors,vision,tick,syncPlayer,playerAttack,snapshot};
+  return {match,actors,vision,tick,syncPlayer,playerAttack,beginPlayerAttack,snapshot};
 }
