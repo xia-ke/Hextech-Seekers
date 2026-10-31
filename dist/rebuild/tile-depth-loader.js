@@ -27,7 +27,7 @@ export class TileDepthLoader {
       const result=await new Promise((resolve,reject)=>{
         const id=++this.nextId;
         this.jobs.set(id,{resolve,reject});
-        try{this.worker.postMessage({id,url,size});}
+        try{this.worker.postMessage({id,url:new URL(url,document.baseURI).href,size});}
         catch(e){this.jobs.delete(id);reject(e);}
       });
       this.stats.workerDecoded++;return result;
