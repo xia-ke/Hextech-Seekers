@@ -129,12 +129,37 @@ test('attack timing starts at the selected visible atlas frame, not one frame la
  for(const [hero,contactFrame] of Object.entries({'盖伦':4,'布里茨':8,'锐雯':4,'亚索':4})){
    const timing=attackTimingFor(hero,{frames:12,duration:durations[hero]});
    assert.equal(timing.contactFrame,contactFrame);
-   assert.ok(Math.abs(timing.hitAt/durations[hero]-(contactFrame-1)/12)<1e-12);
+   assert.ok(Math.abs(timing.hitAt/durations[hero]-((contactFrame-1)/12+1e-6))<1e-12);
    assert.equal(Math.floor(timing.hitAt/durations[hero]*12)+1,contactFrame);
+   assert.ok(timing.hitbox.range>0&&timing.hitbox.halfWidth>0);
  }
 });
 test('attack profile rejects unknown heroes and mismatched animation atlases',()=>{
  assert.throws(()=>attackTimingFor('未知英雄',{frames:12,duration:1}),/Unsupported attack profile/);
  assert.throws(()=>attackTimingFor('盖伦',{frames:8,duration:1}),/12-frame/);
  assert.throws(()=>attackTimingFor('盖伦',{frames:12,duration:0}),/Invalid attack clip/);
+});
+
+test('hero-specific attack hitboxes use a forward capsule and reject lateral misses',()=>{
+ const s=createLiveSession(grid(),{start:{x:150,z:150},spawns:spawn});
+ for(let i=0;i<120;i++)s.tick(1);
+ const enemy=s.actors.get('ai-1');enemy.x=250;enemy.z=150;enemy.route=[];
+ s.syncPlayer({x:150,z:150},{x:1,z:0});
+ assert.equal(s.beginPlayerAttack({duration:1,hitAt:.5,hitbox:{range:140,halfWidth:25}}).ok,true);
+ s.tick(.51);
+ assert.equal(s.snapshot().attack.result.ok,true);
+});
+test('hero-specific attack capsule rejects targets beside the weapon path',()=>{
+ const s=createLiveSession(grid(),{start:{x:150,z:150},spawns:spawn});
+ for(let i=0;i<120;i++)s.tick(1);
+ const enemy=s.actors.get('ai-1');enemy.x=200;enemy.z=190;enemy.route=[];
+ s.syncPlayer({x:150,z:150},{x:1,z:0});
+ s.beginPlayerAttack({duration:1,hitAt:.5,hitbox:{range:140,halfWidth:25}});
+ s.tick(.51);
+ assert.equal(enemy.active,true);
+ assert.equal(s.snapshot().attack.result.reason,'outside-hitbox');
+});
+test('hero attack profiles have independent weapon reach and width',()=>{
+ const values=Object.values(ATTACK_PROFILES).map(p=>[p.range,p.halfWidth]);
+ assert.equal(new Set(values.map(v=>v.join(':'))).size,4);
 });

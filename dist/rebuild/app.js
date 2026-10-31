@@ -42,7 +42,7 @@ function attack(){
    // Each hero uses its own first sustained weapon-strike pose from the
    // original 12-frame contact sheet. These are visual estimates, not LoL hitbox data.
    const timing=attackTimingFor(playerHero,clip);
-   const result=liveSession.beginPlayerAttack({duration,hitAt:timing.hitAt});
+   const result=liveSession.beginPlayerAttack({duration,hitAt:timing.hitAt,hitbox:timing.hitbox});
    if(!result.ok){attackAnimUntil=0;toast('实时演练：'+result.reason);return;}
    toast('普攻动作开始 · 第'+timing.contactFrame+'帧判定（视觉估算）');
  }else toast('攻击动作预览 · 当前无伤害或抓捕判定');

@@ -43,13 +43,26 @@ export function stepActor(actor, nav, seconds, match) {
     if(distance>=dist-0.001)actor.route.shift();
   }
 }
-export function meleeHit(attacker,target,match,{visible,clearPath,range=CAPTURE_RANGE}={}) {
+export function meleeHit(attacker,target,match,{visible,clearPath,range=CAPTURE_RANGE,hitbox=null}={}) {
   if(match.phase!=='chase'||!attacker?.active||!target?.active)return {ok:false,reason:'inactive'};
   if(attacker.role!=='hunter'||target.role!=='hider')return {ok:false,reason:'wrong-role'};
   if(typeof visible!=='function'||!visible(attacker,target))return {ok:false,reason:'not-visible'};
   const dx=target.x-attacker.x,dz=target.z-attacker.z,dist=Math.hypot(dx,dz);
-  if(dist>range)return {ok:false,reason:'out-of-range'};
-  if(dist>0.001 && (dx*attacker.facing.x+dz*attacker.facing.z)/dist<CAPTURE_ARC_COS)return {ok:false,reason:'outside-facing'};
+  if(hitbox){
+    const reach=Number(hitbox.range),halfWidth=Number(hitbox.halfWidth);
+    if(!Number.isFinite(reach)||reach<=0||!Number.isFinite(halfWidth)||halfWidth<=0)
+      throw new RangeError('Invalid melee hitbox');
+    const facingLength=Math.hypot(attacker.facing?.x||0,attacker.facing?.z||0);
+    if(facingLength<1e-6)return {ok:false,reason:'outside-facing'};
+    const fx=attacker.facing.x/facingLength,fz=attacker.facing.z/facingLength;
+    const along=dx*fx+dz*fz;
+    if(along<0||along>reach)return {ok:false,reason:'out-of-range'};
+    const lateral=Math.abs(dx*fz-dz*fx);
+    if(lateral>halfWidth)return {ok:false,reason:'outside-hitbox'};
+  }else{
+    if(dist>range)return {ok:false,reason:'out-of-range'};
+    if(dist>0.001 && (dx*attacker.facing.x+dz*attacker.facing.z)/dist<CAPTURE_ARC_COS)return {ok:false,reason:'outside-facing'};
+  }
   if(typeof clearPath!=='function'||!clearPath(attacker,target))return {ok:false,reason:'obstructed'};
   if(!catchHider(match,target.id))return {ok:false,reason:'already-caught'};
   target.active=false;target.route=[];

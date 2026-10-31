@@ -34,19 +34,22 @@ export function createLiveSession(nav,{totalPlayers=2,playerRole='hunter',player
       id:a.id,hero:match.players.find(p=>p.id===a.id).hero,x:a.x,z:a.z
     }));
   }
-  function playerAttack() {
+  function playerAttack({hitbox=null}={}) {
     if(match.phase!=='chase'||!player.active||player.role!=='hunter')
       return {ok:false,reason:'not-hunter-or-not-chasing'};
-    const target=vision.visibleOpponents(player,actors)
-      .filter(a=>Math.hypot(a.x-player.x,a.z-player.z)<=CAPTURE_RANGE)
-      .sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z))[0];
-    if(!target)return {ok:false,reason:'no-visible-target-in-range'};
+    const targets=vision.visibleOpponents(player,actors)
+      .sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z));
+    if(!targets.length)return {ok:false,reason:'no-visible-target-in-range'};
     if(match.elapsed-lastPlayerCaptureAt<0.8)return {ok:false,reason:'attack-cooldown'};
-    const hit=meleeHit(player,target,match,{visible:vision.canSee,clearPath:vision.hasLineOfSight});
-    if(hit.ok)lastPlayerCaptureAt=match.elapsed;
-    return hit;
+    let firstFailure={ok:false,reason:'no-visible-target-in-range'};
+    for(const target of targets){
+      const hit=meleeHit(player,target,match,{visible:vision.canSee,clearPath:vision.hasLineOfSight,hitbox});
+      if(hit.ok){lastPlayerCaptureAt=match.elapsed;return hit;}
+      if(firstFailure.reason==='no-visible-target-in-range')firstFailure=hit;
+    }
+    return firstFailure;
   }
-  function beginPlayerAttack({duration=.7,hitAt=.35}={}) {
+  function beginPlayerAttack({duration=.7,hitAt=.35,hitbox=null}={}) {
     if(match.phase!=='chase'||!player.active||player.role!=='hunter')
       return {ok:false,reason:'not-hunter-or-not-chasing'};
     if(attackState&&!attackState.finished)return {ok:false,reason:'attack-in-progress'};
@@ -54,7 +57,8 @@ export function createLiveSession(nav,{totalPlayers=2,playerRole='hunter',player
     if(!Number.isFinite(duration)||!Number.isFinite(hitAt)||duration<=0||hitAt<0||hitAt>duration)
       throw new RangeError('Invalid attack timing');
     nextPlayerAttackAt=match.elapsed+.8;
-    attackState={id:++attackSequence,elapsed:0,duration,hitAt,resolved:false,finished:false,result:null};
+    if(hitbox&&(!Number.isFinite(hitbox.range)||hitbox.range<=0||!Number.isFinite(hitbox.halfWidth)||hitbox.halfWidth<=0))throw new RangeError('Invalid attack hitbox');
+    attackState={id:++attackSequence,elapsed:0,duration,hitAt,hitbox:hitbox?{...hitbox}:null,resolved:false,finished:false,result:null};
     return {ok:true,reason:'started',attackId:attackState.id,duration,hitAt};
   }
   function tick(seconds,{freezeAI=false}={}) {
@@ -72,7 +76,7 @@ export function createLiveSession(nav,{totalPlayers=2,playerRole='hunter',player
         const before=attackState.elapsed;
         attackState.elapsed=Math.min(attackState.duration,attackState.elapsed+dt);
         if(!attackState.resolved&&before<attackState.hitAt&&attackState.elapsed>=attackState.hitAt){
-          attackState.result=playerAttack();
+          attackState.result=playerAttack({hitbox:attackState.hitbox});
           attackState.resolved=true;
         }
         if(attackState.elapsed>=attackState.duration)attackState.finished=true;
