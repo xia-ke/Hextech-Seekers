@@ -111,6 +111,35 @@ try:
                 'hit_at':attack['hitAt'],'duration':attack['duration'],
                 'result':attack['result'],'finished':attack['finished']
             })
+        # Real Rift browser-level boundary cases, not just isolated JS mocks.
+        boundary_results=[]
+        for mode in ['front','back','side','escape']:
+            page.evaluate("""()=>{
+              window.__hextechLive.stop();
+              window.__hextechLive.start({totalPlayers:4,playerRole:'hunter',playerHero:'盖伦'});
+              window.__hextechLive.advanceForVisualQA(120);
+            }""")
+            staged=page.evaluate('mode=>window.__hextechLive.stageAttackForVisualQA(mode)',mode)
+            if not staged['visible'] or staged['distance']>180:
+                raise AssertionError('Invalid Rift combat scenario '+mode+': '+str(staged))
+            page.locator('#attack').click()
+            if mode=='escape':
+                displaced=page.evaluate('window.__hextechLive.relocateAttackTargetForVisualQA()')
+                if not displaced['visible'] or displaced['distance']<=350:
+                    raise AssertionError('Escape target did not move to visible safe distance: '+str(displaced))
+            page.wait_for_function('window.__hextechLive.snapshot().attack?.resolved===true',timeout=8000)
+            combat=page.evaluate('window.__hextechLive.snapshot().attack')
+            expected={'front':True,'back':False,'side':False,'escape':False}[mode]
+            if combat['result']['ok'] is not expected:
+                raise AssertionError('Rift '+mode+' combat result mismatch: '+str(combat))
+            if mode=='back' and combat['result']['reason'] not in ('outside-facing','out-of-range'):
+                raise AssertionError('Back-facing attack not rejected: '+str(combat))
+            if mode=='side' and combat['result']['reason'] not in ('outside-hitbox','out-of-range'):
+                raise AssertionError('Side attack not rejected: '+str(combat))
+            if mode=='escape' and combat['result']['reason'] not in ('out-of-range','outside-hitbox'):
+                raise AssertionError('Moving target attack not rejected: '+str(combat))
+            boundary_results.append({'scenario':mode,'staged':staged,'result':combat['result']})
+        (OUT/'combat-boundary-check.json').write_text(json.dumps(boundary_results,ensure_ascii=False,indent=2))
         (OUT/'attack-check.json').write_text(json.dumps(attack_results,ensure_ascii=False,indent=2))
         page.evaluate("""()=>{
           window.__hextechLive.stop();
@@ -134,7 +163,7 @@ try:
         assert len(snapshot['visible'])==3,('Visible original sprites missing',snapshot['visible'])
         assert perf['samples']>0,perf
         (OUT/'browser-check.json').write_text(json.dumps(
-            {'asset_status':assets,'visual_scales':scales,'attack_results':attack_results,'snapshot':snapshot,'performance':perf,
+            {'asset_status':assets,'visual_scales':scales,'attack_results':attack_results,'combat_boundary_results':boundary_results,'snapshot':snapshot,'performance':perf,
              'page_errors':errors,'viewport':{'width':1600,'height':900}},
             ensure_ascii=False,indent=2))
         # Separate atlas inspection sheet is a screenshot rendered by real Chromium.
