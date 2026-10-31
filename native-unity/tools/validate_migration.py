@@ -33,12 +33,34 @@ class Phase1Tests(unittest.TestCase):
         self.assertIn(sha,fetch)
         self.assertIn(sha,prep)
         self.assertIn('media.githubusercontent.com/media/iamywl/Web_game',prep)
-    def test_no_fake_hero_assets_and_player_build_guard(self):
+    def test_real_skinned_hero_and_player_build_guard(self):
         boot=(ROOT/'Assets/Scripts/RiftBootstrap.cs').read_text()
-        self.assertIn('NAVIGATION_DEBUG_MARKER_NOT_A_CHAMPION',boot)
+        self.assertIn('GarenRigRuntime.Load(transform, heroPath)',boot)
         self.assertIn('Failed to instantiate original 3D map.glb',boot)
         editor=(ROOT/'Assets/Editor/HextechNativeSetup.cs').read_text()
         self.assertIn('BuildTarget.StandaloneWindows64',editor)
         self.assertIn('File.Exists(rift)',editor)
+        self.assertIn('Missing original skinned Garen asset',editor)
+
+    def test_native_original_garen_bone_and_motion_contract(self):
+        import struct
+        m=json.loads((REPO/'dist/assets/native/garen.json').read_text())
+        raw=(REPO/'dist/assets/native/garen.bin').read_bytes()
+        self.assertEqual(m['hero'],'Garen')
+        self.assertEqual(len(m['bones']),68)
+        self.assertEqual(set(x['name'] for x in m['clips']) & {'idle1','run','attack1'}, {'idle1','run','attack1'})
+        geo=m['geometry']
+        vertex_count=geo['position']['count']//3
+        self.assertEqual(vertex_count,geo['uv']['count']//2)
+        self.assertEqual(vertex_count,geo['skinIndex']['count']//4)
+        self.assertEqual(vertex_count,geo['skinWeight']['count']//4)
+        for view in [*geo.values(), *(v for clip in m['clips'] for t in clip['tracks'] for v in [t['times'],t['position'],t['quaternion'],t['scale']])]:
+            size=2 if view['type']=='H' else 4
+            self.assertLessEqual(view['offset']+view['count']*size,len(raw))
+        mesh=(ROOT/'Assets/Scripts/GarenRigRuntime.cs').read_text()
+        for marker in ('SkinnedMeshRenderer','boneWeights','bindposes','ChangeClip(', 'PlayAttack()', 'trackBuffers'):
+            self.assertIn(marker,mesh)
+        prep=(ROOT/'tools/prepare_assets.py').read_text()
+        self.assertIn("('garen.json','garen.bin','garen_base_tx_cm.png')",prep)
 
 if __name__=='__main__':unittest.main()
