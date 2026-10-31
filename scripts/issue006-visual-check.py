@@ -83,6 +83,14 @@ try:
                 raise AssertionError('Playable hero mismatch: '+str(status))
             assert page.locator('.champion strong').inner_text()==player_hero
             assert page.locator('.portrait img').get_attribute('alt')==player_hero
+            portrait_pixels=page.locator('.portrait img').evaluate("""img=>{
+              const c=document.createElement('canvas');c.width=c.height=128;
+              const x=c.getContext('2d');x.drawImage(img,0,0,128,128);
+              const d=x.getImageData(0,0,128,128).data;let count=0;
+              for(let i=3;i<d.length;i+=4)if(d[i]>12)count++;
+              return count;
+            }""")
+            if portrait_pixels<500:raise AssertionError('Hero portrait is visually empty or too small: '+player_hero+' '+str(portrait_pixels))
             phase=page.evaluate('window.__hextechLive.advanceForVisualQA(120).phase')
             if phase!='chase':raise AssertionError('Hunter did not enter chase phase: '+phase)
             staged_attack=page.evaluate('window.__hextechLive.stageAttackForVisualQA()')
