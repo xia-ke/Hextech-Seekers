@@ -1,9 +1,9 @@
 {
   "name": "hextech-seekers",
-  "version": "0.9.1-asset-verified",
+  "version": "0.9.2-four-heroes.1",
   "private": true,
   "type": "module",
-  "description": "Issue 006 original four-champion atlases built and Chromium visual smoke-tested; gameplay/vision parity pending",
+  "description": "Four original champions playable in Rift live preview; Chromium verified; official LoL vision/abilities pending",
   "scripts": {
     "start": "node scripts/serve.mjs",
     "test": "node --test",
