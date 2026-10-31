@@ -7,8 +7,8 @@
   },
   "snapshot": {
     "phase": "prepare",
-    "remaining": 119.21670000000005,
-    "elapsed": 0.7833000000000004,
+    "remaining": 120,
+    "elapsed": 0,
     "playerActive": true,
     "playerRole": "hunter",
     "visible": [
@@ -60,14 +60,14 @@
     ]
   },
   "performance": {
-    "fpsText": "5 FPS · draw p95 7.0ms · RAF p95 350ms",
-    "rafP50": 16.699999999999818,
-    "rafP95": 349.90000000000055,
-    "drawP95": 7,
-    "mapP95": 0.10000000000582077,
-    "actorP95": 6.400000000023283,
-    "longGaps": 13,
-    "samples": 110,
+    "fpsText": "9 FPS · draw p95 2.8ms · RAF p95 250ms",
+    "rafP50": 16.69999999999709,
+    "rafP95": 266.59999999999854,
+    "drawP95": 2.800000000046566,
+    "mapP95": 0.1000000000349246,
+    "actorP95": 2.5,
+    "longGaps": 50,
+    "samples": 120,
     "viewport": {
       "width": 1600,
       "height": 900,
