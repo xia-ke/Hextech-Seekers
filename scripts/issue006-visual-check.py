@@ -59,6 +59,11 @@ try:
         assets=page.evaluate('window.__hextechLive.assets()')
         if len(assets)!=4 or not all(assets.values()):
             raise AssertionError('Original atlases did not load: '+str(assets))
+        scales=page.evaluate('window.__hextechLive.scales()')
+        if set(scales)!={'盖伦','布里茨','锐雯','亚索'} or any(not isinstance(v,(int,float)) or v<=0 for v in scales.values()):
+            raise AssertionError('Invalid normalized hero scales: '+str(scales))
+        if not (1.5<scales['锐雯']<3.0 and 1.2<scales['布里茨']<2.2 and .7<scales['亚索']<1.2):
+            raise AssertionError('Hero scale normalization outside measured bounds: '+str(scales))
         if errors:raise AssertionError('Browser page errors: '+str(errors))
         # Exercise every original champion as the actual controllable player,
         # not merely as a loaded NPC atlas.
@@ -113,7 +118,7 @@ try:
         assert len(snapshot['visible'])==3,('Visible original sprites missing',snapshot['visible'])
         assert perf['samples']>0,perf
         (OUT/'browser-check.json').write_text(json.dumps(
-            {'asset_status':assets,'snapshot':snapshot,'performance':perf,
+            {'asset_status':assets,'visual_scales':scales,'snapshot':snapshot,'performance':perf,
              'page_errors':errors,'viewport':{'width':1600,'height':900}},
             ensure_ascii=False,indent=2))
         # Separate atlas inspection sheet is a screenshot rendered by real Chromium.
