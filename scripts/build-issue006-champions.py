@@ -4,6 +4,7 @@ import argparse
 import json
 import subprocess
 import sys
+from PIL import Image
 from pathlib import Path
 
 CHAMPIONS={'blitzcrank':('53_0','Blitzcrank'),'riven':('92_0','Riven'),'yasuo':('157_0','Yasuo')}
@@ -38,5 +39,30 @@ def main():
             for key in ['image','depth']:
                 if not (args.output/hero/clip[key]).is_file():raise RuntimeError('Missing raster asset: '+hero+'/'+clip[key])
         print('VERIFIED',label,meta['provenance'],flush=True)
+
+    # Normalize visible character height from the first idle frame, rather
+    # than assuming independently exported meshes share the same world scale.
+    reference_path=args.output/'garen'/'idle1.webp'
+    if not reference_path.is_file():raise SystemExit('Missing Garen reference idle atlas')
+    with Image.open(reference_path) as image:
+        reference_box=image.crop((0,0,256,256)).getchannel('A').getbbox()
+    if not reference_box:raise SystemExit('Empty Garen reference idle frame')
+    reference_height=reference_box[3]-reference_box[1]
+    for hero in ['garen',*CHAMPIONS]:
+        folder=args.output/hero
+        manifest_path=folder/'sprite.json'
+        if not manifest_path.is_file():raise SystemExit('Missing sprite manifest: '+hero)
+        with Image.open(folder/'idle1.webp') as image:
+            bounds=image.crop((0,0,256,256)).getchannel('A').getbbox()
+        if not bounds:raise SystemExit('Empty idle frame: '+hero)
+        height=bounds[3]-bounds[1]
+        target=reference_height*(1.15 if hero=='blitzcrank' else 1.0)
+        meta=json.loads(manifest_path.read_text())
+        meta['visualScale']=round(target/height,4)
+        meta['scaleReference']={'hero':'garen','referenceHeightPx':reference_height,
+                                'sourceHeightPx':height,'targetHeightPx':round(target,2)}
+        manifest_path.write_text(json.dumps(meta,separators=(',',':')))
+        print('NORMALIZED',hero,'visualScale=',meta['visualScale'],
+              'height=',height,'target=',round(target,2),flush=True)
 
 if __name__=='__main__':main()
