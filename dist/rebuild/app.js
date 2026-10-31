@@ -417,20 +417,55 @@ async function boot(){
         window.__hextechFreezeQA=false;
         return liveSession.snapshot();
       },
-      stageAttackForVisualQA(){
+      stageAttackForVisualQA(mode='front'){
         if(!['127.0.0.1','localhost'].includes(location.hostname)||!new URLSearchParams(location.search).has('visualQA')||!liveSession)
           throw new Error('Local visual QA mode required');
+        if(!['front','back','side','escape'].includes(mode))throw new RangeError('Unsupported QA scenario');
         window.__hextechFreezeAI=true;
         const player=liveSession.actors.get('player');
         if(liveSession.snapshot().phase!=='chase'||player.role!=='hunter')throw new Error('QA attack requires a chasing hunter');
         const target=[...liveSession.actors.values()].find(a=>a.active&&a.role==='hider');
         if(!target)throw new Error('No active hider available');
-        const point=nav.nearest(player.x+100,player.z,4);
-        if(!point)throw new Error('No valid QA contact position');
-        target.x=point.x;target.z=point.z;target.route=[];
+        let point=null;
+        // Choose a grounded, genuinely visible location, not an assumed open cell.
+        for(const radius of [95,105,115,125]){
+          for(let dir=0;dir<16;dir++){
+            const rad=dir*Math.PI/8;
+            const p=nav.nearest(player.x+Math.cos(rad)*radius,player.z+Math.sin(rad)*radius,3);
+            if(!p||Math.hypot(p.x-player.x,p.z-player.z)<50)continue;
+            const candidate={...target,x:p.x,z:p.z,active:true};
+            if(liveSession.vision.canSee(player,candidate)){point=p;break;}
+          }
+          if(point)break;
+        }
+        if(!point)throw new Error('No legal visible attack QA location');
+        target.x=point.x;target.z=point.z;target.route=[];target.active=true;
         const dx=target.x-player.x,dz=target.z-player.z,length=Math.hypot(dx,dz)||1;
-        player.facing={x:dx/length,z:dz/length};heading=Math.atan2(dx,dz);
-        return {distance:length,visible:liveSession.vision.canSee(player,target),target:target.id};
+        let fx=dx/length,fz=dz/length;
+        if(mode==='back'){fx=-fx;fz=-fz;}
+        if(mode==='side'){const tmp=fx;fx=-fz;fz=tmp;}
+        player.facing={x:fx,z:fz};heading=Math.atan2(fx,fz);
+        return {mode,distance:length,visible:liveSession.vision.canSee(player,target),target:target.id};
+      },
+      relocateAttackTargetForVisualQA(){
+        if(!['127.0.0.1','localhost'].includes(location.hostname)||!new URLSearchParams(location.search).has('visualQA')||!liveSession)
+          throw new Error('Local visual QA mode required');
+        const player=liveSession.actors.get('player');
+        const target=[...liveSession.actors.values()].find(a=>a.active&&a.role==='hider');
+        if(!target)throw new Error('No living QA target');
+        let point=null;
+        for(const radius of [480,550,650,750]){
+          for(let dir=0;dir<16;dir++){
+            const radians=dir*Math.PI/8;
+            const p=nav.nearest(player.x+Math.cos(radians)*radius,player.z+Math.sin(radians)*radius,4);
+            if(!p||Math.hypot(p.x-player.x,p.z-player.z)<=350)continue;
+            if(liveSession.vision.canSee(player,{...target,x:p.x,z:p.z})){point=p;break;}
+          }
+          if(point)break;
+        }
+        if(!point)throw new Error('No visible distant QA retreat cell');
+        target.x=point.x;target.z=point.z;target.route=[];
+        return {distance:Math.hypot(player.x-target.x,player.z-target.z),visible:liveSession.vision.canSee(player,target)};
       },
       stageForVisualQA(){
         // Only on an expressly requested localhost Chromium QA run.
