@@ -45,6 +45,8 @@ namespace HextechSeekers.Native
         Quaternion[] defaultRotations;
         Vector3[] defaultScales;
         Dictionary<string, MotionClip> motions;
+        sealed class TrackBuffer { public Vector3[] p; public Quaternion[] q; public Vector3[] s; }
+        Dictionary<Track, TrackBuffer> trackBuffers;
         MotionClip current;
         float time;
         bool attacking;
@@ -215,6 +217,19 @@ namespace HextechSeekers.Native
             motions = new Dictionary<string, MotionClip>(StringComparer.OrdinalIgnoreCase);
             foreach (var clip in model.clips)
                 if (clip != null && !string.IsNullOrEmpty(clip.name)) motions[clip.name] = clip;
+            trackBuffers = new Dictionary<Track, TrackBuffer>();
+            foreach (var clip in motions.Values)
+            foreach (var track in clip.tracks ?? Array.Empty<Track>())
+            {
+                var ps = Vec3(ReadFloats(raw, track.position));
+                var flat = ReadFloats(raw, track.quaternion);
+                if (flat.Length != ps.Length * 4) throw new InvalidDataException("Invalid quaternion track size");
+                var qs = new Quaternion[ps.Length];
+                for (int i = 0; i < qs.Length; i++) qs[i] = new Quaternion(flat[4*i],flat[4*i+1],flat[4*i+2],flat[4*i+3]);
+                var ss = track.scale != null && track.scale.count == ps.Length * 3
+                    ? Vec3(ReadFloats(raw, track.scale)) : null;
+                trackBuffers[track] = new TrackBuffer { p=ps, q=qs, s=ss };
+            }
             ChangeClip(ChooseClip(motions, "idle1", "idle"));
             ApplyFrame();
             Debug.Log($"Native Garen rig: {count} vertices, {indices.Length / 3} triangles, {skeleton.Length} bones, {motions.Count} clips.");
@@ -264,19 +279,12 @@ namespace HextechSeekers.Native
             foreach (var track in current.tracks)
             {
                 if (track.bone < 0 || track.bone >= skeleton.Length) continue;
-                float[] p = ReadFloats(raw, track.position);
-                float[] q = ReadFloats(raw, track.quaternion);
-                if (p.Length == 0 || p.Length % 3 != 0 || q.Length != p.Length / 3 * 4) continue;
-                int frames = p.Length / 3;
+                if (!trackBuffers.TryGetValue(track, out var values) || values.p.Length == 0) continue;
+                int frames = values.p.Length;
                 int at = Mathf.FloorToInt((time % current.duration) * fps) % frames;
-                int i = 3 * at, j = 4 * at;
-                skeleton[track.bone].localPosition = new Vector3(p[i], p[i + 1], p[i + 2]);
-                skeleton[track.bone].localRotation = new Quaternion(q[j], q[j + 1], q[j + 2], q[j + 3]);
-                if (track.scale != null && track.scale.count == frames * 3)
-                {
-                    float[] scale = ReadFloats(raw, track.scale);
-                    skeleton[track.bone].localScale = new Vector3(scale[i], scale[i + 1], scale[i + 2]);
-                }
+                skeleton[track.bone].localPosition = values.p[at];
+                skeleton[track.bone].localRotation = values.q[at];
+                if (values.s != null) skeleton[track.bone].localScale = values.s[at];
             }
         }
 
