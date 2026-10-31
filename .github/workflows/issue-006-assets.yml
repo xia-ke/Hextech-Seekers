@@ -60,6 +60,7 @@ jobs:
           cp artifacts/issue006/chromium-game.png docs/implementation/issue006-visual/chromium-game.png
           cp artifacts/issue006/chromium-game-preview.jpg docs/implementation/issue006-visual/chromium-game-preview.jpg
           cp artifacts/issue006/browser-check.json docs/implementation/issue006-visual/browser-check.json
+          cp artifacts/issue006/attack-check.json docs/implementation/issue006-visual/attack-check.json
           cp artifacts/issue006/atlas-check.json docs/implementation/issue006-visual/atlas-check.json
           git add dist/assets/visual/garen/sprite.json dist/assets/visual/blitzcrank dist/assets/visual/riven dist/assets/visual/yasuo docs/implementation/issue006-visual
           git diff --cached --quiet && exit 0
