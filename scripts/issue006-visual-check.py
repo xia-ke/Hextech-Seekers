@@ -77,11 +77,20 @@ try:
                 raise AssertionError('Playable hero mismatch: '+str(status))
             assert page.locator('.champion strong').inner_text()==player_hero
             assert page.locator('.portrait img').get_attribute('alt')==player_hero
+            phase=page.evaluate('window.__hextechLive.advanceForVisualQA(120).phase')
+            if phase!='chase':raise AssertionError('Hunter did not enter chase phase: '+phase)
+            staged_attack=page.evaluate('window.__hextechLive.stageAttackForVisualQA()')
+            if not staged_attack['visible'] or staged_attack['distance']>180:
+                raise AssertionError('Could not stage a legal visible melee target: '+str(staged_attack))
             page.locator('#attack').click()
             page.wait_for_timeout(120)
             page.screenshot(path=str(OUT/('playable-'+{
                 '盖伦':'garen','布里茨':'blitzcrank','锐雯':'riven','亚索':'yasuo'
             }[player_hero]+'.png')),full_page=True)
+            page.wait_for_timeout(1250)
+            attack=page.evaluate('window.__hextechLive.snapshot().attack')
+            if not attack or not attack.get('resolved') or not attack.get('result',{}).get('ok'):
+                raise AssertionError('Original attack contact did not capture staged target for '+player_hero+': '+str(attack))
         page.evaluate("""()=>{
           window.__hextechLive.stop();
           window.__hextechLive.start({
