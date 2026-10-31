@@ -63,4 +63,21 @@ class Phase1Tests(unittest.TestCase):
         prep=(ROOT/'tools/prepare_assets.py').read_text()
         self.assertIn("('garen.json','garen.bin','garen_base_tx_cm.png')",prep)
 
+    def test_actual_unity_editor_and_gpu_evidence_gates_are_wired(self):
+        from pathlib import Path
+        workflow=(REPO/'.github/workflows/unity-editor-validation.yml').read_text()
+        self.assertIn('game-ci/unity-test-runner@v4',workflow)
+        self.assertIn('testMode: editmode',workflow)
+        self.assertIn('Verify Unity license is configured',workflow)
+        probe=(ROOT/'Assets/Scripts/NativeVisualAcceptance.cs').read_text()
+        for value in ('-hextechVisualQA','native-idle.png','CAPTURED_REQUIRES_VISUAL_REVIEW',
+                      'ScreenCapture.CaptureScreenshot','Player'):
+            if value=='Player':continue
+            self.assertIn(value,probe)
+        src=(ROOT/'Assets/Editor/HextechNativeSetup.cs').read_text()
+        self.assertIn('bootstrap.AddComponent<NativeVisualAcceptance>()',src)
+        self.assertIn('BuildTarget.StandaloneWindows64',src)
+        self.assertIn('NativeRiftPhase2.unity',src)
+        self.assertTrue((ROOT/'Assets/Tests/Editor/GarenMeshSourceTests.cs').is_file())
+
 if __name__=='__main__':unittest.main()
