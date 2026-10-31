@@ -86,6 +86,8 @@ try:
         # measuring the blocking fallback implementation.
         if movement_perf['tileCache']['workerDecoded']<1:
             raise AssertionError('Rift depth worker was not used: '+str(movement_perf['tileCache']))
+        if movement_perf['tileCache']['workerColors']<1:
+            raise AssertionError('Rift color tile worker was not used: '+str(movement_perf['tileCache']))
         page.wait_for_function("Object.keys(window.__hextechLive.assets()).length === 4",timeout=120000)
         page.wait_for_timeout(300)
         assets=page.evaluate('window.__hextechLive.assets()')
