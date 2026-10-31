@@ -59,6 +59,15 @@ try:
         page.evaluate('window.__hextechPerfReset()')
         page.wait_for_timeout(3500)
         idle_perf=page.evaluate('window.__hextechPerf()')
+        page.evaluate('window.__hextechPerfOverviewCrop(true)')
+        page.evaluate('window.__hextechPerfReset()')
+        page.wait_for_timeout(3500)
+        cropped_idle_perf=page.evaluate('window.__hextechPerf()')
+        page.evaluate('window.__hextechPerfOverviewCrop(false)')
+        page.evaluate('window.__hextechPerfReset()')
+        page.wait_for_timeout(3500)
+        restored_idle_perf=page.evaluate('window.__hextechPerf()')
+        page.evaluate('window.__hextechPerfReset()')
         page.locator('[data-location="river"]').click()
         page.wait_for_timeout(1800)
         page.locator('[data-location="blue"]').click()
@@ -69,7 +78,8 @@ try:
         page.locator('#recenter').click()
         (OUT/'render-performance.json').write_text(json.dumps({
           'environment':'Chromium headless software GL / 1600x900',
-          'idle':idle_perf,'camera_travel':movement_perf
+          'idle':idle_perf,'cropped_idle_experiment':cropped_idle_perf,
+          'restored_full_idle':restored_idle_perf,'camera_travel':movement_perf
         },ensure_ascii=False,indent=2))
         # This CI platform supports module Workers + OffscreenCanvas. Check
         # we really exercised background depth decoding instead of silently
