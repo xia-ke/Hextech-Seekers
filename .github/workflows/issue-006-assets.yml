@@ -11,6 +11,10 @@ on:
       - 'scripts/issue006-visual-check.py'
       - 'dist/rebuild/**'
       - 'tests/champion-renderer.test.mjs'
+      - 'tests/live-session.test.mjs'
+      - 'tests/encounter.test.mjs'
+      - 'tests/match.test.mjs'
+      - 'dist/assets/visual/**'
 permissions:
   contents: write
 concurrency:
