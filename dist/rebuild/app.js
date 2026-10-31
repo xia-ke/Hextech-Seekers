@@ -9,7 +9,7 @@ const mini = $('minimap'), mctx = mini.getContext('2d');
 const mapBase = 'assets/visual/summoners-rift/', heroBase = 'assets/visual/garen/';
 const locations = {red:{x:7765,z:-4020},river:{x:9838,z:-4398},blue:{x:11032,z:-6991}};
 let map, nav, sprite, overview, minimap, tiles, actor,liveSession=null,liveLastPhase='',liveNotice=0,championRenderer=null,playerHero='盖伦';
-let width=0,height=0,dpr=1,zoom=.8,follow=true,ready=false,last=0,animTime=0,attackEnd=0,lastAttackNotice=0;
+let width=0,height=0,dpr=1,zoom=.8,follow=true,ready=false,last=0,animTime=0,attackAnimUntil=0,lastAttackNotice=0;
 let camera={x:0,y:0},path=[],heading=Math.PI,marker=null,toastEnd=0,drag=null;
 let fpsFrames=0,fpsTime=0,uiTime=0,miniTime=0,previousFrame=0;
 const metrics={rafGaps:[],drawCosts:[],mapCosts:[],actorCosts:[],longGaps:0};
@@ -30,18 +30,18 @@ function progress(text,value){$('load-status').textContent=text;$('load-progress
 function toast(text){$('toast').textContent=text;$('toast').classList.add('show');toastEnd=performance.now()+2200;}
 function setFollow(value){follow=value;$('follow').setAttribute('aria-pressed',String(value));}
 function recenter(){if(!ready)return;setFollow(true);camera=project(map,actor);paint();}
-function stop(){path=[];attackEnd=0;animTime=0;updateUI();paint();}
+function stop(){path=[];attackAnimUntil=0;animTime=0;updateUI();paint();}
 function attack(){
  if(!ready)return;
  const heroSprite=liveSession?championRenderer?.resources.get(playerHero)?.meta:sprite;
  if(liveSession&&!heroSprite){toast('所选英雄原始攻击资源未就绪');return;}
  const clip=heroSprite.clips.attack1,duration=clip.duration;
- path=[];animTime=0;attackEnd=performance.now()+duration*1000;
+ path=[];animTime=0;attackAnimUntil=duration;
  if(liveSession){
    // The contact point is currently a provisional midpoint of the original
    // attack clip; per-hero hit-frame calibration remains a visual task.
    const result=liveSession.beginPlayerAttack({duration,hitAt:duration*(7/12)});
-   if(!result.ok){attackEnd=0;toast('实时演练：'+result.reason);return;}
+   if(!result.ok){attackAnimUntil=0;toast('实时演练：'+result.reason);return;}
    toast('普攻动作开始 · 命中帧待校准');
  }else toast('攻击动作预览 · 当前无伤害或抓捕判定');
  updateUI();paint();
@@ -130,12 +130,12 @@ function drawActor(now){
   if(liveSession && playerHero!=='盖伦'){
     const entity=liveSession.actors.get('player');
     if(entity?.active && championRenderer?.resources.has(playerHero)){
-      championRenderer.draw({...entity,x:actor.x,z:actor.z,facing:{x:Math.sin(heading),z:Math.cos(heading)},route:path},playerHero,{zoom,animTime,attack:now<attackEnd});
+      championRenderer.draw({...entity,x:actor.x,z:actor.z,facing:{x:Math.sin(heading),z:Math.cos(heading)},route:path},playerHero,{zoom,animTime,attack:animTime<attackAnimUntil});
       $('unit-label').hidden=true;
     }
     return;
   }
-  const clip=now<attackEnd?'attack1':path.length?'run':'idle1',info=sprite.clips[clip];
+  const clip=animTime<attackAnimUntil?'attack1':path.length?'run':'idle1',info=sprite.clips[clip];
   const index=Math.min(info.frames-1,Math.floor((animTime%info.duration)/info.duration*info.frames));
   const direction=directionIndex(heading,sprite.directions),f=frame(clip,direction,index);
   const point=project(map,actor),p=screen(point),ratio=map.ppu/sprite.ppu,scale=ratio*zoom;
@@ -213,7 +213,7 @@ function drawMinimap(){
 }
 
 function updateUI(){
-  if(!ready)return;const moving=path.length>0,attacking=performance.now()<attackEnd;
+  if(!ready)return;const moving=path.length>0,attacking=animTime<attackAnimUntil;
   $('movement-status').textContent=attacking?'动作预览':moving?'正在移动':'自由探索';
   $('unit-state').textContent=attacking?'动作预览':moving?'移动中':'待命';
   $('coords').textContent='X '+Math.round(actor.x)+' · Z '+Math.round(-actor.z);
@@ -296,7 +296,7 @@ async function moveTo(x,y){
   const target=nav.nearest(world.x,world.z,10);
   if(!target||Math.hypot(target.x-world.x,target.z-world.z)>400){toast('这里是不可通行的地形');return;}
   const route=nav.path(actor,target);if(!route?.length){toast('当前无法到达该位置');return;}
-  path=route;attackEnd=0;marker={...target,y:nav.heightAt(target.x,target.z),time:performance.now()};updateUI();paint();
+  path=route;attackAnimUntil=0;marker={...target,y:nav.heightAt(target.x,target.z),time:performance.now()};updateUI();paint();
 }
 
 function resize(){width=innerWidth;height=innerHeight;dpr=Math.min(devicePixelRatio||1,1.5);canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);ctx.imageSmoothingEnabled=true;}
@@ -377,12 +377,12 @@ async function boot(){
         const start={x:actor.x,z:actor.z};
         window.__hextechFreezeQA=false;
         liveSession=createLiveSession(nav,{...config,start});
-        path=[];liveLastPhase='';liveNotice=0;lastAttackNotice=0;attackEnd=0;
+        path=[];liveLastPhase='';liveNotice=0;lastAttackNotice=0;attackAnimUntil=0;
         championRenderer.loadRoster(liveSession.match.players.map(p=>p.hero))
           .then(status=>window.dispatchEvent(new CustomEvent('hextech:hero-assets',{detail:status})));
         return liveSession.snapshot();
       },
-      stop(){liveSession=null;playerHero='盖伦';updateHeroHud('盖伦');liveLastPhase='';lastAttackNotice=0;attackEnd=0;window.__hextechFreezeQA=false;path=[];return true;},
+      stop(){liveSession=null;playerHero='盖伦';updateHeroHud('盖伦');liveLastPhase='';lastAttackNotice=0;attackAnimUntil=0;window.__hextechFreezeQA=false;path=[];return true;},
       snapshot(){return liveSession?.snapshot()??null;},
       selectedHero(){return liveSession?playerHero:null;},
       assets(){return championRenderer?Object.fromEntries([...championRenderer.resources.keys()].map(hero=>[hero,true])):{};},
