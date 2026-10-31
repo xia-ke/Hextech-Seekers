@@ -386,6 +386,34 @@ async function boot(){
       snapshot(){return liveSession?.snapshot()??null;},
       selectedHero(){return liveSession?playerHero:null;},
       assets(){return championRenderer?Object.fromEntries([...championRenderer.resources.keys()].map(hero=>[hero,true])):{};},
+      advanceForVisualQA(seconds){
+        if(!['127.0.0.1','localhost'].includes(location.hostname)||!new URLSearchParams(location.search).has('visualQA')||!liveSession)
+          throw new Error('Local visual QA mode required');
+        if(!Number.isFinite(seconds)||seconds<0||seconds>600)throw new RangeError('Invalid QA advance');
+        window.__hextechFreezeQA=true;
+        let remaining=seconds;
+        while(remaining>1e-9&&liveSession.snapshot().phase!=='finished'){
+          const step=Math.min(.05,remaining);
+          liveSession.tick(step,{freezeAI:true});
+          remaining-=step;
+        }
+        window.__hextechFreezeQA=false;
+        return liveSession.snapshot();
+      },
+      stageAttackForVisualQA(){
+        if(!['127.0.0.1','localhost'].includes(location.hostname)||!new URLSearchParams(location.search).has('visualQA')||!liveSession)
+          throw new Error('Local visual QA mode required');
+        const player=liveSession.actors.get('player');
+        if(liveSession.snapshot().phase!=='chase'||player.role!=='hunter')throw new Error('QA attack requires a chasing hunter');
+        const target=[...liveSession.actors.values()].find(a=>a.active&&a.role==='hider');
+        if(!target)throw new Error('No active hider available');
+        const point=nav.nearest(player.x+100,player.z,4);
+        if(!point)throw new Error('No valid QA contact position');
+        target.x=point.x;target.z=point.z;target.route=[];
+        const dx=target.x-player.x,dz=target.z-player.z,length=Math.hypot(dx,dz)||1;
+        player.facing={x:dx/length,z:dz/length};heading=Math.atan2(dx,dz);
+        return {distance:length,visible:liveSession.vision.canSee(player,target),target:target.id};
+      },
       stageForVisualQA(){
         // Only on an expressly requested localhost Chromium QA run.
         if(!['127.0.0.1','localhost'].includes(location.hostname) ||
