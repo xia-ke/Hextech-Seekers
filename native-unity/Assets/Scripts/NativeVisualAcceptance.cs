@@ -181,12 +181,16 @@ namespace HextechSeekers.Native
             }
 
             float start = Time.realtimeSinceStartup;
-            while (!bootstrap.IsReady && Time.realtimeSinceStartup - start < 180f)
+            while (!bootstrap.IsReady && !bootstrap.HasLoadFailed &&
+                   Time.realtimeSinceStartup - start < 180f)
                 yield return null;
             report.originalSceneLoaded = bootstrap.IsReady;
             if (!report.originalSceneLoaded)
             {
-                Finish(report, evidence, "FAIL_LOAD", "Original Rift GLB/hero not ready after 180 seconds");
+                string reason = bootstrap.HasLoadFailed
+                    ? bootstrap.LoadProblem
+                    : "Original Rift GLB/hero not ready after 180 seconds";
+                Finish(report, evidence, "FAIL_LOAD", reason);
                 yield break;
             }
             var rig = bootstrap.HeroRig;
