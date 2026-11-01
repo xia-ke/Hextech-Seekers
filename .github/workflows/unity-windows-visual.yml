@@ -1,0 +1,134 @@
+name: Unity Windows Player real GPU visual acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/unity-windows-visual.yml'
+      - 'native-unity/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hextech-native-windows-gpu-visual
+  cancel-in-progress: true
+
+jobs:
+  gpu-visual:
+    runs-on: [self-hosted, Windows, X64, hextech-unity]
+    timeout-minutes: 100
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Enable long paths before checkout
+        run: git config --global core.longpaths true
+
+      - uses: actions/checkout@v4
+
+      - name: Locate licensed Unity Editor
+        id: unity
+        run: |
+          $candidates = @()
+          if ($env:UNITY_EDITOR_PATH) { $candidates += $env:UNITY_EDITOR_PATH }
+          $candidates += 'F:\6000.6.7f1\Editor\Unity.exe'
+          $candidates += 'C:\Program Files\Unity\Hub\Editor\6000.0.40f1\Editor\Unity.exe'
+          $unity = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $unity) { throw "Cannot find local licensed Unity.exe. Checked: $($candidates -join '; ')" }
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "exe=$unity" + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
+          Write-Host "Using Unity: $unity; Runner desktop user: $env:USERNAME"
+
+      - name: Prepare and verify original Rift and Garen assets
+        run: |
+          if (Get-Command py -ErrorAction SilentlyContinue) {
+            & py -3 native-unity/tools/prepare_assets.py
+          } else {
+            & python native-unity/tools/prepare_assets.py
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Pinned original asset preparation failed ($LASTEXITCODE)" }
+
+      - name: Build real Windows x64 Player
+        run: |
+          $project = Join-Path $env:GITHUB_WORKSPACE 'native-unity'
+          $root = Join-Path $env:RUNNER_TEMP "hextech-native-gpu-$env:GITHUB_RUN_ID"
+          if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $log = Join-Path $root 'Build.log'
+          $unity = "${{ steps.unity.outputs.exe }}"
+          $args = @(
+            '-batchmode', '-nographics', '-quit',
+            '-projectPath', ('"{0}"' -f $project),
+            '-executeMethod', 'HextechSeekers.Native.Editor.HextechNativeSetup.BuildWindows',
+            '-logFile', ('"{0}"' -f $log),
+            '-accept-apiupdate'
+          )
+          Write-Host 'Building original Rift/Garen Windows x64 Player with Unity Editor'
+          $proc = Start-Process -FilePath $unity -ArgumentList $args -Wait -PassThru
+          Write-Host "Unity BuildWindows exit code: $($proc.ExitCode)"
+          if (Test-Path -LiteralPath $log) {
+            Write-Host '=== Build.log last 160 lines ==='
+            Get-Content -LiteralPath $log -Tail 160
+          } else { Write-Warning 'Unity Build.log missing' }
+          if ($proc.ExitCode -ne 0) { throw "Windows Player build failed (exit $($proc.ExitCode))" }
+          $exe = Join-Path $project 'Build\Windows\HextechSeekers.exe'
+          $data = Join-Path $project 'Build\Windows\HextechSeekers_Data'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf) -or -not (Test-Path -LiteralPath $data -PathType Container)) {
+            throw 'Unity exited 0 but Windows Player EXE/Data missing'
+          }
+          Write-Host "Windows Player built: $exe"
+          Get-Item -LiteralPath $exe | Select-Object FullName, Length | Format-List
+
+      - name: Run Windows Player on actual GPU and capture animations
+        run: |
+          $project = Join-Path $env:GITHUB_WORKSPACE 'native-unity'
+          $exe = Join-Path $project 'Build\Windows\HextechSeekers.exe'
+          $root = Join-Path $env:RUNNER_TEMP "hextech-native-gpu-$env:GITHUB_RUN_ID"
+          $evidence = Join-Path $root 'evidence'
+          New-Item -ItemType Directory -Force -Path $evidence | Out-Null
+          $log = Join-Path $root 'Player.log'
+          $args = @(
+            '-force-d3d11',
+            '-screen-fullscreen', '0',
+            '-screen-width', '1280',
+            '-screen-height', '720',
+            '-logFile', ('"{0}"' -f $log),
+            '-hextechVisualQA',
+            '-hextechEvidenceDir', ('"{0}"' -f $evidence)
+          )
+          Write-Host "Launching actual Windows GPU Player on runner desktop: $exe"
+          $proc = Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe) -ArgumentList $args -PassThru
+          $finished = $proc.WaitForExit(420000)
+          if (-not $finished) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            Write-Host '=== Player.log on timeout ==='
+            if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 160 }
+            throw 'GPU Player timed out after 7 minutes; verify interactive desktop session, GLB loading and logs'
+          }
+          Write-Host "Player exit code: $($proc.ExitCode)"
+          if (Test-Path -LiteralPath $log) {
+            Write-Host '=== Player.log last 120 lines ==='
+            Get-Content -LiteralPath $log -Tail 120
+          } else { Write-Warning 'Unity Player.log missing' }
+          if ($proc.ExitCode -ne 0) { throw "GPU Player exited with code $($proc.ExitCode); inspect Player.log and result.json" }
+
+      - name: Verify real GPU PNGs and evidence without extra dependencies
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP "hextech-native-gpu-$env:GITHUB_RUN_ID"
+          $evidence = Join-Path $root 'evidence'
+          if (Get-Command py -ErrorAction SilentlyContinue) {
+            & py -3 native-unity/tools/verify_visual_qa.py $evidence
+          } else {
+            & python native-unity/tools/verify_visual_qa.py $evidence
+          }
+          if ($LASTEXITCODE -ne 0) { throw "GPU screenshot verification failed ($LASTEXITCODE); inspect evidence artifact" }
+
+      - name: Upload real screenshot/Player evidence (no copyrighted game binary)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-player-gpu-evidence
+          path: ${{ runner.temp }}/hextech-native-gpu-${{ github.run_id }}/
+          retention-days: 14
+          if-no-files-found: warn
