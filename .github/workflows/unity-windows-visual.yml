@@ -26,7 +26,33 @@ jobs:
       - name: Enable long paths before checkout
         run: git config --global core.longpaths true
 
-      - uses: actions/checkout@v4
+      - name: Fetch exact source commit with Git (no codeload Actions)
+        run: |
+          $workspace = $env:GITHUB_WORKSPACE
+          New-Item -ItemType Directory -Force -Path $workspace | Out-Null
+          if (-not (Test-Path -LiteralPath (Join-Path $workspace '.git'))) {
+            & git -C $workspace init
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot initialize repository in runner workspace' }
+          }
+          & git -C $workspace remote remove origin 2>$null
+          & git -C $workspace remote add origin "https://github.com/$env:GITHUB_REPOSITORY.git"
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot configure Git source remote' }
+          $fetched = $false
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            & git -C $workspace -c core.longpaths=true fetch --no-tags --depth=1 origin $env:GITHUB_SHA
+            if ($LASTEXITCODE -eq 0) { $fetched = $true; break }
+            Write-Warning "Git fetch attempt $attempt failed"
+            Start-Sleep -Seconds (5 * $attempt)
+          }
+          if (-not $fetched) { throw "Cannot fetch $env:GITHUB_SHA from repository" }
+          & git -C $workspace -c core.longpaths=true reset --hard $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot reset workspace to exact requested commit' }
+          & git -C $workspace -c core.longpaths=true clean -ffdx
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot clean previous Unity files in workspace' }
+          $actual = (& git -C $workspace rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) { throw "Wrong checkout revision: $actual" }
+          Write-Host "Exact project commit checked out: $actual"
+
 
       - name: Locate licensed Unity Editor
         id: unity
