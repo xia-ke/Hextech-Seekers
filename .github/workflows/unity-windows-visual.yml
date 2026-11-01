@@ -175,7 +175,16 @@ jobs:
             '-hextechEvidenceDir', ('"{0}"' -f $evidence)
           )
           Write-Host "Launching actual Windows GPU Player on runner desktop: $exe"
+          Write-Host ("Player command: " + $exe + " " + ($args -join ' '))
           $proc = Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe) -ArgumentList $args -PassThru
+          Start-Sleep -Seconds 2
+          $proc.Refresh()
+          if (-not $proc.HasExited) {
+            $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $($proc.Id)" -ErrorAction SilentlyContinue
+            if ($processInfo) { Write-Host ("PLAYER_ACTUAL_COMMANDLINE=" + $processInfo.CommandLine) }
+          } else {
+            Write-Warning "Player exited during the first two seconds (code=$($proc.ExitCode))"
+          }
           $finished = $proc.WaitForExit(420000)
           if (-not $finished) {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
@@ -189,6 +198,13 @@ jobs:
             Get-Content -LiteralPath $log -Tail 120
           } else { Write-Warning 'Unity Player.log missing' }
           if ($proc.ExitCode -ne 0) { throw "GPU Player exited with code $($proc.ExitCode); inspect Player.log and result.json" }
+          $qaResult = Join-Path $evidence 'result.json'
+          if (-not (Test-Path -LiteralPath $qaResult -PathType Leaf)) {
+            Write-Error 'Player exited without result.json. Runtime QA bootstrap did not finish; inspect NATIVE_QA_* markers in Player.log.'
+          } else {
+            Write-Host '=== Player result.json ==='
+            Get-Content -LiteralPath $qaResult
+          }
 
       - name: Verify real GPU PNGs and evidence without extra dependencies
         run: |
