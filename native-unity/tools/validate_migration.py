@@ -36,7 +36,9 @@ class Phase1Tests(unittest.TestCase):
     def test_real_skinned_hero_and_player_build_guard(self):
         boot=(ROOT/'Assets/Scripts/RiftBootstrap.cs').read_text()
         self.assertIn('GarenRigRuntime.Load(transform, heroPath)',boot)
-        self.assertIn('Failed to instantiate original 3D map.glb',boot)
+        self.assertIn('map.glb failed during glTFast Load',boot)
+        self.assertIn('scene instantiation failed',boot)
+        self.assertIn('new ConsoleLogger()',boot)
         editor=(ROOT/'Assets/Editor/HextechNativeSetup.cs').read_text()
         self.assertIn('BuildTarget.StandaloneWindows64',editor)
         self.assertIn('File.Exists(rift)',editor)
