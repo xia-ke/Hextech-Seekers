@@ -177,11 +177,41 @@ jobs:
           }
           if ($LASTEXITCODE -ne 0) { throw "GPU screenshot verification failed ($LASTEXITCODE); inspect evidence artifact" }
 
-      - name: Upload real screenshot/Player evidence (no copyrighted game binary)
+      # Do not depend on actions/upload-artifact during job startup:
+      # this self-hosted Runner intermittently times out fetching its code
+      # from codeload.github.com, before Unity/Python steps can even start.
+      - name: Preserve local GPU screenshots and diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-player-gpu-evidence
-          path: ${{ runner.temp }}/hextech-native-gpu-${{ github.run_id }}/
-          retention-days: 14
-          if-no-files-found: warn
+        run: |
+          $source = Join-Path $env:RUNNER_TEMP "hextech-native-gpu-$env:GITHUB_RUN_ID"
+          $runnerHome = Split-Path -Parent (Split-Path -Parent $env:RUNNER_TEMP)
+          $archiveRoot = Join-Path $runnerHome 'HextechVisualEvidence'
+          $target = Join-Path $archiveRoot $env:GITHUB_RUN_ID
+          $summary = $env:GITHUB_STEP_SUMMARY
+          if (-not (Test-Path -LiteralPath $source -PathType Container)) {
+            Write-Warning "No GPU evidence was generated. See the failing step logs."
+            if ($summary) { Add-Content -LiteralPath $summary -Value 'No GPU evidence directory was generated.' -Encoding UTF8 }
+          } else {
+            New-Item -ItemType Directory -Force -Path $target | Out-Null
+            Copy-Item -LiteralPath (Join-Path $source '*') -Destination $target -Recurse -Force -ErrorAction Stop
+            $zip = Join-Path $archiveRoot ("hextech-gpu-" + $env:GITHUB_RUN_ID + ".zip")
+            if (Test-Path $zip) { Remove-Item -LiteralPath $zip -Force }
+            Compress-Archive -Path (Join-Path $target '*') -DestinationPath $zip -CompressionLevel Optimal
+            Write-Host "EVIDENCE_DIR=$target"
+            Write-Host "EVIDENCE_ZIP=$zip"
+            Get-ChildItem -LiteralPath $target -Recurse -File | ForEach-Object {
+              Write-Host ("EVIDENCE_FILE=" + $_.FullName + " BYTES=" + $_.Length)
+            }
+            if ($summary) {
+              Add-Content -LiteralPath $summary -Encoding UTF8 -Value @(
+                '### Windows GPU evidence saved on the self-hosted Runner'
+                ''
+                ('Run: ' + $env:GITHUB_RUN_ID)
+                ('Local evidence: `' + $target + '`')
+                ('Local ZIP: `' + $zip + '`')
+                ''
+                'The images remain local and are **not** published to a public artifact endpoint.'
+                'The GPU verification step, not this archiving step, determines acceptance.'
+              )
+            }
+          }
