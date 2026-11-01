@@ -25,6 +25,59 @@ namespace HextechSeekers.Native
             public bool hasIdle, hasRun, hasAttack;
         }
 
+        static bool VisualQaRequested()
+        {
+            return Array.IndexOf(Environment.GetCommandLineArgs(), "-hextechVisualQA") >= 0;
+        }
+
+        // Do not rely solely on a serialized scene component: generated/build
+        // scenes can be replaced or lose script references during CI import.
+        // Install the visual-QA driver at runtime whenever the explicit flag is set.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        static void EnsureVisualQaDriver()
+        {
+            var args = Environment.GetCommandLineArgs();
+            bool requested = Array.IndexOf(args, "-hextechVisualQA") >= 0;
+            Debug.Log("NATIVE_QA_RUNTIME_INIT: requested=" + requested +
+                      " scene=" + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name +
+                      " args=" + string.Join(" ", args));
+            if (!requested) return;
+
+            Application.runInBackground = true;
+            QualitySettings.vSyncCount = 0;
+
+            var driver = FindObjectOfType<NativeVisualAcceptance>();
+            if (driver)
+            {
+                Debug.Log("NATIVE_QA_DRIVER_FOUND: scene component is active");
+                return;
+            }
+
+            var bootstrap = FindObjectOfType<RiftBootstrap>();
+            if (!Camera.main)
+            {
+                var cameraObject = new GameObject("Main Camera (Native Visual QA)");
+                cameraObject.tag = "MainCamera";
+                var camera = cameraObject.AddComponent<Camera>();
+                camera.orthographic = true;
+                camera.orthographicSize = 520f;
+                camera.nearClipPlane = 0.3f;
+                camera.farClipPlane = 4000f;
+                cameraObject.AddComponent<AudioListener>();
+                Debug.LogWarning("NATIVE_QA_CAMERA_CREATED: no MainCamera was present in the built scene");
+            }
+
+            if (!bootstrap)
+            {
+                var root = new GameObject("HextechNativeBootstrap (Runtime Visual QA)");
+                bootstrap = root.AddComponent<RiftBootstrap>();
+                Debug.LogWarning("NATIVE_QA_BOOTSTRAP_CREATED: no RiftBootstrap was present in the built scene");
+            }
+
+            bootstrap.gameObject.AddComponent<NativeVisualAcceptance>();
+            Debug.Log("NATIVE_QA_DRIVER_INSTALLED: visual acceptance coroutine will start");
+        }
+
         static string EvidenceDirectory()
         {
             var args = Environment.GetCommandLineArgs();
@@ -50,14 +103,52 @@ namespace HextechSeekers.Native
 
         void Start()
         {
-            if (Array.IndexOf(Environment.GetCommandLineArgs(), "-hextechVisualQA") >= 0)
-                StartCoroutine(Capture());
+            Debug.Log("NATIVE_QA_START: requested=" + VisualQaRequested() +
+                      " scene=" + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name +
+                      " graphics=" + SystemInfo.graphicsDeviceType +
+                      " device=" + SystemInfo.graphicsDeviceName);
+            if (!VisualQaRequested()) return;
+            Application.runInBackground = true;
+            StartCoroutine(Capture());
+        }
+
+        void OnApplicationQuit()
+        {
+            if (!VisualQaRequested()) return;
+            string directory = EvidenceDirectory();
+            try
+            {
+                Directory.CreateDirectory(directory);
+                string result = Path.Combine(directory, "result.json");
+                if (!File.Exists(result))
+                {
+                    var report = new Report {
+                        status = "FAIL_PLAYER_QUIT_BEFORE_CAPTURE",
+                        reason = "Unity Player shut down before the visual-QA coroutine wrote its final report",
+                        unityVersion = Application.unityVersion,
+                        device = SystemInfo.graphicsDeviceName,
+                        graphicsApi = SystemInfo.graphicsDeviceType.ToString(),
+                        scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name,
+                        hero = "Garen",
+                        width = Screen.width,
+                        height = Screen.height
+                    };
+                    File.WriteAllText(result, JsonUtility.ToJson(report, true));
+                    Debug.LogError("NATIVE_QA_FAIL: Player quit before evidence capture completed");
+                }
+            }
+            catch (Exception e) { Debug.LogException(e); }
         }
 
         IEnumerator Capture()
         {
             string evidence = EvidenceDirectory();
             Directory.CreateDirectory(evidence);
+            File.WriteAllText(Path.Combine(evidence, "player-started.txt"),
+                "Unity=" + Application.unityVersion + "\\nScene=" +
+                UnityEngine.SceneManagement.SceneManager.GetActiveScene().name +
+                "\\nGPU=" + SystemInfo.graphicsDeviceName + "\\nAPI=" + SystemInfo.graphicsDeviceType);
+            Debug.Log("NATIVE_QA_CAPTURE_BEGIN: evidence=" + evidence);
             var report = new Report
             {
                 status = "INCOMPLETE",
