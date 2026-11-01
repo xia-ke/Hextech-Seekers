@@ -33,6 +33,8 @@ namespace HextechSeekers.Native
         GltfImport mapImport;
         bool ready;
         public bool IsReady => ready;
+        public bool HasLoadFailed => !ready && !string.Equals(problem, "Initializing 3D Rift...", StringComparison.Ordinal);
+        public string LoadProblem => problem;
         public GarenRigRuntime HeroRig => heroRig;
         public GameObject LoadedMap => loadedMap;
         string problem = "Initializing 3D Rift...";
