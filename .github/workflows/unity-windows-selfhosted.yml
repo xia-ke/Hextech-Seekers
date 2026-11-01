@@ -10,7 +10,7 @@ permissions:
   contents: read
 concurrency:
   group: hextech-native-windows-editor
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   editor:
     # Register a Windows runner with the extra label hextech-unity.
@@ -20,6 +20,8 @@ jobs:
       run:
         shell: powershell
     steps:
+      - name: Enable Git long paths for Unity package cache
+        run: git config --global core.longpaths true
       - uses: actions/checkout@v4
       - name: Find local Unity Editor (no cloud license import)
         id: unity
