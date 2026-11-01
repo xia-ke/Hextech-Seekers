@@ -193,7 +193,7 @@ jobs:
             if ($summary) { Add-Content -LiteralPath $summary -Value 'No GPU evidence directory was generated.' -Encoding UTF8 }
           } else {
             New-Item -ItemType Directory -Force -Path $target | Out-Null
-            Copy-Item -LiteralPath (Join-Path $source '*') -Destination $target -Recurse -Force -ErrorAction Stop
+            Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force -ErrorAction Stop
             $zip = Join-Path $archiveRoot ("hextech-gpu-" + $env:GITHUB_RUN_ID + ".zip")
             if (Test-Path $zip) { Remove-Item -LiteralPath $zip -Force }
             Compress-Archive -Path (Join-Path $target '*') -DestinationPath $zip -CompressionLevel Optimal
