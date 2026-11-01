@@ -1,6 +1,10 @@
 name: Unity Editor on Windows self-hosted (Personal)
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/unity-windows-selfhosted.yml'
 permissions:
   contents: read
 concurrency:
@@ -22,11 +26,13 @@ jobs:
           $version = '6000.0.40f1'
           $candidates = @()
           if ($env:UNITY_EDITOR_PATH) { $candidates += $env:UNITY_EDITOR_PATH }
+          $candidates += 'F:\6000.6.7f1\Editor\Unity.exe'
           $candidates += "C:\Program Files\Unity\Hub\Editor\$version\Editor\Unity.exe"
           $unity = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
           if (-not $unity) { throw "Unity $version missing. Install it with Unity Hub or set UNITY_EDITOR_PATH in the runner environment." }
           "exe=$unity" >> $env:GITHUB_OUTPUT
           Write-Host "Found Unity Editor: $unity"
+          if ($unity -like "*6000.6.7f1*") { Write-Warning "Project version is 6000.0.40f1; running 6000.6.7f1 compatibility validation." }
       - name: Prepare verified original assets
         run: |
           $python = Get-Command py -ErrorAction SilentlyContinue
