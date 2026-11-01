@@ -51,26 +51,60 @@ jobs:
 
       - name: Convert pinned Rift WebP textures into PNG-compatible GLB
         run: |
-          $py = if (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { 'python' }
-          $prefix = if ($py -eq 'py') { @('-3') } else { @() }
-          & $py @prefix -c 'from PIL import Image'
-          if ($LASTEXITCODE -ne 0) {
-            & $py @prefix -m pip install --disable-pip-version-check --only-binary=:all: 'Pillow>=11,<13'
-            if ($LASTEXITCODE -ne 0) { throw 'Installing Pillow for local WebP-to-PNG conversion failed' }
+          # Unity is not the first GUI application encountered on Windows:
+          # explicitly wait for Python and retain stdout/stderr for failure analysis.
+          $root = Join-Path $env:RUNNER_TEMP "hextech-native-gpu-$env:GITHUB_RUN_ID"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $stdout = Join-Path $root 'MapConversion.stdout.log'
+          $stderr = Join-Path $root 'MapConversion.stderr.log'
+          $pyCommand = Get-Command py -ErrorAction SilentlyContinue
+          if ($pyCommand) {
+            $pyExe = $pyCommand.Source
+            $prefix = @('-3')
+          } else {
+            $pyCommand = Get-Command python -ErrorAction Stop
+            $pyExe = $pyCommand.Source
+            $prefix = @()
+          }
+          Write-Host "Python launcher: $pyExe"
+          function RunPython([string[]] $argsList, [string] $description) {
+            if (Test-Path $stdout) { Remove-Item $stdout -Force }
+            if (Test-Path $stderr) { Remove-Item $stderr -Force }
+            $proc = Start-Process -FilePath $pyExe -ArgumentList ($prefix + $argsList) -WorkingDirectory $env:GITHUB_WORKSPACE -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+            Write-Host "$description exit=$($proc.ExitCode)"
+            if (Test-Path $stdout) { Get-Content $stdout -Tail 80 }
+            if (Test-Path $stderr) { Get-Content $stderr -Tail 80 }
+            return $proc.ExitCode
+          }
+          $code = RunPython @('-m', 'pip', 'show', 'Pillow') 'Pillow probe'
+          if ($code -ne 0) {
+            $code = RunPython @('-m', 'pip', 'install', '--disable-pip-version-check', '--only-binary=:all:', '"Pillow>=11,<13"') 'Pillow install'
+            if ($code -ne 0) { throw "Pillow installation failed ($code), see MapConversion.stderr.log" }
           }
           $rift = Join-Path $env:GITHUB_WORKSPACE 'native-unity\Assets\StreamingAssets\Rift'
           $source = Join-Path $rift 'map.glb'
           $output = Join-Path $rift 'map-unity.glb'
-          & $py @prefix native-unity/tools/convert_webp_glb.py $source $output --sha256 'bdabbf3eb0c37dd2bb8567035c018d0da0f79c849c9353e5192a58279369a69e'
-          if ($LASTEXITCODE -ne 0) { throw "Pinned Rift WebP-to-PNG conversion failed ($LASTEXITCODE)" }
-          if (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'Converted map GLB missing' }
-          Write-Host "Generated Unity glTF-compatible map: $output"
+          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw 'Original pinned map.glb missing after preparation' }
+          $script = Join-Path $env:GITHUB_WORKSPACE 'native-unity\tools\convert_webp_glb.py'
+          $arguments = @(
+            ('"{0}"' -f $script),
+            ('"{0}"' -f $source),
+            ('"{0}"' -f $output),
+            '--sha256', 'bdabbf3eb0c37dd2bb8567035c018d0da0f79c849c9353e5192a58279369a69e'
+          )
+          $code = RunPython $arguments 'Pinned Rift WebP-to-PNG conversion'
+          if ($code -ne 0) { throw "Pinned Rift WebP-to-PNG conversion failed ($code), see MapConversion.stderr.log" }
+          if (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'Python finished successfully but converted map-unity.glb missing; see conversion stdout/stderr' }
+          $meta = Join-Path $rift 'map-unity.conversion.json'
+          if (-not (Test-Path -LiteralPath $meta -PathType Leaf)) { throw 'Converted GLB exists but conversion metadata missing' }
+          Copy-Item -LiteralPath $meta -Destination (Join-Path $root 'map-conversion.json')
+          Write-Host "Converted Unity-compatible GLB size: $((Get-Item $output).Length) bytes"
 
       - name: Build real Windows x64 Player
         run: |
           $project = Join-Path $env:GITHUB_WORKSPACE 'native-unity'
           $root = Join-Path $env:RUNNER_TEMP "hextech-native-gpu-$env:GITHUB_RUN_ID"
-          if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
+          # Preserve conversion logs and map-conversion.json for postmortem artifacts.
           New-Item -ItemType Directory -Force -Path $root | Out-Null
           $conversionReport = Join-Path $project 'Assets\StreamingAssets\Rift\map-unity.conversion.json'
           if (Test-Path -LiteralPath $conversionReport) { Copy-Item -LiteralPath $conversionReport -Destination (Join-Path $root 'map-conversion.json') }
