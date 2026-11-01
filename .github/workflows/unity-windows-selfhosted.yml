@@ -47,21 +47,34 @@ jobs:
       - name: Run Unity Editor compile and EditMode tests
         run: |
           $out = Join-Path $env:RUNNER_TEMP 'hextech-unity-evidence'
+          if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           $project = Join-Path $env:GITHUB_WORKSPACE 'native-unity'
           $log = Join-Path $out 'Editor.log'
           $results = Join-Path $out 'editmode-results.xml'
           $unity = "${{ steps.unity.outputs.exe }}"
-          & $unity -batchmode -nographics -quit -projectPath $project -runTests -testPlatform EditMode -testResults $results -logFile $log -accept-apiupdate
-          $code = $LASTEXITCODE
-          Write-Host "Unity exit code: $code"
-          if (Test-Path $log) {
-            Get-Content $log -Tail 120
+          # Unity.exe is a Windows GUI executable. PowerShell's '&' may return
+          # before the Editor finishes. Wait for the process tree explicitly.
+          $unityArgs = @(
+            '-batchmode', '-nographics', '-quit',
+            '-projectPath', ('"{0}"' -f $project),
+            '-runTests', '-testPlatform', 'EditMode',
+            '-testResults', ('"{0}"' -f $results),
+            '-logFile', ('"{0}"' -f $log),
+            '-accept-apiupdate'
+          )
+          Write-Host "Launching Unity Editor (synchronous wait): $unity"
+          $proc = Start-Process -FilePath $unity -ArgumentList $unityArgs -Wait -PassThru
+          $code = $proc.ExitCode
+          Write-Host "Unity process finished with exit code: $code"
+          if (Test-Path -LiteralPath $log) {
+            Write-Host '=== Unity Editor.log last 180 lines ==='
+            Get-Content -LiteralPath $log -Tail 180
           } else {
-            Write-Warning "Unity did not create Editor.log"
+            Write-Warning "Unity did not produce Editor.log. Check for GUI startup, licensing, and project-lock errors."
           }
-          if ($code -ne 0) { throw "Unity Editor exited with code $code; inspect Editor.log" }
-          if (-not (Test-Path $results)) { throw "Unity returned success but did not produce EditMode results; inspect Editor.log" }
+          if ($code -ne 0) { throw "Unity Editor exited with code $code; inspect Editor.log artifact" }
+          if (-not (Test-Path -LiteralPath $results)) { throw "Unity process finished but EditMode XML is missing; inspect Editor.log artifact" }
           [xml]$xml = Get-Content -LiteralPath $results -Raw
           $root = $xml.'test-run'
           if ($root -and ([int]$root.failed -gt 0 -or [int]$root.errors -gt 0)) { throw "EditMode tests failed; inspect editmode-results.xml" }
