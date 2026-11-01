@@ -1,6 +1,6 @@
 # Hextech-Seekers Native — Unity + URP (Windows), Phase 2
 
-**Status: SOURCE / CONTRACT CHECKED; original skinned Garen importer added. Unity Editor compilation, Windows build, real GPU screenshots and character-animation visual checks remain NOT YET VERIFIED.**
+**Status (2026-11-01): Unity Editor C# compile and 5/5 EditMode tests PASSED on Windows Unity 6000.6.7f1 (GitHub Actions #41305706294). A separate Windows Player build and real GPU screenshot acceptance workflow is implemented but is NOT accepted until the actual runner succeeds.**
 
 This directory coexists with the unchanged `dist/` web client. Open `native-unity/` with **Unity 6000.0.40f1** (Unity Hub; use same major if patch unavailable). Unity Package Manager resolves **URP 17.0.3** and **Unity glTFast 6.20.0**.
 
@@ -30,4 +30,19 @@ Original League of Legends map/champion art is attributed to **Riot Games**, dis
 
 `tools/prepare_assets.py` now also copies the repository's original `garen.json`, `garen.bin` and `garen_base_tx_cm.png` into `Assets/StreamingAssets/Champions/Garen/`. It checks manifest identity and `attack1` presence; CI validates the binary buffer layout, vertex/UV/joint counts and source clip names. `Assets/Scripts/GarenRigRuntime.cs` builds the actual `SkinnedMeshRenderer`, all 68 bone transforms, bind poses and source animation tracks. Track samples are decoded once to avoid allocation every frame. It switches between idle1/run and one-shot attack1 via the shared `RiftBootstrap` navigation input.
 
-**Current limitations**: no Unity Editor compile/Play Mode evidence; map GLB import-to-nav handedness/rotation unverified; normals, UV-flip and bone orientation must be checked in GPU screenshots. Original animations are sampled at the source 30 FPS without crossfade; physics collider and true terrain-height snapping remain pending. This is a source implementation milestone, **not an accepted Windows playable build**.
+**Current limitations**: Unity Editor C# compilation/EditMode tests have passed; Windows Player and GPU captures remain separately gated; map GLB import-to-nav handedness/rotation unverified; normals, UV-flip and bone orientation must be checked in GPU screenshots. Original animations are sampled at the source 30 FPS without crossfade; physics collider and true terrain-height snapping remain pending. This is a source implementation milestone, **not an accepted Windows playable build**.
+
+## Phase 3: Windows Player build and real GPU evidence
+
+The new `.github/workflows/unity-windows-visual.yml` runs on a **Windows x64 self-hosted Runner** labeled `hextech-unity` under the same desktop user whose Unity Personal license is active. Use Unity 6000.6.7f1 at `F:\\6000.6.7f1\\Editor\\Unity.exe` or set `UNITY_EDITOR_PATH`. Windows Standalone build support and a functioning interactive D3D11 desktop GPU session are required; a Windows service running in Session 0 is not a substitute for a graphical desktop.
+
+On Unity-native code changes or manual `workflow_dispatch`, the job:
+1. Checks out source and prepares/checks the pinned original Rift GLB, navigation.bin and Garen rig buffers.
+2. Calls `HextechSeekers.Native.Editor.HextechNativeSetup.BuildWindows` using native Windows Unity Editor batch mode. The Player is built locally into `native-unity/Build/Windows/HextechSeekers.exe`.
+3. Launches that **actual Player** on the Windows desktop with D3D11, 1280x720, `-hextechVisualQA`, and `-hextechEvidenceDir <runner-temp>/evidence`; waits for its exit with a bounded timeout.
+4. Verifies a non-null hardware graphics API, loaded GLB renderers, original Garen skinned mesh, hero in the camera viewport, idle/run/attack1 state flags, frame measurements and three real screenshots.
+5. Validates each captured PNG's CRC, minimum dimensions, color diversity and dynamic range using Python 3 standard library, then uploads `Player.log`, `Build.log`, `result.json`, `verification.json`, screenshots and a concise README.
+
+**Acceptance distinctions:** A green GPU QA run proves that a real Player ran and generated non-blank native images on that Runner. It does **not** prove visual fidelity, correct skeletal deformation, map/gameplay scale, terrain alignment, materials, or screenshots' aesthetic similarity to League of Legends; review all three PNGs before signing off. A blank screen, missing map, missing animation, null/virtual graphics device, wrong checksum, startup failure or timeout fails CI rather than producing a false pass.
+
+The native Player binary embeds original Riot artwork, so CI deliberately uploads **evidence only**, not a redistributable public game ZIP. The compiled Windows Player remains in the local Runner working tree after successful execution. Do not redistribute binaries/artwork without confirming appropriate permissions.
