@@ -62,6 +62,8 @@ namespace HextechSeekers.Native.Editor
             CreateScene();
             var rift = Path.Combine(Application.dataPath, "StreamingAssets", "Rift", "map.glb");
             if (!File.Exists(rift)) throw new FileNotFoundException("Original map.glb is missing. Run tools/prepare_assets.py first.");
+            var compatibleRift = Path.Combine(Application.dataPath, "StreamingAssets", "Rift", "map-unity.glb");
+            if (!File.Exists(compatibleRift)) throw new FileNotFoundException("Unity compatible map-unity.glb is missing. Run tools/convert_webp_glb.py on the SHA-verified original map.glb before building.");
             string nav = Path.Combine(Application.dataPath, "StreamingAssets", "Rift", "navigation.bin");
             if (!File.Exists(nav) || new FileInfo(nav).Length != RiftGrid.BinaryBytes)
                 throw new InvalidDataException("Original nav binary absent or wrong size");
