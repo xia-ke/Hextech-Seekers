@@ -49,12 +49,31 @@ jobs:
           }
           if ($LASTEXITCODE -ne 0) { throw "Pinned original asset preparation failed ($LASTEXITCODE)" }
 
+      - name: Convert pinned Rift WebP textures into PNG-compatible GLB
+        run: |
+          $py = if (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { 'python' }
+          $prefix = if ($py -eq 'py') { @('-3') } else { @() }
+          & $py @prefix -c 'from PIL import Image'
+          if ($LASTEXITCODE -ne 0) {
+            & $py @prefix -m pip install --disable-pip-version-check --only-binary=:all: 'Pillow>=11,<13'
+            if ($LASTEXITCODE -ne 0) { throw 'Installing Pillow for local WebP-to-PNG conversion failed' }
+          }
+          $rift = Join-Path $env:GITHUB_WORKSPACE 'native-unity\Assets\StreamingAssets\Rift'
+          $source = Join-Path $rift 'map.glb'
+          $output = Join-Path $rift 'map-unity.glb'
+          & $py @prefix native-unity/tools/convert_webp_glb.py $source $output --sha256 'bdabbf3eb0c37dd2bb8567035c018d0da0f79c849c9353e5192a58279369a69e'
+          if ($LASTEXITCODE -ne 0) { throw "Pinned Rift WebP-to-PNG conversion failed ($LASTEXITCODE)" }
+          if (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'Converted map GLB missing' }
+          Write-Host "Generated Unity glTF-compatible map: $output"
+
       - name: Build real Windows x64 Player
         run: |
           $project = Join-Path $env:GITHUB_WORKSPACE 'native-unity'
           $root = Join-Path $env:RUNNER_TEMP "hextech-native-gpu-$env:GITHUB_RUN_ID"
           if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $conversionReport = Join-Path $project 'Assets\StreamingAssets\Rift\map-unity.conversion.json'
+          if (Test-Path -LiteralPath $conversionReport) { Copy-Item -LiteralPath $conversionReport -Destination (Join-Path $root 'map-conversion.json') }
           $log = Join-Path $root 'Build.log'
           $unity = "${{ steps.unity.outputs.exe }}"
           $args = @(
