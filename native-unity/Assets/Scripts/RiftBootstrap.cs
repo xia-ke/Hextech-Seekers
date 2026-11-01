@@ -12,7 +12,7 @@ namespace HextechSeekers.Native
     /// A visible cyan navigation ring is strictly a debug marker.</summary>
     public sealed class RiftBootstrap : MonoBehaviour
     {
-        public string mapFile = "Rift/map.glb";
+        public string mapFile = "Rift/map-unity.glb";
         public string navigationFile = "Rift/navigation.bin";
         public Vector2 initialPosition = new Vector2(7765f, -4020f);
         public float moveSpeed = 340f;
