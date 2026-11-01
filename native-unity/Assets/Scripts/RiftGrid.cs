@@ -177,7 +177,7 @@ namespace HextechSeekers.Native
                 {
                     if ((dx == 0 && dy == 0) || !Valid(cx + dx, cy + dy)) continue;
                     if (dx != 0 && dy != 0 && (!Valid(cx + dx, cy) || !Valid(cx, cy + dy))) continue;
-                    int next = (cy + dy) * Width + cx;
+                    int next = (cy + dy) * Width + (cx + dx);
                     if (closed[next]) continue;
                     float g = distances[at] + (dx != 0 && dy != 0 ? Mathf.Sqrt(2f) : 1f);
                     if (g >= distances[next]) continue;
