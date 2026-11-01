@@ -15,6 +15,43 @@ namespace HextechSeekers.Native.Editor
         const string ScenePath = "Assets/Scenes/NativeRiftPhase2.unity";
         const string RendererPath = "Assets/Settings/HextechURPRenderer.asset";
         const string PipelinePath = "Assets/Settings/HextechURPPipeline.asset";
+        const string GarenMaterialPath = "Assets/Resources/Native/GarenLit.mat";
+
+        static void EnsureGarenRuntimeMaterial()
+        {
+            if (!AssetDatabase.IsValidFolder("Assets/Resources"))
+                AssetDatabase.CreateFolder("Assets", "Resources");
+            if (!AssetDatabase.IsValidFolder("Assets/Resources/Native"))
+                AssetDatabase.CreateFolder("Assets/Resources", "Native");
+
+            // This persistent material is intentionally referenced through Resources
+            // at runtime. It prevents Unity's Player shader-stripping pass from
+            // removing URP/Lit when the only previous reference was Shader.Find().
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (!shader)
+                throw new InvalidDataException("URP/Lit shader is unavailable in the Editor; verify URP 17.0.3 is installed.");
+
+            var material = AssetDatabase.LoadAssetAtPath<Material>(GarenMaterialPath);
+            if (!material)
+            {
+                material = new Material(shader) { name = "Garen Runtime URP Lit" };
+                AssetDatabase.CreateAsset(material, GarenMaterialPath);
+            }
+            else if (material.shader != shader)
+            {
+                material.shader = shader;
+                EditorUtility.SetDirty(material);
+            }
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.ImportAsset(GarenMaterialPath, ImportAssetOptions.ForceUpdate);
+            var verified = AssetDatabase.LoadAssetAtPath<Material>(GarenMaterialPath);
+            if (!verified || verified.shader != shader)
+                throw new InvalidDataException("Failed to serialize the Garen URP/Lit Resources material.");
+
+            Debug.Log("NATIVE_SHADER_RESOURCE_READY: " + GarenMaterialPath +
+                      " shader=" + verified.shader.name);
+        }
         [MenuItem("Hextech Seekers/1. Create Native Rift Phase 2")]
         public static void CreateScene()
         {
@@ -60,6 +97,7 @@ namespace HextechSeekers.Native.Editor
         public static void BuildWindows()
         {
             CreateScene();
+            EnsureGarenRuntimeMaterial();
             var rift = Path.Combine(Application.dataPath, "StreamingAssets", "Rift", "map.glb");
             if (!File.Exists(rift)) throw new FileNotFoundException("Original map.glb is missing. Run tools/prepare_assets.py first.");
             var compatibleRift = Path.Combine(Application.dataPath, "StreamingAssets", "Rift", "map-unity.glb");
