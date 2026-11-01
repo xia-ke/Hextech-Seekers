@@ -33,6 +33,7 @@ namespace HextechSeekers.Native
         bool ready;
         public bool IsReady => ready;
         public GarenRigRuntime HeroRig => heroRig;
+        public GameObject LoadedMap => loadedMap;
         string problem = "Initializing 3D Rift...";
 
         async void Start()
