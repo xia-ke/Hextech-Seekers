@@ -203,9 +203,15 @@ namespace HextechSeekers.Native
             builtMesh.RecalculateBounds();
             builtTexture = new Texture2D(2, 2, TextureFormat.RGBA32, true);
             if (!builtTexture.LoadImage(png)) throw new InvalidDataException("Garen original texture decode failed");
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (!shader) throw new InvalidDataException("URP Lit shader missing; check project URP pipeline setup");
-            builtMaterial = new Material(shader);
+            // Runtime Shader.Find is not sufficient in a Player build: Unity can strip
+            // shaders that are referenced only by name. The Editor build step creates
+            // this material as a Resources asset so URP/Lit is serialized into the Player.
+            var materialTemplate = Resources.Load<Material>("Native/GarenLit");
+            if (!materialTemplate || !materialTemplate.shader)
+                throw new InvalidDataException(
+                    "Runtime URP material resource missing: Assets/Resources/Native/GarenLit.mat. " +
+                    "Run HextechNativeSetup.BuildWindows so the shader is included in the Player.");
+            builtMaterial = new Material(materialTemplate);
             builtMaterial.name = "Original Garen diffuse";
             builtMaterial.SetTexture("_BaseMap", builtTexture);
             builtMaterial.SetFloat("_Cull", 0f); // initial handedness diagnostic; needs Unity visual confirmation
