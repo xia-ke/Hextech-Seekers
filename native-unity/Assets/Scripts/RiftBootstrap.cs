@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
-using GLTFast;
+using Unity.Cloud.Gltfast;
 using UnityEngine;
 
 namespace HextechSeekers.Native
