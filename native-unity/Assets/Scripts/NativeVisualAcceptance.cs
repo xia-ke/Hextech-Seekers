@@ -49,7 +49,8 @@ namespace HextechSeekers.Native
             var driver = FindObjectOfType<NativeVisualAcceptance>();
             if (driver)
             {
-                Debug.Log("NATIVE_QA_DRIVER_FOUND: scene component is active");
+                driver.enabled = true;
+                Debug.Log("NATIVE_QA_DRIVER_FOUND: scene component is active and enabled");
                 return;
             }
 
@@ -145,9 +146,10 @@ namespace HextechSeekers.Native
             string evidence = EvidenceDirectory();
             Directory.CreateDirectory(evidence);
             File.WriteAllText(Path.Combine(evidence, "player-started.txt"),
-                "Unity=" + Application.unityVersion + "\\nScene=" +
+                "Unity=" + Application.unityVersion + Environment.NewLine + "Scene=" +
                 UnityEngine.SceneManagement.SceneManager.GetActiveScene().name +
-                "\\nGPU=" + SystemInfo.graphicsDeviceName + "\\nAPI=" + SystemInfo.graphicsDeviceType);
+                Environment.NewLine + "GPU=" + SystemInfo.graphicsDeviceName +
+                Environment.NewLine + "API=" + SystemInfo.graphicsDeviceType);
             Debug.Log("NATIVE_QA_CAPTURE_BEGIN: evidence=" + evidence);
             var report = new Report
             {
