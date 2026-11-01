@@ -32,7 +32,7 @@ jobs:
           $candidates += "C:\Program Files\Unity\Hub\Editor\$version\Editor\Unity.exe"
           $unity = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
           if (-not $unity) { throw "Unity Editor not found. Checked: $($candidates -join '; '). Install Unity or set UNITY_EDITOR_PATH in the runner environment." }
-          "exe=$unity" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "exe=$unity" + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
           Write-Host "Found Unity Editor: $unity"
           if ($unity -like "*6000.6.7f1*") { Write-Warning "Project version is 6000.0.40f1; running 6000.6.7f1 compatibility validation." }
       - name: Prepare verified original assets
