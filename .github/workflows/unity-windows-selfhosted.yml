@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/unity-windows-selfhosted.yml'
+      - 'native-unity/**'
 permissions:
   contents: read
 concurrency:
