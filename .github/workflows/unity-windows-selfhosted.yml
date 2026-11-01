@@ -1,0 +1,64 @@
+name: Unity Editor on Windows self-hosted (Personal)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hextech-native-windows-editor
+  cancel-in-progress: false
+jobs:
+  editor:
+    # Register a Windows runner with the extra label hextech-unity.
+    runs-on: [self-hosted, Windows, X64, hextech-unity]
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find local Unity Editor (no cloud license import)
+        id: unity
+        run: |
+          $version = '6000.0.40f1'
+          $candidates = @()
+          if ($env:UNITY_EDITOR_PATH) { $candidates += $env:UNITY_EDITOR_PATH }
+          $candidates += "C:\Program Files\Unity\Hub\Editor\$version\Editor\Unity.exe"
+          $unity = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $unity) { throw "Unity $version missing. Install it with Unity Hub or set UNITY_EDITOR_PATH in the runner environment." }
+          "exe=$unity" >> $env:GITHUB_OUTPUT
+          Write-Host "Found Unity Editor: $unity"
+      - name: Prepare verified original assets
+        run: |
+          $python = Get-Command py -ErrorAction SilentlyContinue
+          if ($python) {
+            & py -3 native-unity/tools/prepare_assets.py
+          } else {
+            & python native-unity/tools/prepare_assets.py
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Original asset preparation failed: $LASTEXITCODE" }
+      - name: Run Unity Editor compile and EditMode tests
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'hextech-unity-evidence'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $project = Join-Path $env:GITHUB_WORKSPACE 'native-unity'
+          $log = Join-Path $out 'Editor.log'
+          $results = Join-Path $out 'editmode-results.xml'
+          $unity = "${{ steps.unity.outputs.exe }}"
+          & $unity -batchmode -nographics -quit -projectPath $project -runTests -testPlatform EditMode -testResults $results -logFile $log -accept-apiupdate
+          $code = $LASTEXITCODE
+          Write-Host "Unity exit code: $code"
+          if (Test-Path $log) {
+            Get-Content $log -Tail 120
+          }
+          if ($code -ne 0) { throw "Unity Editor exited with code $code; inspect Editor.log" }
+          if (-not (Test-Path $results)) { throw "Unity returned success but did not produce EditMode results; inspect Editor.log" }
+          [xml]$xml = Get-Content -LiteralPath $results -Raw
+          $root = $xml.'test-run'
+          if ($root -and ([int]$root.failed -gt 0 -or [int]$root.errors -gt 0)) { throw "EditMode tests failed; inspect editmode-results.xml" }
+      - name: Upload Editor logs and tests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-windows-editor-evidence
+          path: ${{ runner.temp }}/hextech-unity-evidence/
+          if-no-files-found: warn
