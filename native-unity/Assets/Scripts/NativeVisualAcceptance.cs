@@ -64,7 +64,7 @@ namespace HextechSeekers.Native
                 camera.orthographicSize = 520f;
                 camera.nearClipPlane = 0.3f;
                 camera.farClipPlane = 4000f;
-                cameraObject.AddComponent<AudioListener>();
+                // The runtime assembly intentionally excludes UnityEngine.AudioModule; QA screenshots do not need audio.
                 Debug.LogWarning("NATIVE_QA_CAMERA_CREATED: no MainCamera was present in the built scene");
             }
 
