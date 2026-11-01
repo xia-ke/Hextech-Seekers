@@ -5,6 +5,8 @@ Logs/
 UserSettings/
 Build/
 Assets/StreamingAssets/Rift/map.glb
+Assets/StreamingAssets/Rift/map-unity.glb
+Assets/StreamingAssets/Rift/map-unity.conversion.json
 Assets/StreamingAssets/Rift/navigation.bin
 Assets/StreamingAssets/Rift/asset-provenance.json
 *.csproj
