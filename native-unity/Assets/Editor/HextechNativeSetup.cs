@@ -75,9 +75,28 @@ namespace HextechSeekers.Native.Editor
             }
             string output = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "Build", "Windows", "HextechSeekers.exe");
             Directory.CreateDirectory(Path.GetDirectoryName(output));
+            // Validate the exact scene that will be included in the Player.
+            var builtScene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+            var roots = builtScene.GetRootGameObjects();
+            bool hasCamera = false, hasBootstrap = false, hasVisualQa = false;
+            foreach (var root in roots)
+            {
+                if (root.GetComponentInChildren<Camera>(true)) hasCamera = true;
+                if (root.GetComponentInChildren<RiftBootstrap>(true)) hasBootstrap = true;
+                if (root.GetComponentInChildren<NativeVisualAcceptance>(true)) hasVisualQa = true;
+            }
+            Debug.Log("NATIVE_BUILD_SCENE_CHECK: path=" + ScenePath +
+                      " roots=" + roots.Length + " camera=" + hasCamera +
+                      " bootstrap=" + hasBootstrap + " visualQA=" + hasVisualQa);
+            if (!hasCamera || !hasBootstrap || !hasVisualQa)
+                throw new InvalidDataException("Native Rift scene is missing MainCamera, RiftBootstrap or NativeVisualAcceptance");
+            PlayerSettings.runInBackground = true;
+            PlayerSettings.defaultScreenWidth = 1280;
+            PlayerSettings.defaultScreenHeight = 720;
             var options = new BuildPlayerOptions {
                 scenes = new[] { ScenePath }, locationPathName = output,
-                target = BuildTarget.StandaloneWindows64, options = BuildOptions.None
+                target = BuildTarget.StandaloneWindows64,
+                options = BuildOptions.Development | BuildOptions.AllowDebugging
             };
             var report = BuildPipeline.BuildPlayer(options);
             if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
