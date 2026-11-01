@@ -26,11 +26,13 @@ jobs:
           $version = '6000.0.40f1'
           $candidates = @()
           if ($env:UNITY_EDITOR_PATH) { $candidates += $env:UNITY_EDITOR_PATH }
+          Write-Host "Runner account: $env:USERNAME; workdir: $env:GITHUB_WORKSPACE"
+          Write-Host "Configured UNITY_EDITOR_PATH: $env:UNITY_EDITOR_PATH"
           $candidates += 'F:\6000.6.7f1\Editor\Unity.exe'
           $candidates += "C:\Program Files\Unity\Hub\Editor\$version\Editor\Unity.exe"
           $unity = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
-          if (-not $unity) { throw "Unity $version missing. Install it with Unity Hub or set UNITY_EDITOR_PATH in the runner environment." }
-          "exe=$unity" >> $env:GITHUB_OUTPUT
+          if (-not $unity) { throw "Unity Editor not found. Checked: $($candidates -join '; '). Install Unity or set UNITY_EDITOR_PATH in the runner environment." }
+          "exe=$unity" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           Write-Host "Found Unity Editor: $unity"
           if ($unity -like "*6000.6.7f1*") { Write-Warning "Project version is 6000.0.40f1; running 6000.6.7f1 compatibility validation." }
       - name: Prepare verified original assets
@@ -55,6 +57,8 @@ jobs:
           Write-Host "Unity exit code: $code"
           if (Test-Path $log) {
             Get-Content $log -Tail 120
+          } else {
+            Write-Warning "Unity did not create Editor.log"
           }
           if ($code -ne 0) { throw "Unity Editor exited with code $code; inspect Editor.log" }
           if (-not (Test-Path $results)) { throw "Unity returned success but did not produce EditMode results; inspect Editor.log" }
