@@ -102,11 +102,9 @@ jobs:
             if (Test-Path $stderr) { Get-Content $stderr -Tail 80 | ForEach-Object { Write-Host $_ } }
             return $proc.ExitCode
           }
-          $code = RunPython @('-m', 'pip', 'show', 'Pillow') 'Pillow probe'
-          if ($code -ne 0) {
-            $code = RunPython @('-m', 'pip', 'install', '--disable-pip-version-check', '--only-binary=:all:', '"Pillow>=11,<13"') 'Pillow install'
-            if ($code -ne 0) { throw "Pillow installation failed ($code), see MapConversion.stderr.log" }
-          }
+          $setupScript = Join-Path $env:GITHUB_WORKSPACE 'native-unity\tools\ensure_pillow.py'
+          $code = RunPython @(('"{0}"' -f $setupScript)) 'Verified offline Pillow setup'
+          if ($code -ne 0) { throw "Pillow wheel setup failed ($code), inspect MapConversion.stderr.log" }
           $rift = Join-Path $env:GITHUB_WORKSPACE 'native-unity\Assets\StreamingAssets\Rift'
           $source = Join-Path $rift 'map.glb'
           $output = Join-Path $rift 'map-unity.glb'
