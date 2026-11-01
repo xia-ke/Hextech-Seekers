@@ -1,7 +1,7 @@
 {
     "name": "HextechNative.EditorTests",
     "rootNamespace": "HextechSeekers.Native.Tests",
-    "references": [],
+    "references": ["HextechNative.Runtime"],
     "optionalUnityReferences": ["TestAssemblies"],
     "includePlatforms": ["Editor"],
     "excludePlatforms": [],
