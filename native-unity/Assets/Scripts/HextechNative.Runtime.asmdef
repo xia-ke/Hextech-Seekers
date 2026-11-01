@@ -2,7 +2,7 @@
   "name": "HextechNative.Runtime",
   "rootNamespace": "HextechSeekers.Native",
   "references": [
-    "Unity.Cloud.Gltfast"
+    "glTFast"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],
