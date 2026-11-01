@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using GLTFast;
+using GLTFast.Logging;
 using UnityEngine;
 
 namespace HextechSeekers.Native
@@ -56,11 +57,23 @@ namespace HextechSeekers.Native
                 loadedMap.transform.SetParent(transform, false);
                 loadedMap.transform.localRotation = Quaternion.Euler(0, mapYawCorrection, 0);
                 loadedMap.transform.localScale = Vector3.one * worldScale;
-                mapImport = new GltfImport();
+                // glTFast's default logger suppresses detailed diagnostics. Forward
+                // importer errors/warnings to Player.log for automated root-cause triage.
+                mapImport = new GltfImport(logger: new ConsoleLogger());
                 // Only import our verified, pinned GLB file, not a network model.
-                string uri = new Uri(Path.GetFullPath(glbPath)).AbsoluteUri;
-                if (!await mapImport.Load(uri) || !await mapImport.InstantiateMainSceneAsync(loadedMap.transform))
-                    throw new InvalidDataException("Failed to instantiate original 3D map.glb in glTFast");
+                var glbInfo = new FileInfo(glbPath);
+                string uri = new Uri(glbInfo.FullName).AbsoluteUri;
+                Debug.Log("NATIVE_MAP_LOAD_BEGIN: bytes=" + glbInfo.Length +
+                          " uri=" + uri + " GPU=" + SystemInfo.graphicsDeviceName);
+                bool loaded = await mapImport.Load(new Uri(uri));
+                Debug.Log("NATIVE_MAP_LOAD_DONE: success=" + loaded);
+                if (!loaded)
+                    throw new InvalidDataException("Original Rift map.glb failed during glTFast Load; inspect preceding glTFast importer messages in Player.log");
+                bool instantiated = await mapImport.InstantiateMainSceneAsync(loadedMap.transform);
+                Debug.Log("NATIVE_MAP_INSTANTIATE_DONE: success=" + instantiated +
+                          " renderers=" + loadedMap.GetComponentsInChildren<Renderer>(true).Length);
+                if (!instantiated)
+                    throw new InvalidDataException("Original Rift map.glb loaded but glTFast scene instantiation failed; inspect Player.log");
                 // A real skinned original hero is a hard requirement for phase 2.
                 // Do not silently fall back to the old cyan diagnostic disc.
                 string heroPath = Path.Combine(root, "Champions", "Garen");
