@@ -72,8 +72,8 @@ jobs:
             if (Test-Path $stderr) { Remove-Item $stderr -Force }
             $proc = Start-Process -FilePath $pyExe -ArgumentList ($prefix + $argsList) -WorkingDirectory $env:GITHUB_WORKSPACE -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
             Write-Host "$description exit=$($proc.ExitCode)"
-            if (Test-Path $stdout) { Get-Content $stdout -Tail 80 }
-            if (Test-Path $stderr) { Get-Content $stderr -Tail 80 }
+            if (Test-Path $stdout) { Get-Content $stdout -Tail 80 | ForEach-Object { Write-Host $_ } }
+            if (Test-Path $stderr) { Get-Content $stderr -Tail 80 | ForEach-Object { Write-Host $_ } }
             return $proc.ExitCode
           }
           $code = RunPython @('-m', 'pip', 'show', 'Pillow') 'Pillow probe'
