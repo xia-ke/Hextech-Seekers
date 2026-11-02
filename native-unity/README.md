@@ -89,7 +89,7 @@ Eight neutral/ability logic tests and five spawn provenance tests have been auth
 
 See [docs/phase-8-champion-combat.md](docs/phase-8-champion-combat.md).
 
-- Blitzcrank Q now uses an actual time-of-flight contact sampler along the navigable Rift, with enemy collision, source-visible-target gating, wall/windwall blocking and a no-damage pull.
+- Blitzcrank Q now uses an actual time-of-flight contact sampler along the navigable Rift, with physical enemy collision (including blind hits), AI sight-gated aiming, wall/windwall blocking and a no-damage pull.
 - Riven Q is a three-cast directional dash state with a provisional recast interval and third-hit airborne effect; W stuns multiple nearby valid enemies and E dashes without letting an ordinary shield block capture.
 - Yasuo Q can stack on actual verified monsters *or* enemy actors and apply third-tornado CC; W can interrupt the Blitz Q projectile, and E can borrow a verified neutral monster for escape.
 - The original Garen skinned rig decoder now supports optional **source-verified** Blitzcrank/Riven/Yasuo meshes/animations and the bot controller will use them when available. No extra original champion assets are present in Git by default. Missing assets keep explicitly labeled AI tactical rings.
