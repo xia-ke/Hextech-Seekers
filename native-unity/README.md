@@ -1,4 +1,4 @@
-# Hextech-Seekers Native — Unity + URP (Windows), Phase 8 champion contact foundation
+# Hextech-Seekers Native — Unity + URP (Windows), Phase 9 native combat presentation
 
 **Verified Phase 3 baseline:** Unity 6000.6.7f1, Editor tests, original Rift/Garen Windows Player and GPU screenshot technical acceptance all PASSED (Windows GPU run #41326056673; Editor run #41326056661). **Phase 4 gameplay vertical slice** (role selection, 1v1 tactical AI, preparation/roaming/capture/scoring) is now implemented in source; its newly added gameplay integration tests must pass before claiming the new phase accepted.
 
@@ -95,3 +95,18 @@ See [docs/phase-8-champion-combat.md](docs/phase-8-champion-combat.md).
 - The original Garen skinned rig decoder now supports optional **source-verified** Blitzcrank/Riven/Yasuo meshes/animations and the bot controller will use them when available. No extra original champion assets are present in Git by default. Missing assets keep explicitly labeled AI tactical rings.
 - `native-unity/tools/import_native_hero.py` accepts a local original `.lmesh`/`.lanim` source and stages a hash-checked model/animation conversion without downloading/committing Riot art.
 - Additional source-level NUnit/EditMode combat tests are authored, **not executed or accepted for this phase** as requested. Previous Phase 3 GPU acceptance is not retroactively extended to this new code.
+
+## Phase 9: original-source animation clips, 3D diagnostic combat FX, attack contact timing
+
+Detailed implementation and deferred-acceptance boundary:
+[docs/phase-9-animation-and-combat-vfx.md](docs/phase-9-animation-and-combat-vfx.md).
+
+The optional source-verified `animation-bindings.json` now maps actual original hero Q/W/E spell animation tracks, including Riven Q1/Q2/Q3, without guessing mappings or substituting unrelated idle/spell animation. The model converter keeps real original `spell*` tracks, and `import_native_hero.py --bindings` cross-checks each mapping against those converted clips.
+
+The gameplay scene now draws temporary world-space **diagnostic** skill effects for Blitz Q's actual in-flight hook position, the 3D endpoints of Yasuo W's windwall and accepted Garen/Blitz/Riven/Yasuo skill events. FX are hidden unless the current player/spectated teammate legitimately sees the caster; unseen collision victims are not exposed by an impact particle position. This is diagnostic graphics **not Riot VFX art**.
+
+A `NativeBasicContactWindow` delays basic-attack hit resolution by a provisional 0.23s rather than instantly capturing at button press. When the contact time arrives, the game rechecks live attack phase, range, LOS, stun and actual one-use capture immunity. Blitz E empowerment is consumed on a valid attack hit rather than by an E cast or missed basic.
+
+Nine focused EditMode tests are added in `NativeAnimationContactTests.cs`; **these tests and the new GPU features have NOT been executed or accepted in Phase 9**, at the owner's request to keep implementing before a consolidated acceptance.
+
+Model limitations persist: only Garen's original rig is in the repository. Other heroes require separately sourced, appropriately permitted genuine models, animation and art. Original skill VFX/pose matching, exact animation contact frames, audio and visual-quality review are future work.
