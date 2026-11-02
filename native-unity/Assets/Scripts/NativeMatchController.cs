@@ -60,6 +60,7 @@ namespace HextechSeekers.Native
         bool loggedFinish;
         string feedback = "";
         int preferredTargetId = -1;
+        int preferredSpectateId = -1;
 
         void Awake()
         {
@@ -102,6 +103,7 @@ namespace HextechSeekers.Native
             garenSkills = new NativeGarenSkills();
             offered = NativeHextechPool.Deal(role, random);
             preferredTargetId = -1;
+            preferredSpectateId = -1;
             basicCooldown = 0;
             loggedFinish = false;
             feedback = "Choose one of your three independent Hextech cards.";
@@ -204,8 +206,10 @@ namespace HextechSeekers.Native
                 rules.Advance(dt);
             }
 
-            // A caught hider may observe surviving allied hiders, never
-            // arbitrary hidden enemy positions. No shared vision while alive.
+            // A caught hider may switch between living allied viewpoints.
+            // Each view has its own fog history; we never merge hider vision.
+            if (rules.Find(HumanId).Eliminated && Input.GetKeyDown(KeyCode.Tab))
+                CycleSpectatedAlly();
             int spectatedId = SpectatedAlly();
             rift.CameraFollowOverride = spectatedId >= 0 ?
                 (Vector2?)GetPosition(spectatedId) : null;
@@ -563,10 +567,33 @@ namespace HextechSeekers.Native
         {
             if (rules == null || !rules.Find(HumanId).Eliminated)
                 return -1;
+            var preferred = FindBot(preferredSpectateId);
+            if (preferred != null && preferred.Role == humanRole &&
+                !rules.Find(preferred.Id).Eliminated)
+                return preferred.Id;
             foreach (var bot in bots)
                 if (bot.Role == humanRole && !rules.Find(bot.Id).Eliminated)
                     return bot.Id;
             return -1;
+        }
+
+        void CycleSpectatedAlly()
+        {
+            if (rules == null || !rules.Find(HumanId).Eliminated) return;
+            var eligible = new List<int>();
+            foreach (var bot in bots)
+                if (bot.Role == humanRole && !rules.Find(bot.Id).Eliminated)
+                    eligible.Add(bot.Id);
+            if (eligible.Count == 0)
+            {
+                preferredSpectateId = -1;
+                feedback = "No living ally to spectate; private vision is blank";
+                return;
+            }
+            int current = eligible.IndexOf(SpectatedAlly());
+            preferredSpectateId = eligible[(current + 1) % eligible.Count];
+            feedback = "Spectating " + rules.Find(preferredSpectateId).HeroKey +
+                       " (only this ally's private vision)";
         }
 
         void UpdateMarkers()
@@ -602,6 +629,7 @@ namespace HextechSeekers.Native
             rules = null;
             hextech = null;
             offered = null;
+            preferredSpectateId = -1;
             rift.StopMovement();
             rift.ExternalGameplayControl = false;
             rift.ExternalMoveEnabled = true;
@@ -696,9 +724,11 @@ namespace HextechSeekers.Native
                 }
                 GUI.Label(new Rect(25, 238, 490, 25), feedback);
                 GUI.Label(new Rect(25, 263, 490, 25),
-                    privateFog && privateFog.Running ?
-                    "Fog: private 3D terrain vision + explored darkness" :
-                    "Fog unavailable: no full-map sight protection");
+                    rules.Find(HumanId).Eliminated && SpectatedAlly() >= 0 ?
+                    "Spectating: Tab cycles allies; fog follows ONLY the chosen ally" :
+                    (privateFog && privateFog.Running ?
+                     "Fog: private 3D terrain vision + explored darkness" :
+                     "Fog unavailable: no full-map sight protection"));
                 if (rules.Phase == MatchPhase.Finished)
                 {
                     int row = 0;
