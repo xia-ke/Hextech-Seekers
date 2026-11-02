@@ -107,7 +107,6 @@ namespace HextechSeekers.Native
         public float CooldownQ => Mathf.Max(0f, nextQ - now);
         public float CooldownW => Mathf.Max(0f, nextW - now);
         public float CooldownE => Mathf.Max(0f, nextE - now);
-        public float CooldownE => Mathf.Max(0f, nextE - now);
         public float BlitzBoostRemaining => Mathf.Max(0f, blitzBoostUntil - now);
         public float BlitzSlowRemaining => Mathf.Max(0f, blitzSlowUntil - now);
         public float BlitzEArmRemaining => blitzEArmed ? Mathf.Max(0f, blitzEExpires - now) : 0f;
