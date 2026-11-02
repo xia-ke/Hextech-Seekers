@@ -588,7 +588,9 @@ namespace HextechSeekers.Native
             float earliest = float.PositiveInfinity;
             foreach (var target in targets)
             {
-                if (target.Eliminated || !target.VisibleToCaster) continue;
+                if (target.Eliminated) continue;
+                // AI chose its cast from an actually visible enemy, but the
+                // physical Q footprint may also strike a hidden unit.
                 Vector2 displacement = target.Position - bot.Position;
                 float forward = Vector2.Dot(displacement, facing);
                 if (forward < 0 || forward > reach || forward >= earliest)
