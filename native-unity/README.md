@@ -1,4 +1,4 @@
-# Hextech-Seekers Native — Unity + URP (Windows), Phase 6 gameplay and fog implementation
+# Hextech-Seekers Native — Unity + URP (Windows), Phase 7 gameplay foundation
 
 **Verified Phase 3 baseline:** Unity 6000.6.7f1, Editor tests, original Rift/Garen Windows Player and GPU screenshot technical acceptance all PASSED (Windows GPU run #41326056673; Editor run #41326056661). **Phase 4 gameplay vertical slice** (role selection, 1v1 tactical AI, preparation/roaming/capture/scoring) is now implemented in source; its newly added gameplay integration tests must pass before claiming the new phase accepted.
 
@@ -72,3 +72,15 @@ See [docs/phase-6-vision-fog.md](docs/phase-6-vision-fog.md).
 The native URP player now has a `NativeVisionGrid` with current, explored, and unexplored world cells; a depth-reconstructed 3D fog shader; and separate memory per hunter/hider. It is attached to the native gameplay controller after the match begins, and removed between rounds. Eliminated hiders can see a living ally's own private mask while spectating, not the union of every hider's explored territory. Enemy tactical AI markers remain governed by their personal navigation LOS and brush concealment rather than the rendered fog alone.
 
 Six extra EditMode test cases for this logic have been authored. As requested, we are **continuing development without waiting for Windows CI or GPU visual acceptance of Phase 6**. Full LoL-equivalent vision geometry, original character asset import and enemy-only grass hiding are still not verified pixel-for-pixel.
+
+## Phase 7: grounded neutral skill targets and source-verified spawn points
+
+See [docs/phase-7-neutrals-and-spawns.md](docs/phase-7-neutrals-and-spawns.md).
+
+The native project now includes passive, indestructible, non-attacking neutral Unity entities with trigger colliders, created **only** at manually verified Map11 camp locations when `Assets/StreamingAssets/Rift/camps.json` is supplied. With no verified camps, zero monsters are spawned rather than making up locations or claiming the diagnostic rings are original monster art.
+
+A new `NativeYasuoSkillState` supports Yasuo Q's two landed stacks and third tornado, including contact with a neutral target without damage/capture, plus target-restricted E dashes over a legal monster with a per-target reuse lock. The existing Yasuo AI tactical actor can build stacks on verified neutral targets, but the actual Yasuo model/projectile/animation are still missing.
+
+`NativeSpawnCalibration` optionally reads `Assets/StreamingAssets/Rift/spawns.json` with manually verified source coordinates and navigable fountain/hider entry anchors. When absent, the preexisting provisional staging points remain, and the UI does not pretend they have been calibrated as the original fountain.
+
+Eight neutral/ability logic tests and five spawn provenance tests have been authored. **This phase has not been visually or operationally accepted**, as requested; the last formally accepted original-Garen GPU baseline is a separate earlier commit.
