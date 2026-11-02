@@ -42,6 +42,7 @@ namespace HextechSeekers.Native
             public LineRenderer Ring;
             public Material RingMaterial;
             public NativeHeroLoadout Loadout;
+            public NativeYasuoSkillState YasuoSkill;
         }
 
         readonly List<Bot> bots = new List<Bot>();
@@ -120,6 +121,8 @@ namespace HextechSeekers.Native
                     Loadout = new NativeHeroLoadout(p.HeroKey, p.Role),
                 };
                 bot.Loadout.Choose(NativeSkillSlot.Q);
+                if (string.Equals(bot.Hero, "Yasuo", StringComparison.OrdinalIgnoreCase))
+                    bot.YasuoSkill = new NativeYasuoSkillState();
                 var offeredBot = NativeHextechPool.Deal(p.Role, random);
                 // Each AI rolls and selects independently; duplicate choices
                 // across different characters are intentionally legal.
@@ -426,8 +429,47 @@ namespace HextechSeekers.Native
             }
         }
 
+        void BotYasuoNeutralQ(Bot bot)
+        {
+            if (bot.YasuoSkill == null || rift.NeutralMonsters == null ||
+                !rift.NeutralMonsters.HasVerifiedCamps ||
+                bot.YasuoSkill.CooldownQ > 0 || !hextech.CanUseHeroSkill(bot.Id))
+                return;
+
+            NativeNeutralMonster candidate = null;
+            float nearest = float.PositiveInfinity;
+            foreach (var monster in rift.NeutralMonsters.Monsters)
+            {
+                Vector2 vector = monster.WalkableAnchor - bot.Position;
+                if (vector.sqrMagnitude < 1f ||
+                    vector.sqrMagnitude > NativeYasuoSkillState.QReachProvisional *
+                                         NativeYasuoSkillState.QReachProvisional ||
+                    vector.sqrMagnitude >= nearest ||
+                    !rift.Navigation.LineClear(bot.Position, monster.WalkableAnchor))
+                    continue;
+                nearest = vector.sqrMagnitude;
+                candidate = monster;
+            }
+            if (candidate == null) return;
+            var direction = candidate.WalkableAnchor - bot.Position;
+            var hit = rift.NeutralMonsters.FirstLineContact(
+                bot.Position, direction,
+                NativeYasuoSkillState.QReachProvisional,
+                NativeYasuoSkillState.QHalfWidthProvisional);
+            if (bot.YasuoSkill.TryQ(bot.Loadout, rules, hextech, bot.Id,
+                                    hit != null, out bool tornado))
+            {
+                Debug.Log("NATIVE_YASUO_Q_NEUTRAL: actor=" + bot.Id +
+                          " camp=" + (hit != null ? hit.CampName : "miss") +
+                          " stacks=" + bot.YasuoSkill.QStacks +
+                          " tornado=" + tornado +
+                          " damage=0 monsterStillAlive=true");
+            }
+        }
+
         void UpdateBot(Bot bot, float dt)
         {
+            if (bot.YasuoSkill != null) bot.YasuoSkill.Advance(dt);
             var person = rules.Find(bot.Id);
             if (person.Eliminated || rules.Phase == MatchPhase.Finished) return;
             if (!rules.CanMove(bot.Id) || hextech.Stunned(bot.Id))
@@ -458,6 +500,11 @@ namespace HextechSeekers.Native
                 }
                 else if (bot.Waypoint >= bot.Path.Count)
                     BotWander(bot);
+
+                // Yasuo Q may legitimately hit a neutral monster to build
+                // tornado stacks, without damage, killing or capturing.
+                // This is mechanics-only; Yasuo's rig/VFX are not imported.
+                BotYasuoNeutralQ(bot);
 
                 // AI can use control augments on enemies within its own
                 // perception. Its hextech selection/cooldown is independent.
