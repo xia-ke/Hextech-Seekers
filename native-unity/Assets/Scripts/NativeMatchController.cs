@@ -47,6 +47,7 @@ namespace HextechSeekers.Native
             public Material RingMaterial;
             public GarenRigRuntime RealRig;
             public NativeHeroLoadout Loadout;
+            public readonly NativeDashMotion Dash = new NativeDashMotion();
             public NativeYasuoSkillState YasuoSkill;
             public NativeChampionCombat Combat;
             public NativeAbilityAnimationBindings AnimationBindings;
@@ -613,10 +614,15 @@ namespace HextechSeekers.Native
             if (impact == null) return;
             if (impact.CasterLanding.HasValue)
             {
-                caster.Position = impact.CasterLanding.Value;
-                caster.Path.Clear();
-                caster.Waypoint = 0;
-                PlaceMarker(caster);
+                // A completed cast authorizes a target landing; the actor
+                // travels there over time, not by an instant teleport.
+                if (caster.Dash.Begin(rift.Navigation, caster.Position,
+                                      impact.CasterLanding.Value))
+                {
+                    caster.Path.Clear();
+                    caster.Waypoint = 0;
+                    caster.BasicContact.Cancel();
+                }
             }
             if (impact.TargetId >= 0)
             {
@@ -665,7 +671,7 @@ namespace HextechSeekers.Native
 
         void BotCastChampionSkill(Bot bot, int enemyId)
         {
-            if (bot.Combat == null || enemyId < 0 ||
+            if (bot.Combat == null || enemyId < 0 || bot.Dash.Active ||
                 !hextech.CanUseHeroSkill(bot.Id)) return;
             Vector2 direction = GetPosition(enemyId) - bot.Position;
             if (direction.sqrMagnitude < 1f) return;
@@ -805,12 +811,13 @@ namespace HextechSeekers.Native
                     bot.Id, bot.Position, selected.Id, rift.NeutralMonsters,
                     out var landed))
             {
+                if (!bot.Dash.Begin(rift.Navigation, bot.Position, landed))
+                    return;
                 PlayBotOriginalSkill(bot, NativeSkillSlot.E);
                 combatVfx?.Pulse(bot.Id, bot.Position, "Yasuo E");
-                bot.Position = landed;
                 bot.Path.Clear();
                 bot.Waypoint = 0;
-                PlaceMarker(bot);
+                bot.BasicContact.Cancel();
                 Debug.Log("NATIVE_YASUO_E_NEUTRAL_ESCAPE: " + selected.CampName +
                           " monsterAlive=true damage=0 capture=false");
             }
@@ -818,7 +825,8 @@ namespace HextechSeekers.Native
 
         void BotYasuoNeutralQ(Bot bot)
         {
-            if (bot.YasuoSkill == null || rift.NeutralMonsters == null ||
+            if (bot.YasuoSkill == null || bot.Dash.Active ||
+                rift.NeutralMonsters == null ||
                 !rift.NeutralMonsters.HasVerifiedCamps ||
                 bot.YasuoSkill.CooldownQ > 0 || !hextech.CanUseHeroSkill(bot.Id))
                 return;
@@ -873,6 +881,7 @@ namespace HextechSeekers.Native
             {
                 bot.Path.Clear();
                 bot.Waypoint = 0;
+                bot.Dash.Cancel();
                 if (bot.RealRig) bot.RealRig.Tick(dt, false);
                 bot.BasicContact.Cancel();
                 UpdateBotCombatVfx(bot);
@@ -932,6 +941,24 @@ namespace HextechSeekers.Native
                                           out var message);
                     }
                 }
+            }
+
+            if (bot.Dash.Active)
+            {
+                Vector2 previous = bot.Position;
+                bot.Position = bot.Dash.Step(dt);
+                PlaceMarker(bot);
+                ResolveBotBasicContact(bot, dt);
+                UpdateBotCombatVfx(bot);
+                if (bot.RealRig)
+                {
+                    Vector2 delta = bot.Position - previous;
+                    if (delta.sqrMagnitude > .0001f)
+                        bot.RealRig.transform.rotation = Quaternion.LookRotation(
+                            new Vector3(delta.x, 0, delta.y), Vector3.up);
+                    bot.RealRig.Tick(dt, true);
+                }
+                return;
             }
 
             Vector2 beforeMove = bot.Position;
