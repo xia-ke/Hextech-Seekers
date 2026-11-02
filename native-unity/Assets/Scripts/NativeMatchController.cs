@@ -215,9 +215,21 @@ namespace HextechSeekers.Native
                 {
                     // The second skill is an independent learned slot, never
                     // an automatic unlearned ability granted to every bot.
-                    var secondary = bot.Hero == "Yasuo" ?
-                        NativeSkillSlot.W : NativeSkillSlot.W;
-                    bot.Loadout.Choose(secondary);
+                    NativeSkillSlot secondary;
+                    if (bot.Hero == "Blitzcrank")
+                        secondary = bot.Role == MatchRole.Hunter ?
+                            NativeSkillSlot.E : NativeSkillSlot.W;
+                    else if (bot.Hero == "Riven" || bot.Hero == "Yasuo")
+                        secondary = bot.Role == MatchRole.Hider ?
+                            NativeSkillSlot.E : NativeSkillSlot.W;
+                    else
+                        secondary = NativeSkillSlot.W;
+                    if (!bot.Loadout.Choose(secondary))
+                        Debug.LogWarning("NATIVE_AI_SECONDARY_SKILL_REJECTED: " +
+                                         bot.Hero + " " + secondary);
+                    else
+                        Debug.Log("NATIVE_AI_SKILLS_READY: " + bot.Hero + " " +
+                                  bot.Loadout.Primary + "+" + bot.Loadout.Secondary);
                 }
             }
             rift.ExternalMoveEnabled = rules.CanMove(HumanId);
@@ -750,8 +762,11 @@ namespace HextechSeekers.Native
                     {
                         PlayBotOriginalSkill(bot, NativeSkillSlot.W);
                         combatVfx?.Pulse(bot.Id, bot.Position, "Yasuo W");
+                        return;
                     }
                 }
+                if (bot.Loadout.Knows(NativeSkillSlot.E))
+                    BotYasuoHeroE(bot, targets);
             }
         }
 
@@ -799,6 +814,39 @@ namespace HextechSeekers.Native
                 return true;
             }
             return false;
+        }
+
+        bool BotYasuoHeroE(Bot bot, IReadOnlyList<NativeSkillTarget> targets)
+        {
+            if (bot.YasuoSkill == null || !bot.Loadout.Knows(NativeSkillSlot.E) ||
+                bot.Dash.Active || targets == null) return false;
+            NativeSkillTarget selected = default;
+            float nearest = float.PositiveInfinity;
+            bool found = false;
+            foreach (var target in targets)
+            {
+                if (target.Eliminated || !target.VisibleToCaster) continue;
+                float distance = (target.Position - bot.Position).sqrMagnitude;
+                if (distance >= nearest) continue;
+                selected = target;
+                nearest = distance;
+                found = true;
+            }
+            if (!found || !bot.YasuoSkill.TryEDashThroughHero(
+                bot.Loadout, rules, hextech, bot.Id, bot.Position,
+                selected, rift.Navigation, out var landing))
+                return false;
+            if (!bot.Dash.Begin(rift.Navigation, bot.Position, landing))
+                return false;
+            PlayBotOriginalSkill(bot, NativeSkillSlot.E);
+            combatVfx?.Pulse(bot.Id, bot.Position, "Yasuo E Hero");
+            bot.Path.Clear();
+            bot.Waypoint = 0;
+            bot.BasicContact.Cancel();
+            Debug.Log("NATIVE_YASUO_E_HERO: actor=" + bot.Id +
+                      " target=" + selected.Id + " visible=true" +
+                      " landing=" + landing + " damage=0 capture=false");
+            return true;
         }
 
         void BotYasuoNeutralEscape(Bot bot, int hunterId)
