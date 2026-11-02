@@ -149,6 +149,10 @@ jobs:
             Get-Content -LiteralPath $log -Tail 160
           } else { Write-Warning 'Unity Build.log missing' }
           if ($proc.ExitCode -ne 0) { throw "Windows Player build failed (exit $($proc.ExitCode))" }
+          if (-not (Test-Path -LiteralPath $log -PathType Leaf) -or
+              -not (Select-String -LiteralPath $log -SimpleMatch 'NATIVE_GLTF_SHADER_RESOURCES_READY' -Quiet)) {
+            throw 'Build did not prove glTFast shader materials were pinned into Resources'
+          }
           $exe = Join-Path $project 'Build\Windows\HextechSeekers.exe'
           $data = Join-Path $project 'Build\Windows\HextechSeekers_Data'
           if (-not (Test-Path -LiteralPath $exe -PathType Leaf) -or -not (Test-Path -LiteralPath $data -PathType Container)) {
@@ -198,6 +202,15 @@ jobs:
             Get-Content -LiteralPath $log -Tail 120
           } else { Write-Warning 'Unity Player.log missing' }
           if ($proc.ExitCode -ne 0) { throw "GPU Player exited with code $($proc.ExitCode); inspect Player.log and result.json" }
+          $playerLogText = if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Raw } else { '' }
+          foreach ($marker in @('NATIVE_GLTF_SHADERS_PRELOADED', 'NATIVE_MAP_MATERIAL_AUDIT_PASS')) {
+            if (-not $playerLogText.Contains($marker)) {
+              throw "Player did not confirm required 3D material check: $marker"
+            }
+          }
+          if ($playerLogText -match "Shader 'Shader Graphs/glTF-(unlit|pbrMetallicRoughness)' is missing") {
+            throw 'Player still reports a missing glTFast shader graph'
+          }
           $qaResult = Join-Path $evidence 'result.json'
           if (-not (Test-Path -LiteralPath $qaResult -PathType Leaf)) {
             Write-Error 'Player exited without result.json. Runtime QA bootstrap did not finish; inspect NATIVE_QA_* markers in Player.log.'
