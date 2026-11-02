@@ -66,15 +66,63 @@ jobs:
           [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "exe=$unity" + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
           Write-Host "Using Unity: $unity; Runner desktop user: $env:USERNAME"
 
-      - name: Activate the repository Unity license on the GPU runner
-        id: activate-unity
-        uses: game-ci/unity-activate@v2
+      - name: Activate the repository Unity license on the Windows GPU runner
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          UNITY_PATH: ${{ steps.unity.outputs.exe }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:UNITY_LICENSE)) {
+            throw 'UNITY_LICENSE secret is empty. Refresh the Unity license secret before building a Windows Player.'
+          }
+          $licenseText = $env:UNITY_LICENSE.Trim()
+          if (-not $licenseText.StartsWith('<?xml') -and -not $licenseText.StartsWith('<root')) {
+            try {
+              $compact = $licenseText -replace '\s', ''
+              $decoded = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($compact))
+              if ($decoded.Contains('<License') -or $decoded.Contains('<root')) {
+                $licenseText = $decoded
+              }
+            } catch {
+              throw 'UNITY_LICENSE is neither raw ULF XML nor valid base64-encoded ULF XML.'
+            }
+          }
+          if (-not ($licenseText.Contains('<License') -or $licenseText.Contains('<root'))) {
+            throw 'UNITY_LICENSE does not contain a Unity ULF license document.'
+          }
+
+          $licenseFile = Join-Path $env:RUNNER_TEMP 'Hextech_Unity_lic.ulf'
+          $licenseLog = Join-Path $env:RUNNER_TEMP 'Hextech_Unity_license_activation.log'
+          [System.IO.File]::WriteAllText(
+            $licenseFile,
+            $licenseText,
+            (New-Object System.Text.UTF8Encoding($false))
+          )
+          try {
+            $unity = '${{ steps.unity.outputs.exe }}'
+            $arguments = @(
+              '-batchmode',
+              '-quit',
+              '-manualLicenseFile',
+              ('"{0}"' -f $licenseFile),
+              '-logFile',
+              ('"{0}"' -f $licenseLog)
+            )
+            $proc = Start-Process -FilePath $unity -ArgumentList $arguments -Wait -PassThru
+            Write-Host "Unity manual license activation exit=$($proc.ExitCode)"
+            if (Test-Path -LiteralPath $licenseLog -PathType Leaf) {
+              Get-Content -LiteralPath $licenseLog -Tail 80 | ForEach-Object { Write-Host $_ }
+              $licenseLogText = Get-Content -LiteralPath $licenseLog -Raw
+              if ($licenseLogText -match 'TimeStamp validation failed|No ULF license found|License activation failed|Unable to update licenses') {
+                throw 'Unity rejected UNITY_LICENSE. Refresh the ULF from Unity Hub on this Windows GPU runner and replace the GitHub Actions secret.'
+              }
+            }
+            if ($proc.ExitCode -ne 0) {
+              throw "Unity license activation failed (exit $($proc.ExitCode)); see $licenseLog"
+            }
+          } finally {
+            if (Test-Path -LiteralPath $licenseFile) {
+              Remove-Item -LiteralPath $licenseFile -Force
+            }
+          }
 
       - name: Prepare and verify original Rift and Garen assets
         run: |
