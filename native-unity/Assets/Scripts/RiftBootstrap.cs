@@ -193,6 +193,23 @@ namespace HextechSeekers.Native
             return true;
         }
 
+        /// <summary>
+        /// Authoritative continuous position update for native forced-motion
+        /// states (e.g. Blitz hook pull). Unlike TryTeleportTo this preserves
+        /// the exact interpolated point instead of snapping to a nearby cell.
+        /// The caller must validate the full swept path before starting.
+        /// </summary>
+        public bool TrySetExternalPosition(Vector2 desired)
+        {
+            if (!ready || nav == null || !nav.CanWalk(desired)) return false;
+            location = desired;
+            previousLocation = desired;
+            route = Array.Empty<Vector2>();
+            waypoint = 0;
+            if (heroRig) heroRig.transform.position = ToScene(location);
+            return true;
+        }
+
         public void StopMovement()
         {
             route = Array.Empty<Vector2>();
