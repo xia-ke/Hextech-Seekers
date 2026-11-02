@@ -88,6 +88,7 @@ namespace HextechSeekers.Native.Editor
             var bootstrap = new GameObject("HextechNativeBootstrap");
             bootstrap.AddComponent<RiftBootstrap>();
             bootstrap.AddComponent<NativeVisualAcceptance>();
+            bootstrap.AddComponent<NativeMatchController>();
             EditorSceneManager.SaveScene(scene, ScenePath);
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
             AssetDatabase.SaveAssets();
@@ -116,18 +117,20 @@ namespace HextechSeekers.Native.Editor
             // Validate the exact scene that will be included in the Player.
             var builtScene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
             var roots = builtScene.GetRootGameObjects();
-            bool hasCamera = false, hasBootstrap = false, hasVisualQa = false;
+            bool hasCamera = false, hasBootstrap = false, hasVisualQa = false, hasMatchController = false;
             foreach (var root in roots)
             {
                 if (root.GetComponentInChildren<Camera>(true)) hasCamera = true;
                 if (root.GetComponentInChildren<RiftBootstrap>(true)) hasBootstrap = true;
                 if (root.GetComponentInChildren<NativeVisualAcceptance>(true)) hasVisualQa = true;
+                if (root.GetComponentInChildren<NativeMatchController>(true)) hasMatchController = true;
             }
             Debug.Log("NATIVE_BUILD_SCENE_CHECK: path=" + ScenePath +
                       " roots=" + roots.Length + " camera=" + hasCamera +
-                      " bootstrap=" + hasBootstrap + " visualQA=" + hasVisualQa);
-            if (!hasCamera || !hasBootstrap || !hasVisualQa)
-                throw new InvalidDataException("Native Rift scene is missing MainCamera, RiftBootstrap or NativeVisualAcceptance");
+                      " bootstrap=" + hasBootstrap + " visualQA=" + hasVisualQa +
+                      " gameplay=" + hasMatchController);
+            if (!hasCamera || !hasBootstrap || !hasVisualQa || !hasMatchController)
+                throw new InvalidDataException("Native Rift scene is missing MainCamera, RiftBootstrap, NativeVisualAcceptance or NativeMatchController");
             PlayerSettings.runInBackground = true;
             PlayerSettings.defaultScreenWidth = 1280;
             PlayerSettings.defaultScreenHeight = 720;
