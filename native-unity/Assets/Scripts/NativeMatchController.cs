@@ -378,7 +378,7 @@ namespace HextechSeekers.Native
             // not score a capture, and an attack miss cannot consume E.
             if (bot.Combat != null &&
                 bot.Combat.ConsumeEmpoweredBasicAttack(out float airborne))
-                heroControl.Apply(targetId, airborne);
+                ApplyChampionControl(targetId, airborne);
             bool caught = hextech.TryBasicAttackCapture(
                 bot.Id, targetId, true, seen, distance);
             Debug.Log("NATIVE_BASIC_CONTACT_AI: actor=" + bot.Hero +
@@ -599,6 +599,15 @@ namespace HextechSeekers.Native
             return null;
         }
 
+        void ApplyChampionControl(int targetId, float duration)
+        {
+            // Garen W's active tenacity also reduces champion-control windows,
+            // not just Hextech crowd control.
+            float durationFactor = targetId == HumanId && garenSkills != null ?
+                garenSkills.CrowdControlDurationFactor : 1f;
+            heroControl.Apply(targetId, duration * durationFactor);
+        }
+
         void ApplyBotSkillImpact(Bot caster, NativeSkillImpact impact)
         {
             if (impact == null) return;
@@ -633,11 +642,11 @@ namespace HextechSeekers.Native
                     }
                 }
                 if (impact.LockSeconds > 0)
-                    heroControl.Apply(impact.TargetId, impact.LockSeconds);
+                    ApplyChampionControl(impact.TargetId, impact.LockSeconds);
             }
             if (impact.LockSeconds > 0)
                 foreach (int affectedId in impact.AdditionalHitTargets)
-                    heroControl.Apply(affectedId, impact.LockSeconds);
+                    ApplyChampionControl(affectedId, impact.LockSeconds);
             combatVfx?.Pulse(caster.Id, caster.Position, impact.Skill);
             if (impact.Skill.StartsWith("Riven Q", StringComparison.Ordinal))
                 PlayBotOriginalSkill(caster, NativeSkillSlot.Q,
@@ -761,7 +770,7 @@ namespace HextechSeekers.Native
                 PlayBotOriginalSkill(bot, NativeSkillSlot.Q, tornado ? 3 : 1);
                 combatVfx?.Pulse(bot.Id, bot.Position,
                     tornado ? "Yasuo Q Tornado" : "Yasuo Q");
-                if (tornado && hitId >= 0) heroControl.Apply(hitId, .75f);
+                if (tornado && hitId >= 0) ApplyChampionControl(hitId, .75f);
                 Debug.Log("NATIVE_YASUO_Q_HERO: actor=" + bot.Id +
                           " target=" + hitId + " tornado=" + tornado +
                           " stacks=" + bot.YasuoSkill.QStacks +
