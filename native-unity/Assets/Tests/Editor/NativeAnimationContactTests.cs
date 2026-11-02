@@ -25,7 +25,8 @@ namespace HextechSeekers.Native.Tests
             Assert.IsFalse(action.Tick(.1f, out int early));
             Assert.AreEqual(-1, early);
             Assert.IsFalse(action.Tick(.1f, out _));
-            Assert.IsTrue(action.Tick(.05f, out int actualTarget));
+            // Avoid a float-rounding boundary at exactly 0.25s; this tick is just past contact.
+            Assert.IsTrue(action.Tick(.051f, out int actualTarget));
             Assert.AreEqual(7, actualTarget);
             Assert.IsFalse(action.Pending);
             Assert.IsFalse(action.Tick(1f, out _), "A hit can fire once only");
