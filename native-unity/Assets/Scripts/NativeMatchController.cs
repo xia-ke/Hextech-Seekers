@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 
 namespace HextechSeekers.Native
@@ -55,6 +57,94 @@ namespace HextechSeekers.Native
             }
             rift = GetComponent<RiftBootstrap>();
             if (!rift) { Debug.LogError("MATCH: RiftBootstrap is required"); enabled = false; }
+        }
+
+        [Serializable]
+        sealed class GameplayQaReport
+        {
+            public string status;
+            public string reason;
+            public bool loadedRift;
+            public bool hunterLockedDuringPreparation;
+            public bool hunterReleasedAfterPreparation;
+            public bool hunterCapturedUsingBasicAttack;
+            public bool caughtHiderEliminated;
+            public bool hunterEarlyBonusApplied;
+            public bool hiderCanMoveDuringPreparation;
+            public bool hiderWinsBySurviving;
+            public int numberOfActors;
+        }
+
+        void Start()
+        {
+            if (Array.IndexOf(Environment.GetCommandLineArgs(), "-hextechGameplayQA") >= 0)
+            {
+                Debug.Log("MATCH_QA_START: native gameplay integration smoke");
+                StartCoroutine(VerifyGameplay());
+            }
+        }
+
+        IEnumerator VerifyGameplay()
+        {
+            var result = new GameplayQaReport { status = "FAIL" };
+            string output = Path.Combine(Application.persistentDataPath, "HextechGameplayQA");
+            var args = Environment.GetCommandLineArgs();
+            for (int i = 0; i + 1 < args.Length; i++)
+                if (args[i] == "-hextechEvidenceDir") output = Path.GetFullPath(args[i + 1]);
+            Directory.CreateDirectory(output);
+            try
+            {
+                float started = Time.realtimeSinceStartup;
+                while (rift != null && !rift.IsReady && !rift.HasLoadFailed &&
+                       Time.realtimeSinceStartup - started < 180f)
+                    yield return null;
+                if (!rift || !rift.IsReady)
+                    throw new InvalidOperationException("Rift failed to load: " + (rift ? rift.LoadProblem : "no bootstrap"));
+                result.loadedRift = true;
+
+                BeginMatch(MatchRole.Hunter);
+                if (rules == null) throw new InvalidOperationException("Hunter round did not start");
+                result.numberOfActors = rules.Players.Count;
+                result.hunterLockedDuringPreparation = !rules.CanMove(HumanId) &&
+                    rules.CanMove(AiId);
+                rules.Advance(120f);
+                result.hunterReleasedAfterPreparation = rules.CanMove(HumanId);
+                if (!rift.TryTeleportTo(aiPosition))
+                    throw new InvalidOperationException("Cannot position human on AI's navigable cell");
+                bool visible = NativeSight.Visible(rift.Navigation, rift.PlayerPosition, aiPosition);
+                rift.PerformBasicAttack();
+                result.hunterCapturedUsingBasicAttack = rules.TryCapture(HumanId, AiId,
+                    true, visible, Vector2.Distance(rift.PlayerPosition, aiPosition));
+                result.caughtHiderEliminated = rules.Find(AiId).Eliminated &&
+                    rules.Phase == MatchPhase.Finished;
+                result.hunterEarlyBonusApplied = rules.Find(HumanId).Score == 2;
+                ReturnToMenu();
+
+                BeginMatch(MatchRole.Hider);
+                if (rules == null) throw new InvalidOperationException("Hider round did not start");
+                result.hiderCanMoveDuringPreparation = rules.CanMove(HumanId) &&
+                    !rules.CanMove(AiId);
+                rules.Advance(120f + NativeMatchRules.ChaseSeconds(1));
+                result.hiderWinsBySurviving = rules.Phase == MatchPhase.Finished &&
+                    !rules.HunterWon && rules.Find(HumanId).Score == 1;
+                if (!result.loadedRift || !result.hunterLockedDuringPreparation ||
+                    !result.hunterReleasedAfterPreparation ||
+                    !result.hunterCapturedUsingBasicAttack ||
+                    !result.caughtHiderEliminated || !result.hunterEarlyBonusApplied ||
+                    !result.hiderCanMoveDuringPreparation || !result.hiderWinsBySurviving ||
+                    result.numberOfActors != 2)
+                    throw new InvalidOperationException("Native 3D gameplay smoke assertions failed");
+                result.status = "PASS";
+            }
+            catch (Exception ex)
+            {
+                result.status = "FAIL";
+                result.reason = ex.ToString();
+                Debug.LogException(ex);
+            }
+            File.WriteAllText(Path.Combine(output, "gameplay-result.json"), JsonUtility.ToJson(result, true));
+            Debug.Log("MATCH_QA_RESULT: " + result.status + " at " + output);
+            if (!Application.isEditor) Application.Quit(result.status == "PASS" ? 0 : 1);
         }
 
         void Update()
