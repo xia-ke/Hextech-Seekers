@@ -16,6 +16,7 @@ namespace HextechSeekers.Native
         public Vector2? CasterLanding;
         public Vector2? TargetLanding;
         public float LockSeconds;
+        public readonly List<int> AdditionalHitTargets = new List<int>();
         public bool NeutralHit;
         public bool ProjectileBlocked;
     }
@@ -263,9 +264,9 @@ namespace HextechSeekers.Native
                 if (Vector2.Distance(destination, target.Position) <= 175f &&
                     nav.LineClear(destination, target.Position))
                 {
-                    result.TargetId = target.Id;
+                    if (result.TargetId < 0) result.TargetId = target.Id;
+                    else result.AdditionalHitTargets.Add(target.Id);
                     result.LockSeconds = .75f;
-                    break;
                 }
             }
             return result;
@@ -284,8 +285,9 @@ namespace HextechSeekers.Native
                     Vector2.Distance(origin, target.Position) <= RivenWRadiusProvisional &&
                     nav.LineClear(origin, target.Position))
                 {
-                    result.TargetId = target.Id; result.LockSeconds = RivenWStunSecondsProvisional;
-                    break;
+                    if (result.TargetId < 0) result.TargetId = target.Id;
+                    else result.AdditionalHitTargets.Add(target.Id);
+                    result.LockSeconds = RivenWStunSecondsProvisional;
                 }
             return result;
         }
