@@ -309,5 +309,65 @@ namespace HextechSeekers.Native.Tests
             Assert.IsNull(state.TryRivenQ(nav.Center(205, 200), Vector2.right, null),
                 "The full Q cooldown still applies after combo expiration");
         }
+
+        [Test]
+        public void YasuoECanDashThroughVisibleEnemyHeroAndLocksThatTarget()
+        {
+            var nav = new RiftGrid(RawGrid());
+            var match = Started("Yasuo", MatchRole.Hider,
+                out var effects, out var skills);
+            Assert.IsTrue(skills.Choose(NativeSkillSlot.E));
+            var state = new NativeYasuoSkillState();
+            var origin = nav.Center(200, 200);
+            var target = new NativeSkillTarget(1, nav.Center(202, 200),
+                MatchRole.Hunter, false, true);
+            Assert.IsTrue(state.TryEDashThroughHero(skills, match, effects, 2,
+                origin, target, nav, out var landing));
+            Assert.Greater(landing.x, target.Position.x);
+            Assert.IsTrue(nav.LineClear(origin, landing));
+            Assert.Greater(state.CooldownE, 0f);
+            Assert.IsFalse(state.TryEDashThroughHero(skills, match, effects, 2,
+                origin, target, nav, out _), "The same target cannot be dashed repeatedly");
+            state.Advance(.6f);
+            Assert.IsFalse(state.TryEDashThroughHero(skills, match, effects, 2,
+                origin, target, nav, out _), "Per-target E lock outlives the global recast delay");
+        }
+
+        [Test]
+        public void YasuoECannotAimAtAnUnseenEnemyOrAnAlly()
+        {
+            var nav = new RiftGrid(RawGrid());
+            var match = Started("Yasuo", MatchRole.Hider,
+                out var effects, out var skills);
+            Assert.IsTrue(skills.Choose(NativeSkillSlot.E));
+            var state = new NativeYasuoSkillState();
+            var origin = nav.Center(200, 200);
+            var hidden = new NativeSkillTarget(1, nav.Center(202, 200),
+                MatchRole.Hunter, false, false);
+            Assert.IsFalse(state.TryEDashThroughHero(skills, match, effects, 2,
+                origin, hidden, nav, out _));
+            var ally = new NativeSkillTarget(3, nav.Center(202, 200),
+                MatchRole.Hider, false, true);
+            Assert.IsFalse(state.TryEDashThroughHero(skills, match, effects, 2,
+                origin, ally, nav, out _));
+            Assert.AreEqual(0f, state.CooldownE);
+        }
+
+        [Test]
+        public void RivenWDoesNotSpendCooldownWhenNoEnemyIsInItsArea()
+        {
+            var nav = new RiftGrid(RawGrid());
+            var match = Started("Riven", MatchRole.Hunter,
+                out var effects, out var skills);
+            Assert.IsTrue(skills.Choose(NativeSkillSlot.W));
+            var state = new NativeChampionCombat(2, "Riven", skills, match,
+                effects, nav);
+            var result = state.TryRivenW(nav.Center(200, 200),
+                Array.Empty<NativeSkillTarget>());
+            Assert.IsNull(result);
+            Assert.AreEqual(0f, state.CooldownW);
+            Assert.AreEqual(0, match.CapturedCount);
+        }
+
     }
 }
