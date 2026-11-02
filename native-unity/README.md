@@ -1,4 +1,4 @@
-# Hextech-Seekers Native — Unity + URP (Windows), Phase 7 gameplay foundation
+# Hextech-Seekers Native — Unity + URP (Windows), Phase 8 champion contact foundation
 
 **Verified Phase 3 baseline:** Unity 6000.6.7f1, Editor tests, original Rift/Garen Windows Player and GPU screenshot technical acceptance all PASSED (Windows GPU run #41326056673; Editor run #41326056661). **Phase 4 gameplay vertical slice** (role selection, 1v1 tactical AI, preparation/roaming/capture/scoring) is now implemented in source; its newly added gameplay integration tests must pass before claiming the new phase accepted.
 
@@ -84,3 +84,14 @@ A new `NativeYasuoSkillState` supports Yasuo Q's two landed stacks and third tor
 `NativeSpawnCalibration` optionally reads `Assets/StreamingAssets/Rift/spawns.json` with manually verified source coordinates and navigable fountain/hider entry anchors. When absent, the preexisting provisional staging points remain, and the UI does not pretend they have been calibrated as the original fountain.
 
 Eight neutral/ability logic tests and five spawn provenance tests have been authored. **This phase has not been visually or operationally accepted**, as requested; the last formally accepted original-Garen GPU baseline is a separate earlier commit.
+
+## Phase 8: native champion combat and optional real source rigs
+
+See [docs/phase-8-champion-combat.md](docs/phase-8-champion-combat.md).
+
+- Blitzcrank Q now uses an actual time-of-flight contact sampler along the navigable Rift, with enemy collision, source-visible-target gating, wall/windwall blocking and a no-damage pull.
+- Riven Q is a three-cast directional dash state with a provisional recast interval and third-hit airborne effect; W stuns multiple nearby valid enemies and E dashes without letting an ordinary shield block capture.
+- Yasuo Q can stack on actual verified monsters *or* enemy actors and apply third-tornado CC; W can interrupt the Blitz Q projectile, and E can borrow a verified neutral monster for escape.
+- The original Garen skinned rig decoder now supports optional **source-verified** Blitzcrank/Riven/Yasuo meshes/animations and the bot controller will use them when available. No extra original champion assets are present in Git by default. Missing assets keep explicitly labeled AI tactical rings.
+- `native-unity/tools/import_native_hero.py` accepts a local original `.lmesh`/`.lanim` source and stages a hash-checked model/animation conversion without downloading/committing Riot art.
+- Additional source-level NUnit/EditMode combat tests are authored, **not executed or accepted for this phase** as requested. Previous Phase 3 GPU acceptance is not retroactively extended to this new code.
