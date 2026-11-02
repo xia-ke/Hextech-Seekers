@@ -888,6 +888,24 @@ namespace HextechSeekers.Native
                 return;
             }
 
+            if (bot.Dash.Active)
+            {
+                Vector2 previous = bot.Position;
+                bot.Position = bot.Dash.Step(dt);
+                PlaceMarker(bot);
+                ResolveBotBasicContact(bot, dt);
+                UpdateBotCombatVfx(bot);
+                if (bot.RealRig)
+                {
+                    Vector2 delta = bot.Position - previous;
+                    if (delta.sqrMagnitude > .0001f)
+                        bot.RealRig.transform.rotation = Quaternion.LookRotation(
+                            new Vector3(delta.x, 0, delta.y), Vector3.up);
+                    bot.RealRig.Tick(dt, true);
+                }
+                return;
+            }
+
             bot.ThinkCooldown -= dt;
             if (bot.ThinkCooldown <= 0f)
             {
@@ -941,24 +959,6 @@ namespace HextechSeekers.Native
                                           out var message);
                     }
                 }
-            }
-
-            if (bot.Dash.Active)
-            {
-                Vector2 previous = bot.Position;
-                bot.Position = bot.Dash.Step(dt);
-                PlaceMarker(bot);
-                ResolveBotBasicContact(bot, dt);
-                UpdateBotCombatVfx(bot);
-                if (bot.RealRig)
-                {
-                    Vector2 delta = bot.Position - previous;
-                    if (delta.sqrMagnitude > .0001f)
-                        bot.RealRig.transform.rotation = Quaternion.LookRotation(
-                            new Vector3(delta.x, 0, delta.y), Vector3.up);
-                    bot.RealRig.Tick(dt, true);
-                }
-                return;
             }
 
             Vector2 beforeMove = bot.Position;
