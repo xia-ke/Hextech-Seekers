@@ -190,8 +190,10 @@ namespace HextechSeekers.Native
                 foreach (var actor in actors)
                 {
                     if (actor.Id == actorId || actor.Eliminated ||
-                        actor.Role == match.Find(actorId).Role ||
-                        !actor.VisibleToCaster) continue;
+                        actor.Role == match.Find(actorId).Role) continue;
+                    // A skillshot already in flight can collide with a hidden
+                    // unit in brush. Visibility gates AI *aiming*, not physical
+                    // collision. No enemy is revealed merely by this scan.
                     if (Vector2.Distance(point, actor.Position) > BlitzHookRadiusProvisional)
                         continue;
                     // Check the whole path from the initial cast. Never hook
@@ -262,7 +264,7 @@ namespace HextechSeekers.Native
             foreach (var target in actors)
             {
                 if (target.Id == actorId || target.Eliminated ||
-                    target.Role == match.Find(actorId).Role || !target.VisibleToCaster)
+                    target.Role == match.Find(actorId).Role)
                     continue;
                 if (Vector2.Distance(destination, target.Position) <= 175f &&
                     nav.LineClear(destination, target.Position))
@@ -284,7 +286,7 @@ namespace HextechSeekers.Native
             var result = new NativeSkillImpact { Skill = "Riven W" };
             foreach (var target in actors)
                 if (target.Id != actorId && !target.Eliminated &&
-                    target.Role != match.Find(actorId).Role && target.VisibleToCaster &&
+                    target.Role != match.Find(actorId).Role &&
                     Vector2.Distance(origin, target.Position) <= RivenWRadiusProvisional &&
                     nav.LineClear(origin, target.Position))
                 {
