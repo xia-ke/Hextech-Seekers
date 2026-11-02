@@ -180,18 +180,10 @@ namespace HextechSeekers.Native
                       report.unityWatermarkVisible +
                       " development=" + report.developmentWatermarkEnabled +
                       " debugHud=" + report.debugHudEnabled);
-            if (report.unityWatermarkVisible)
-            {
-                Finish(report, evidence, "FAIL_UNITY_TRIAL_WATERMARK",
-                    "Unity reports a visible trial watermark. Activate/repair a valid Unity Editor license on the self-hosted Windows GPU runner; this watermark cannot be removed by game code.");
-                yield break;
-            }
-            if (report.developmentWatermarkEnabled || report.debugHudEnabled)
-            {
-                Finish(report, evidence, "FAIL_DEBUG_WATERMARK",
-                    "Development watermark or diagnostic HUD is enabled during release visual QA.");
-                yield break;
-            }
+            // A license watermark is a release blocker, but do not exit before
+            // recording geometry, alpha-material audits, and screenshots.
+            // Otherwise a licensing failure obscures independent foliage fixes.
+            // Final result is still FAIL when any watermark is visible.
 
             string renderer = report.device == null ? "" : report.device.ToLowerInvariant();
             report.hardwareGraphics =
@@ -303,8 +295,15 @@ namespace HextechSeekers.Native
             }
             bool passed = ready && report.hasIdle && report.hasRun && report.hasAttack &&
                 report.frames >= 100 && report.fpsAverage > 0;
-            Finish(report, evidence, passed ? "CAPTURED_REQUIRES_VISUAL_REVIEW" : "FAIL_EVIDENCE",
-                passed ? "" : "Screenshot, movement, animation or frame validation failed");
+            if (report.unityWatermarkVisible)
+                Finish(report, evidence, "FAIL_UNITY_TRIAL_WATERMARK",
+                    "Unity reports a trial/license watermark. Screenshots and geometry diagnostics were captured, but must not be accepted as clean output. Repair Unity licensing on the GPU runner.");
+            else if (report.developmentWatermarkEnabled || report.debugHudEnabled)
+                Finish(report, evidence, "FAIL_DEBUG_WATERMARK",
+                    "Development watermark or diagnostic HUD was enabled. Screenshots are diagnostic only.");
+            else
+                Finish(report, evidence, passed ? "CAPTURED_REQUIRES_VISUAL_REVIEW" : "FAIL_EVIDENCE",
+                    passed ? "" : "Screenshot, movement, animation or frame validation failed");
         }
     }
 }
