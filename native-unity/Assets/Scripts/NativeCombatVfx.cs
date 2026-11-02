@@ -262,8 +262,11 @@ namespace HextechSeekers.Native
                 if (cue.Root) cue.Root.SetActive(maySeeCaster(cue.OwnerId));
             }
             foreach (var cue in hooks.Values)
-                if (cue.Line) cue.Line.enabled =
-                    cue.Root.activeSelf && maySeeCaster(cue.OwnerId);
+            {
+                bool visible = cue.Root.activeSelf && maySeeCaster(cue.OwnerId);
+                if (cue.Line) cue.Line.enabled = visible;
+                if (cue.Head) cue.Head.SetActive(visible);
+            }
             foreach (var cue in walls.Values)
             {
                 bool visible = cue.Root.activeSelf && maySeeCaster(cue.OwnerId);
