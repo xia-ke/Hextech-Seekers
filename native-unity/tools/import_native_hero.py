@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Import *locally supplied*, licensed/provenanced original LoL model data.
+
+This never downloads or invents Riot art. The existing
+scripts/convert-native-champion.py performs the documented lmesh/lanim
+conversion. This wrapper checks the hero identity, clips and source hashes
+before publishing an optional native Unity skinned rig.
+
+Example:
+  python native-unity/tools/import_native_hero.py \
+    --hero Riven --source /private/provenance/riven --stem 92_0
+
+The generated files remain in StreamingAssets/Champions/<Hero>, which is
+ignored by git. Original Riot art is not added to a distributable repository.
+"""
+import argparse
+import hashlib
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+NATIVE = Path(__file__).resolve().parents[1]
+REPO = NATIVE.parent
+CONVERTER = REPO / "scripts/convert-native-champion.py"
+HEROES = ("Blitzcrank", "Riven", "Yasuo")
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as reader:
+        for block in iter(lambda: reader.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def import_source(hero: str, source: Path, stem: str, destination: Path) -> dict:
+    if hero not in HEROES:
+        raise ValueError("Optional imports are only Blitzcrank, Riven or Yasuo")
+    source = source.resolve(strict=True)
+    if not source.is_dir():
+        raise ValueError("Expected a local source directory")
+    if not stem or "/" in stem or "\\" in stem or stem.startswith("."):
+        raise ValueError("Invalid model stem")
+    mesh = source / (stem + ".lmesh")
+    if not mesh.is_file():
+        raise FileNotFoundError("Original source .lmesh missing: " + str(mesh))
+    if mesh.stat().st_size < 100:
+        raise ValueError("Source model buffer is unexpectedly small")
+    if not CONVERTER.is_file():
+        raise FileNotFoundError("Repository converter missing")
+
+    with tempfile.TemporaryDirectory(prefix="hextech-import-") as workspace:
+        staged = Path(workspace)
+        subprocess.run(
+            [sys.executable, str(CONVERTER), str(source), str(staged),
+             "--stem", stem, "--hero", hero],
+            check=True, timeout=120,
+        )
+        manifest_path = staged / (hero.lower() + ".json")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("hero") != hero or manifest.get("version") != 1:
+            raise ValueError("Converter emitted incorrect champion identity")
+        texture = manifest.get("texture", "")
+        binary = manifest.get("binary", "")
+        if not texture or Path(texture).name != texture or not texture.endswith(".png"):
+            raise ValueError("Unsafe or unsupported texture reference")
+        if binary != hero.lower() + ".bin":
+            raise ValueError("Incorrect champion buffer name")
+        clips = [item.get("name") for item in manifest.get("clips", [])]
+        if not any(x in clips for x in ("idle", "idle1")) or "run" not in clips:
+            raise ValueError("Original idle and run clips are required")
+        source_provenance = manifest.get("provenance", {})
+        if source_provenance.get("meshSHA256") != sha256(mesh):
+            raise ValueError("Source mesh SHA256 mismatch after conversion")
+
+        # Verify every file *before* modifying a live Unity input directory.
+        files = [hero.lower() + ".json", binary, texture]
+        for name in files:
+            p = staged / name
+            if not p.is_file() or not p.stat().st_size:
+                raise ValueError("Converter output missing: " + name)
+
+        destination.mkdir(parents=True, exist_ok=True)
+        for name in files:
+            shutil.copy2(staged / name, destination / name)
+            if sha256(staged / name) != sha256(destination / name):
+                raise IOError("Copied Unity source failed SHA256 verification: " + name)
+
+        report = {
+            "hero": hero,
+            "sourceMeshSha256": source_provenance["meshSHA256"],
+            "sourceAnimationSha256": source_provenance["animationSHA256"],
+            "clips": clips,
+            "source": str(source),
+            "status": "SOURCE_PREPARED_NOT_VISUALLY_VALIDATED",
+        }
+        (destination / "local-import-provenance.json").write_text(
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        return report
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--hero", choices=HEROES, required=True)
+    p.add_argument("--source", type=Path, required=True)
+    p.add_argument("--stem", required=True)
+    p.add_argument("--output", type=Path)
+    args = p.parse_args()
+    target = args.output or (
+        NATIVE / "Assets" / "StreamingAssets" / "Champions" / args.hero
+    )
+    report = import_source(args.hero, args.source, args.stem, target)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()
