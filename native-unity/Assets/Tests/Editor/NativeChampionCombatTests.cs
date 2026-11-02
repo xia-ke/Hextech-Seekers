@@ -369,5 +369,34 @@ namespace HextechSeekers.Native.Tests
             Assert.AreEqual(0, match.CapturedCount);
         }
 
+
+        [Test]
+        public void YasuoQBuildsStacksOnlyAfterContactAndConsumesThirdCastAsTornado()
+        {
+            var match = Started("Yasuo", MatchRole.Hider,
+                out var effects, out var skills);
+            Assert.IsTrue(skills.Choose(NativeSkillSlot.Q));
+            var state = new NativeYasuoSkillState();
+
+            Assert.IsTrue(state.TryQ(skills, match, effects, 2, false, out bool firstTornado));
+            Assert.IsFalse(firstTornado);
+            Assert.AreEqual(0, state.QStacks, "A launched Q that has not hit grants no stack");
+            state.RegisterQHit(false);
+            Assert.AreEqual(1, state.QStacks);
+
+            state.Advance(NativeYasuoSkillState.QCooldownProvisional);
+            Assert.IsTrue(state.TryQ(skills, match, effects, 2, false, out bool secondTornado));
+            Assert.IsFalse(secondTornado);
+            Assert.AreEqual(1, state.QStacks);
+            state.RegisterQHit(false);
+            Assert.AreEqual(2, state.QStacks);
+
+            state.Advance(NativeYasuoSkillState.QCooldownProvisional);
+            Assert.IsTrue(state.TryQ(skills, match, effects, 2, false, out bool thirdTornado));
+            Assert.IsTrue(thirdTornado);
+            Assert.AreEqual(0, state.QStacks,
+                "The tornado consumes prepared stacks when launched, even if it later misses");
+        }
+
     }
 }
