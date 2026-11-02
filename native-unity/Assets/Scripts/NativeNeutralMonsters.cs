@@ -107,7 +107,8 @@ namespace HextechSeekers.Native
             Vector2 proposed = monster.WalkableAnchor + to.normalized * beyond;
             if (!navigation.TryNearest(proposed, out landing, 3))
                 return false;
-            return navigation.LineClear(monster.WalkableAnchor, landing);
+            return navigation.LineClear(monster.WalkableAnchor, landing) &&
+                   navigation.LineClear(caster, landing);
         }
     }
 
