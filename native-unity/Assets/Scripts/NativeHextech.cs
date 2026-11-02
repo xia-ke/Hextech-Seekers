@@ -164,7 +164,7 @@ namespace HextechSeekers.Native
                 holders.Add(p.Id, new Holder { Participant = p });
         }
 
-        public bool Select(int playerId, NativeHextech id, NativeHeroLoadout loadout = null)
+        public bool Select(int playerId, NativeHextech id)
         {
             if (!holders.TryGetValue(playerId, out var h) || h.Chosen.HasValue ||
                 match.Phase != MatchPhase.Lobby) return false;
@@ -205,6 +205,7 @@ namespace HextechSeekers.Native
             holders.TryGetValue(playerId, out var h) && h.SilenceUntil > now;
         public bool CanUseHeroSkill(int playerId) =>
             !Stunned(playerId) && !Silenced(playerId) &&
+            match.CanMove(playerId) &&
             holders.TryGetValue(playerId, out var h) && !h.Participant.Eliminated;
         public bool CanUseActiveHextech(int playerId) =>
             !Stunned(playerId) &&
@@ -217,7 +218,7 @@ namespace HextechSeekers.Native
 
         public bool TryActive(int actorId, int targetId, bool targetVisible,
                               int clockDirection, string campInformation,
-                              out string result)
+                              out string result, float targetControlDurationMultiplier = 1f)
         {
             result = "Active hextech is unavailable";
             if (!CanUseActiveHextech(actorId)) return false;
@@ -240,13 +241,15 @@ namespace HextechSeekers.Native
             if (id == NativeHextech.FreezeGold)
             {
                 var target = holders[targetId];
-                target.StunUntil = Mathf.Max(target.StunUntil, now + FreezeSeconds);
+                target.StunUntil = Mathf.Max(target.StunUntil,
+                    now + FreezeSeconds * Mathf.Clamp(targetControlDurationMultiplier, .1f, 1f));
                 result = "冻结·金: 2 second stun";
             }
             else if (id == NativeHextech.AstralSilenceSilver)
             {
                 var target = holders[targetId];
-                target.SilenceUntil = Mathf.Max(target.SilenceUntil, now + SilenceSeconds);
+                target.SilenceUntil = Mathf.Max(target.SilenceUntil,
+                    now + SilenceSeconds * Mathf.Clamp(targetControlDurationMultiplier, .1f, 1f));
                 result = "星体结界·银: 5 second hero-skill silence; active hextech remains enabled";
             }
             else if (id == NativeHextech.CardSenseSilver || id == NativeHextech.CardSenseGold)
