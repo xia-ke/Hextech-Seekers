@@ -50,12 +50,15 @@ namespace HextechSeekers.Native
         MotionClip current;
         float time;
         bool attacking;
+        bool skillPlaying;
         Mesh builtMesh;
         Material builtMaterial;
         Texture2D builtTexture;
 
         public string CurrentClip => current != null ? current.name : string.Empty;
         public bool IsAttacking => attacking;
+        public bool IsSkillPlaying => skillPlaying;
+        public bool IsPlayingAction => attacking || skillPlaying;
         public bool HasClip(string name) =>
             motions != null && !string.IsNullOrEmpty(name) && motions.ContainsKey(name);
         public string HeroName => source != null ? source.hero : string.Empty;
@@ -296,28 +299,41 @@ namespace HextechSeekers.Native
         void ChangeClip(string name)
         {
             if (current != null && string.Equals(current.name, name, StringComparison.OrdinalIgnoreCase)) return;
-            if (!motions.TryGetValue(name, out current)) throw new InvalidDataException("Missing Garen clip: " + name);
+            if (!motions.TryGetValue(name, out current)) throw new InvalidDataException("Missing " + HeroName + " clip: " + name);
             time = 0;
         }
 
         public void PlayAttack()
         {
-            if (attacking) return;
+            if (IsPlayingAction) return;
             string name = ChooseClip(motions, "attack1");
             ChangeClip(name);
             attacking = true;
+        }
+
+        /// <summary>
+        /// Only plays an actual clip specified by a validated source binding.
+        /// No fallback to unrelated "spell1" tracks or invented animation.
+        /// </summary>
+        public bool TryPlayOriginalSkillClip(string exactClip)
+        {
+            if (IsPlayingAction || !HasClip(exactClip)) return false;
+            ChangeClip(exactClip);
+            skillPlaying = true;
+            return true;
         }
 
         public void Tick(float seconds, bool moving)
         {
             if (current == null) return;
             time += Mathf.Max(0, seconds);
-            if (attacking && time >= current.duration)
+            if (IsPlayingAction && time >= current.duration)
             {
                 attacking = false;
+                skillPlaying = false;
                 ChangeClip(ChooseClip(motions, moving ? "run" : "idle1", "idle", "run"));
             }
-            else if (!attacking)
+            else if (!IsPlayingAction)
             {
                 ChangeClip(ChooseClip(motions, moving ? "run" : "idle1", "idle", "run"));
             }
