@@ -660,6 +660,7 @@ namespace HextechSeekers.Native
             }
             if (impact.TargetId >= 0)
             {
+                Vector2 visibleImpactPosition = GetPosition(impact.TargetId);
                 // Target capture is *never* called here. Q, W, E only move,
                 // block or control and cannot consume Mirror capture immunity.
                 if (impact.TargetLanding.HasValue)
@@ -689,10 +690,16 @@ namespace HextechSeekers.Native
                 }
                 if (impact.LockSeconds > 0)
                     ApplyChampionControl(impact.TargetId, impact.LockSeconds);
+                combatVfx?.Impact(caster.Id, visibleImpactPosition, impact.Skill,
+                                  CanSeeVisualCaster(impact.TargetId));
             }
             if (impact.LockSeconds > 0)
                 foreach (int affectedId in impact.AdditionalHitTargets)
+                {
                     ApplyChampionControl(affectedId, impact.LockSeconds);
+                    combatVfx?.Impact(caster.Id, GetPosition(affectedId), impact.Skill,
+                                      CanSeeVisualCaster(affectedId));
+                }
             combatVfx?.Pulse(caster.Id, caster.Position, impact.Skill);
             if (impact.Skill.StartsWith("Riven Q", StringComparison.Ordinal))
                 PlayBotOriginalSkill(caster, NativeSkillSlot.Q,
