@@ -38,6 +38,7 @@ namespace HextechSeekers.Native
         public GarenRigRuntime HeroRig => heroRig;
         public GameObject LoadedMap => loadedMap;
         public RiftGrid Navigation => nav;
+        public NativeCampCatalog CampCatalog { get; private set; }
         public Vector2 PlayerPosition => location;
         // Observer-only camera follow. Does not move the locally controlled
         // original Garen rig or grant any other participant vision.
@@ -62,6 +63,20 @@ namespace HextechSeekers.Native
                 if (!File.Exists(navPath) || !File.Exists(glbPath))
                     throw new FileNotFoundException("Run tools/prepare_assets.py before loading the Rift scene. Both original map.glb and navigation.bin are required.");
                 nav = new RiftGrid(File.ReadAllBytes(navPath));
+                string campPath = Path.Combine(root, "Rift", "camps.json");
+                if (File.Exists(campPath))
+                {
+                    try
+                    {
+                        CampCatalog = NativeCampCatalog.LoadVerified(campPath, nav);
+                        Debug.Log("NATIVE_CAMP_CATALOG_READY: " + CampCatalog.Camps.Count + " verified locations");
+                    }
+                    catch (Exception invalidCamp)
+                    {
+                        CampCatalog = null;
+                        Debug.LogWarning("NATIVE_CAMP_CATALOG_UNAVAILABLE: " + invalidCamp.Message);
+                    }
+                }
                 if (!nav.TryNearest(initialPosition, out location))
                     throw new InvalidDataException("Spawn is outside the original lower-jungle navigation region");
                 loadedMap = new GameObject("ORIGINAL_RIFT_3D_Map11");
