@@ -150,8 +150,9 @@ jobs:
           } else { Write-Warning 'Unity Build.log missing' }
           if ($proc.ExitCode -ne 0) { throw "Windows Player build failed (exit $($proc.ExitCode))" }
           if (-not (Test-Path -LiteralPath $log -PathType Leaf) -or
-              -not (Select-String -LiteralPath $log -SimpleMatch 'NATIVE_GLTF_SHADER_RESOURCES_READY' -Quiet)) {
-            throw 'Build did not prove glTFast shader materials were pinned into Resources'
+              -not (Select-String -LiteralPath $log -SimpleMatch 'NATIVE_GLTF_SHADER_RESOURCES_READY' -Quiet) -or
+              -not (Select-String -LiteralPath $log -SimpleMatch 'NATIVE_GLTF_ALPHA_VARIANTS_READY: mask=true blend=true' -Quiet)) {
+            throw 'Build did not prove glTFast base, MASK and BLEND shader variants were pinned into Resources'
           }
           $exe = Join-Path $project 'Build\Windows\HextechSeekers.exe'
           $data = Join-Path $project 'Build\Windows\HextechSeekers_Data'
@@ -203,7 +204,13 @@ jobs:
           } else { Write-Warning 'Unity Player.log missing' }
           if ($proc.ExitCode -ne 0) { throw "GPU Player exited with code $($proc.ExitCode); inspect Player.log and result.json" }
           $playerLogText = if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Raw } else { '' }
-          foreach ($marker in @('NATIVE_GLTF_SHADERS_PRELOADED', 'NATIVE_MAP_MATERIAL_AUDIT_PASS')) {
+          foreach ($marker in @(
+            'NATIVE_GLTF_SHADERS_PRELOADED',
+            'NATIVE_GLTF_ALPHA_VARIANTS_PRELOADED',
+            'NATIVE_MAP_ALPHA_MATERIAL_AUDIT',
+            'NATIVE_MAP_MATERIAL_AUDIT_PASS',
+            'NATIVE_UNITY_WATERMARK_AUDIT'
+          )) {
             if (-not $playerLogText.Contains($marker)) {
               throw "Player did not confirm required 3D material check: $marker"
             }
@@ -223,6 +230,11 @@ jobs:
         run: |
           $root = Join-Path $env:RUNNER_TEMP "hextech-native-gpu-$env:GITHUB_RUN_ID"
           $evidence = Join-Path $root 'evidence'
+          $conversion = Join-Path $root 'map-conversion.json'
+          if (-not (Test-Path -LiteralPath $conversion -PathType Leaf)) {
+            throw 'map-conversion.json missing; cannot audit WebP alpha preservation and glTF material alphaMode'
+          }
+          Copy-Item -LiteralPath $conversion -Destination (Join-Path $evidence 'map-conversion.json') -Force
           if (Get-Command py -ErrorAction SilentlyContinue) {
             & py -3 native-unity/tools/verify_visual_qa.py $evidence
           } else {
