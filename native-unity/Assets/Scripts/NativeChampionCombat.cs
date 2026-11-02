@@ -103,6 +103,7 @@ namespace HextechSeekers.Native
         float hookTravel;
         public NativeWindWall WindWall { get; private set; }
 
+        public float Elapsed => now;
         public bool HookActive => hookActive;
         public float CooldownQ => Mathf.Max(0f, nextQ - now);
         public float CooldownW => Mathf.Max(0f, nextW - now);
