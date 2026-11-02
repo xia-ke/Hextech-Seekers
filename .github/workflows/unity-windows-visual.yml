@@ -217,6 +217,42 @@ jobs:
           }
           if ($LASTEXITCODE -ne 0) { throw "GPU screenshot verification failed ($LASTEXITCODE); inspect evidence artifact" }
 
+      - name: Exercise native playable match in real Windows Player
+        run: |
+          $project = Join-Path $env:GITHUB_WORKSPACE 'native-unity'
+          $exe = Join-Path $project 'Build\Windows\HextechSeekers.exe'
+          $root = Join-Path $env:RUNNER_TEMP "hextech-native-gpu-$env:GITHUB_RUN_ID"
+          $evidence = Join-Path $root 'evidence'
+          $log = Join-Path $root 'Gameplay.log'
+          $args = @(
+            '-force-d3d11',
+            '-screen-fullscreen', '0',
+            '-screen-width', '1280',
+            '-screen-height', '720',
+            '-logFile', ('"{0}"' -f $log),
+            '-hextechGameplayQA',
+            '-hextechEvidenceDir', ('"{0}"' -f $evidence)
+          )
+          Write-Host 'Running a real GPU Player gameplay smoke: both roles, 120s preparation, capture and scores'
+          $proc = Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe) -ArgumentList $args -PassThru
+          if (-not $proc.WaitForExit(240000)) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            throw 'Native gameplay smoke timed out after 4 minutes'
+          }
+          Write-Host "Native gameplay smoke exit code: $($proc.ExitCode)"
+          if (Test-Path -LiteralPath $log) {
+            Get-Content -LiteralPath $log -Tail 75
+          }
+          $report = Join-Path $evidence 'gameplay-result.json'
+          if (-not (Test-Path -LiteralPath $report -PathType Leaf)) {
+            throw 'Native gameplay smoke did not produce gameplay-result.json'
+          }
+          $json = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          Get-Content -LiteralPath $report
+          if ($proc.ExitCode -ne 0 -or $json.status -ne 'PASS') {
+            throw "Native gameplay smoke failed (process=$($proc.ExitCode), status=$($json.status))"
+          }
+
       # Do not depend on actions/upload-artifact during job startup:
       # this self-hosted Runner intermittently times out fetching its code
       # from codeload.github.com, before Unity/Python steps can even start.
