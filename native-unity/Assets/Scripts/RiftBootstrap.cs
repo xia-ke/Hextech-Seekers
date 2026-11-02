@@ -39,6 +39,8 @@ namespace HextechSeekers.Native
         public GameObject LoadedMap => loadedMap;
         public RiftGrid Navigation => nav;
         public NativeCampCatalog CampCatalog { get; private set; }
+        public NativeNeutralMonsterWorld NeutralMonsters { get; private set; }
+        NativeNeutralMonsterScene neutralScene;
         public Vector2 PlayerPosition => location;
         // Observer-only camera follow. Does not move the locally controlled
         // original Garen rig or grant any other participant vision.
@@ -106,6 +108,17 @@ namespace HextechSeekers.Native
                 heroRig = GarenRigRuntime.Load(transform, heroPath);
                 previousLocation = location;
                 heroRig.transform.position = ToScene(location);
+                // Only verified camp coordinates may create monster entities.
+                // No guessed camps and no false original monster models.
+                NeutralMonsters = new NativeNeutralMonsterWorld(nav, CampCatalog);
+                if (NeutralMonsters.HasVerifiedCamps)
+                {
+                    var neutralRoot = new GameObject("NATIVE_VERIFIED_NEUTRAL_TARGETS_DEBUG_ART");
+                    neutralRoot.transform.SetParent(transform, false);
+                    neutralScene = neutralRoot.AddComponent<NativeNeutralMonsterScene>();
+                    neutralScene.Initialize(NeutralMonsters, nav);
+                }
+                else Debug.Log("NATIVE_NEUTRALS_WAITING_FOR_VERIFIED_CAMP_COORDINATES");
                 ready = true;
                 problem = string.Empty;
                 Debug.Log("Hextech Native Phase1: original GLB loaded; original navigation ready. Original Garen rig and three native animations loaded.");
@@ -221,6 +234,11 @@ namespace HextechSeekers.Native
             GUI.Label(new Rect(18, 44, 900, 30), $"RMB move | World x={location.x:F0} z={location.y:F0} | Path nodes={route.Length - waypoint}");
             GUI.Label(new Rect(18, 72, 950, 30), "Original skinned Garen | RMB move | A attack | idle/run/attack1 clips");
         }
-        void OnDestroy() { if (loadedMap) Destroy(loadedMap); mapImport?.Dispose(); }
+        void OnDestroy()
+        {
+            if (neutralScene) Destroy(neutralScene.gameObject);
+            if (loadedMap) Destroy(loadedMap);
+            mapImport?.Dispose();
+        }
     }
 }
