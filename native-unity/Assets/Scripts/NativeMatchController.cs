@@ -23,6 +23,10 @@ namespace HextechSeekers.Native
         static readonly Vector2 HiderStart = new Vector2(7765f, -4020f);
         // Original fountain bounds still require geometric calibration.
         static readonly Vector2 HunterStaging = new Vector2(13000f, -1100f);
+        Vector2 HunterSpawn => rift && rift.SpawnCalibration != null
+            ? rift.SpawnCalibration.HunterSpawn : HunterStaging;
+        Vector2 HiderSpawn => rift && rift.SpawnCalibration != null
+            ? rift.SpawnCalibration.HiderSpawn : HiderStart;
         static readonly string[] BotHeroSlots = { "Blitzcrank", "Riven", "Yasuo" };
 
         enum Menu { Role, Augment, Skill, Playing }
@@ -129,7 +133,7 @@ namespace HextechSeekers.Native
                 var selected = offeredBot[random.Next(offeredBot.Length)].Id;
                 hextech.Select(p.Id, selected);
                 Vector2 basePoint = p.Role == MatchRole.Hunter ?
-                    HunterStaging : HiderStart + new Vector2(i * 345f, i * 175f);
+                    HunterSpawn : HiderSpawn + new Vector2(i * 345f, i * 175f);
                 if (!rift.Navigation.TryNearest(basePoint, out bot.Position, 65))
                     bot.Position = rift.PlayerPosition;
                 CreateMarker(bot);
@@ -160,7 +164,7 @@ namespace HextechSeekers.Native
         {
             // Hunter must be staged for the entire preparation interval.
             bool spawned = rift.TryTeleportTo(humanRole == MatchRole.Hunter ?
-                HunterStaging : HiderStart);
+                HunterSpawn : HiderSpawn);
             if (!spawned)
             {
                 feedback = "Player staging is outside navigable bounds";
@@ -175,7 +179,9 @@ namespace HextechSeekers.Native
             foreach (var bot in bots) hextech.ApplyPreparationPassives(bot.Id, bot.Loadout);
             rift.ExternalMoveEnabled = rules.CanMove(HumanId);
             menu = Menu.Playing;
-            string startMessage = "120-second preparation started. Hunter cannot leave staging.";
+            string startMessage = rift.SpawnCalibration != null
+                ? "120s preparation: verified fountain; hunter cannot leave." :
+                  "120s preparation: hunter locked at provisional staging (fountain unverified).";
             if (!privateFog) privateFog = GetComponent<NativeFogOfWar>() ??
                                          gameObject.AddComponent<NativeFogOfWar>();
             try
@@ -682,7 +688,7 @@ namespace HextechSeekers.Native
             rift.ExternalMoveEnabled = true;
             rift.ExternalMoveMultiplier = 1f;
             rift.CameraFollowOverride = null;
-            rift.TryTeleportTo(HiderStart);
+            rift.TryTeleportTo(HiderSpawn);
         }
 
         void OnGUI()
