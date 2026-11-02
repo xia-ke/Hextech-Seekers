@@ -637,6 +637,15 @@ namespace HextechSeekers.Native
             if (impact.LockSeconds > 0)
                 foreach (int affectedId in impact.AdditionalHitTargets)
                     heroControl.Apply(affectedId, impact.LockSeconds);
+            combatVfx?.Pulse(caster.Id, caster.Position, impact.Skill);
+            if (impact.Skill.StartsWith("Riven Q", StringComparison.Ordinal))
+                PlayBotOriginalSkill(caster, NativeSkillSlot.Q,
+                    impact.Skill.EndsWith("Q3", StringComparison.Ordinal) ? 3 :
+                    impact.Skill.EndsWith("Q2", StringComparison.Ordinal) ? 2 : 1);
+            else if (impact.Skill == "Riven W")
+                PlayBotOriginalSkill(caster, NativeSkillSlot.W);
+            else if (impact.Skill == "Riven E")
+                PlayBotOriginalSkill(caster, NativeSkillSlot.E);
             Debug.Log("NATIVE_AI_SKILL_CONTACT: " + caster.Hero + " " +
                       impact.Skill + " target=" + impact.TargetId +
                       " moved=" + impact.TargetLanding.HasValue +
@@ -659,12 +668,24 @@ namespace HextechSeekers.Native
                 if (bot.Role == MatchRole.Hunter &&
                     bot.Loadout.Knows(NativeSkillSlot.Q) &&
                     bot.Combat.TryBlitzHook(bot.Position, direction))
+                {
+                    PlayBotOriginalSkill(bot, NativeSkillSlot.Q);
+                    combatVfx?.Pulse(bot.Id, bot.Position, "Blitzcrank Q");
                     Debug.Log("NATIVE_BLITZ_Q_FIRED: actor=" + bot.Id);
-                if (bot.Loadout.Knows(NativeSkillSlot.W))
-                    bot.Combat.TryBlitzW();
+                }
+                if (bot.Loadout.Knows(NativeSkillSlot.W) &&
+                    bot.Combat.TryBlitzW())
+                {
+                    PlayBotOriginalSkill(bot, NativeSkillSlot.W);
+                    combatVfx?.Pulse(bot.Id, bot.Position, "Blitzcrank W");
+                }
                 if (bot.Role == MatchRole.Hunter &&
-                    bot.Loadout.Knows(NativeSkillSlot.E))
-                    bot.Combat.TryBlitzE();
+                    bot.Loadout.Knows(NativeSkillSlot.E) &&
+                    bot.Combat.TryBlitzE())
+                {
+                    PlayBotOriginalSkill(bot, NativeSkillSlot.E);
+                    combatVfx?.Pulse(bot.Id, bot.Position, "Blitzcrank E");
+                }
             }
             else if (bot.Hero == "Riven")
             {
@@ -686,7 +707,11 @@ namespace HextechSeekers.Native
                 {
                     // No additional enemy reveal: each AI has already
                     // verified personal vision before casting.
-                    bot.Combat.TryYasuoWindWall(bot.Position, direction);
+                    if (bot.Combat.TryYasuoWindWall(bot.Position, direction))
+                    {
+                        PlayBotOriginalSkill(bot, NativeSkillSlot.W);
+                        combatVfx?.Pulse(bot.Id, bot.Position, "Yasuo W");
+                    }
                 }
             }
         }
@@ -724,6 +749,9 @@ namespace HextechSeekers.Native
             if (bot.YasuoSkill.TryQ(bot.Loadout, rules, hextech, bot.Id,
                                     hitId >= 0, out bool tornado))
             {
+                PlayBotOriginalSkill(bot, NativeSkillSlot.Q, tornado ? 3 : 1);
+                combatVfx?.Pulse(bot.Id, bot.Position,
+                    tornado ? "Yasuo Q Tornado" : "Yasuo Q");
                 if (tornado && hitId >= 0) heroControl.Apply(hitId, .75f);
                 Debug.Log("NATIVE_YASUO_Q_HERO: actor=" + bot.Id +
                           " target=" + hitId + " tornado=" + tornado +
@@ -757,6 +785,8 @@ namespace HextechSeekers.Native
                     bot.Id, bot.Position, selected.Id, rift.NeutralMonsters,
                     out var landed))
             {
+                PlayBotOriginalSkill(bot, NativeSkillSlot.E);
+                combatVfx?.Pulse(bot.Id, bot.Position, "Yasuo E");
                 bot.Position = landed;
                 bot.Path.Clear();
                 bot.Waypoint = 0;
@@ -796,6 +826,9 @@ namespace HextechSeekers.Native
             if (bot.YasuoSkill.TryQ(bot.Loadout, rules, hextech, bot.Id,
                                     hit != null, out bool tornado))
             {
+                PlayBotOriginalSkill(bot, NativeSkillSlot.Q, tornado ? 3 : 1);
+                combatVfx?.Pulse(bot.Id, bot.Position,
+                    tornado ? "Yasuo Q Tornado" : "Yasuo Q Neutral");
                 Debug.Log("NATIVE_YASUO_Q_NEUTRAL: actor=" + bot.Id +
                           " camp=" + (hit != null ? hit.CampName : "miss") +
                           " stacks=" + bot.YasuoSkill.QStacks +
