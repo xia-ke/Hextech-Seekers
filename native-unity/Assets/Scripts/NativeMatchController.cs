@@ -1368,6 +1368,12 @@ namespace HextechSeekers.Native
                     (privateFog && privateFog.Running ?
                      "Fog: private 3D terrain vision + explored darkness" :
                      "Fog unavailable: no full-map sight protection"));
+                if (garenSkills != null && humanLoadout != null)
+                    GUI.Label(new Rect(25, 286, 490, 20),
+                        "Garen skills  Q " + Mathf.CeilToInt(garenSkills.CooldownQ) +
+                        "s" + (garenSkills.QActive ? " ACTIVE" : "") +
+                        "   W " + Mathf.CeilToInt(garenSkills.CooldownW) +
+                        "s" + (garenSkills.WActive ? " ACTIVE" : ""));
                 if (rules.Phase == MatchPhase.Finished)
                 {
                     int row = 0;
