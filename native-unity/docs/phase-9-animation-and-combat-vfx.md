@@ -53,7 +53,13 @@ Blitzcrank E's next-hit empowerment is consumed by a valid physical basic contac
 
 This is the first animation-aligned attack timing layer, **not** an imported per-hero attack-clip contact-frame database. Later original animation markers should replace the fixed provisional offset.
 
-### 4. Existing game systems retained
+### 4. Timed physical dash motion (source-level follow-on)
+
+`NativeDashMotion.cs` replaces instant caster-position teleporting for successful Riven directional Q/E and Yasuo neutral-target E escape. Each accepted landing is checked against the original `RiftGrid` walkable clearance **and the entire swept path** before motion starts. The actor moves over a provisional **0.20-second** interval; the original skinned rig advances the current action clip during travel if source animation is available. New tactical AI decisions are deferred until the dash concludes, and new movement/attack contacts are not registered mid-dash. Stun or loss of movement eligibility cancels the dash safely.
+
+`NativeDashMotionTests.cs` adds **5** tests for intermediate-frame motion, wall blocking, legal landing with no overshoot, cancel/rearm and invalid input. This is intentionally a generic temporal interpolation — real original champion root motion and motion curves still require art/animation measurements.
+
+### 5. Existing game systems retained
 
 - Original 3D Rift and original Garen skinned mesh rendering.
 - 2–4 participant roster with one hunter, original role scoring, preparation/pursuit timing, individual hextech cooldown and skill whitelists.
@@ -64,7 +70,7 @@ This is the first animation-aligned attack timing layer, **not** an imported per
 
 `Assets/Tests/Editor/NativeAnimationContactTests.cs` defines **9 targeted tests**: attack windup timing, duplicate hit suppression/rearming, invalid timing, missing binding fallback, Riven 3-stage clip mapping, unverified/wrong-hero source rejection, missing-original-clip rejection, empty map rejection and hero identity allow-list enforcement.
 
-The prior Phase 8 combat geometry and Phase 7 neutral/camp tests remain committed. **These are authored test cases, not a claim that Unity has compiled or passed them for Phase 9.**
+`NativeDashMotionTests.cs` adds another **5** source tests, bringing Phase 9 to **14 authored tests**. The prior Phase 8 combat geometry and Phase 7 neutral/camp tests remain committed. **These are authored test cases, not a claim that Unity has compiled or passed them for Phase 9.**
 
 ## Remaining work / deferred acceptance
 
@@ -76,7 +82,7 @@ The prior Phase 8 combat geometry and Phase 7 neutral/camp tests remain committe
 
 ## Files changed
 
-- New: `Assets/Scripts/NativeAnimationContact.cs`, `Assets/Scripts/NativeCombatVfx.cs`, `Assets/Tests/Editor/NativeAnimationContactTests.cs`
-- Updated: `Assets/Scripts/NativeMatchController.cs`, `Assets/Scripts/GarenRigRuntime.cs`, `Assets/Scripts/NativeChampionCombat.cs`
+- New: `Assets/Scripts/NativeAnimationContact.cs`, `Assets/Scripts/NativeCombatVfx.cs`, `Assets/Scripts/NativeDashMotion.cs`, `Assets/Tests/Editor/NativeAnimationContactTests.cs`, `Assets/Tests/Editor/NativeDashMotionTests.cs`
+- Updated: `Assets/Scripts/NativeMatchController.cs`, `Assets/Scripts/GarenRigRuntime.cs`, `Assets/Scripts/NativeChampionCombat.cs`, `Assets/Scripts/NativeNeutralMonsters.cs`
 - Updated tools: `native-unity/tools/import_native_hero.py`, `scripts/convert-native-champion.py`
 - This handoff: `native-unity/docs/phase-9-animation-and-combat-vfx.md`
