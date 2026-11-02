@@ -150,6 +150,10 @@ namespace HextechSeekers.Native.Tests
                     Assert.Greater(cast.LockSeconds, 0f);
                 }
                 at = cast.CasterLanding.Value;
+                if (i == 1)
+                    Assert.IsNull(state.TryRivenQ(at, Vector2.right, enemies),
+                        "Riven must respect the minimum inter-cast recast interval");
+                state.Advance(NativeChampionCombat.RivenQRecastMinimumProvisional + .01f);
             }
             Assert.AreEqual(0, state.RivenQStage);
             Assert.IsNull(state.TryRivenQ(at, Vector2.right, enemies),
