@@ -531,19 +531,31 @@ namespace HextechSeekers.Native
             var targets = GetSkillTargets(bot.Id);
             if (bot.Hero == "Blitzcrank")
             {
-                if (bot.Loadout.Knows(NativeSkillSlot.Q) &&
+                // A fleeing hider does not automatically pull the hunter onto
+                // themselves. Q is legal, but this AI tactic reserves it for
+                // hunter mode; W is used for escape by either role.
+                if (bot.Role == MatchRole.Hunter &&
+                    bot.Loadout.Knows(NativeSkillSlot.Q) &&
                     bot.Combat.TryBlitzHook(bot.Position, direction))
                     Debug.Log("NATIVE_BLITZ_Q_FIRED: actor=" + bot.Id);
                 if (bot.Loadout.Knows(NativeSkillSlot.W))
                     bot.Combat.TryBlitzW();
+                if (bot.Role == MatchRole.Hunter &&
+                    bot.Loadout.Knows(NativeSkillSlot.E))
+                    bot.Combat.TryBlitzE();
             }
             else if (bot.Hero == "Riven")
             {
-                var q = bot.Combat.TryRivenQ(bot.Position, direction, targets);
+                Vector2 castDirection = bot.Role == MatchRole.Hider ?
+                    -direction : direction;
+                var q = bot.Combat.TryRivenQ(bot.Position, castDirection, targets);
                 if (q != null) ApplyBotSkillImpact(bot, q);
                 if (bot.Loadout.Knows(NativeSkillSlot.W))
                     ApplyBotSkillImpact(bot,
                         bot.Combat.TryRivenW(bot.Position, targets));
+                if (bot.Loadout.Knows(NativeSkillSlot.E))
+                    ApplyBotSkillImpact(bot,
+                        bot.Combat.TryRivenE(bot.Position, castDirection));
             }
             else if (bot.Hero == "Yasuo" &&
                      bot.Loadout.Knows(NativeSkillSlot.W))
@@ -551,6 +563,40 @@ namespace HextechSeekers.Native
                 // Skill does not give a free enemy reveal: the tactical AI
                 // has already verified target visibility before casting.
                 bot.Combat.TryYasuoWindWall(bot.Position, direction);
+            }
+        }
+
+        void BotYasuoNeutralEscape(Bot bot, int hunterId)
+        {
+            if (bot.YasuoSkill == null ||
+                !bot.Loadout.Knows(NativeSkillSlot.E) ||
+                rift.NeutralMonsters == null ||
+                !rift.NeutralMonsters.HasVerifiedCamps) return;
+            Vector2 hunter = GetPosition(hunterId);
+            NativeNeutralMonster selected = null;
+            float farthest = (bot.Position - hunter).sqrMagnitude;
+            foreach (var monster in rift.NeutralMonsters.Monsters)
+            {
+                float away = (monster.WalkableAnchor - hunter).sqrMagnitude;
+                if (away <= farthest) continue;
+                float distance = (monster.WalkableAnchor - bot.Position).sqrMagnitude;
+                if (distance > NativeYasuoSkillState.EDashRangeProvisional *
+                               NativeYasuoSkillState.EDashRangeProvisional)
+                    continue;
+                selected = monster;
+                farthest = away;
+            }
+            if (selected != null &&
+                bot.YasuoSkill.TryEDashToMonster(bot.Loadout, rules, hextech,
+                    bot.Id, bot.Position, selected.Id, rift.NeutralMonsters,
+                    out var landed))
+            {
+                bot.Position = landed;
+                bot.Path.Clear();
+                bot.Waypoint = 0;
+                PlaceMarker(bot);
+                Debug.Log("NATIVE_YASUO_E_NEUTRAL_ESCAPE: " + selected.CampName +
+                          " monsterAlive=true damage=0 capture=false");
             }
         }
 
@@ -638,6 +684,8 @@ namespace HextechSeekers.Native
                 // tornado stacks, without damage, killing or capturing.
                 // This is mechanics-only; Yasuo's rig/VFX are not imported.
                 BotYasuoNeutralQ(bot);
+                if (bot.Role == MatchRole.Hider && enemyId >= 0)
+                    BotYasuoNeutralEscape(bot, enemyId);
                 BotCastChampionSkill(bot, enemyId);
 
                 // AI can use control augments on enemies within its own
