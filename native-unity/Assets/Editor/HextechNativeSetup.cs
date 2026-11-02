@@ -17,6 +17,50 @@ namespace HextechSeekers.Native.Editor
         const string PipelinePath = "Assets/Settings/HextechURPPipeline.asset";
         const string GarenMaterialPath = "Assets/Resources/Native/GarenLit.mat";
 
+        static readonly string[] GltfShaderNames = {
+            "Shader Graphs/glTF-unlit",
+            "Shader Graphs/glTF-pbrMetallicRoughness"
+        };
+
+        static void EnsureGltfShaderResources()
+        {
+            const string folder = "Assets/Resources/Native/GLTFast";
+            if (!AssetDatabase.IsValidFolder(folder))
+                AssetDatabase.CreateFolder("Assets/Resources/Native", "GLTFast");
+            foreach (string shaderName in GltfShaderNames)
+            {
+                var shader = Shader.Find(shaderName);
+                if (!shader)
+                    throw new InvalidDataException("Required glTFast shader not found in Editor: " + shaderName);
+                string file = shaderName.EndsWith("glTF-unlit", StringComparison.Ordinal)
+                    ? "GltfUnlit.mat" : "GltfPbrMetallicRoughness.mat";
+                string assetPath = folder + "/" + file;
+                var material = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
+                if (!material)
+                {
+                    material = new Material(shader) { name = Path.GetFileNameWithoutExtension(file) };
+                    AssetDatabase.CreateAsset(material, assetPath);
+                }
+                else if (material.shader != shader)
+                {
+                    material.shader = shader;
+                    EditorUtility.SetDirty(material);
+                }
+                Debug.Log("NATIVE_GLTF_SHADER_PINNED: " + shaderName + " -> " + assetPath);
+            }
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            var retained = Resources.LoadAll<Material>("Native/GLTFast");
+            foreach (string shaderName in GltfShaderNames)
+            {
+                bool found = false;
+                foreach (var material in retained)
+                    if (material && material.shader && material.shader.name == shaderName) found = true;
+                if (!found) throw new InvalidDataException("glTFast shader not retained in Resources: " + shaderName);
+            }
+            Debug.Log("NATIVE_GLTF_SHADER_RESOURCES_READY: " + retained.Length);
+        }
+
         static void EnsureGarenRuntimeMaterial()
         {
             if (!AssetDatabase.IsValidFolder("Assets/Resources"))
@@ -103,6 +147,7 @@ namespace HextechSeekers.Native.Editor
         {
             CreateScene();
             EnsureGarenRuntimeMaterial();
+            EnsureGltfShaderResources();
             var rift = Path.Combine(Application.dataPath, "StreamingAssets", "Rift", "map.glb");
             if (!File.Exists(rift)) throw new FileNotFoundException("Original map.glb is missing. Run tools/prepare_assets.py first.");
             var compatibleRift = Path.Combine(Application.dataPath, "StreamingAssets", "Rift", "map-unity.glb");
@@ -141,7 +186,7 @@ namespace HextechSeekers.Native.Editor
             var options = new BuildPlayerOptions {
                 scenes = new[] { ScenePath }, locationPathName = output,
                 target = BuildTarget.StandaloneWindows64,
-                options = BuildOptions.Development | BuildOptions.AllowDebugging
+                options = BuildOptions.None
             };
             var report = BuildPipeline.BuildPlayer(options);
             if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
