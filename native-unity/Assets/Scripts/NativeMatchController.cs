@@ -49,6 +49,8 @@ namespace HextechSeekers.Native
             public NativeHeroLoadout Loadout;
             public NativeYasuoSkillState YasuoSkill;
             public NativeChampionCombat Combat;
+            public NativeAbilityAnimationBindings AnimationBindings;
+            public readonly NativeBasicContactWindow BasicContact = new NativeBasicContactWindow();
         }
 
         readonly List<Bot> bots = new List<Bot>();
@@ -58,6 +60,9 @@ namespace HextechSeekers.Native
         NativeHextechRuntime hextech;
         NativeHeroControl heroControl;
         NativeFogOfWar privateFog;
+        NativeCombatVfx combatVfx;
+        NativeAbilityAnimationBindings garenAnimationBindings;
+        NativeBasicContactWindow humanContact = new NativeBasicContactWindow();
         NativeHeroLoadout humanLoadout;
         NativeGarenSkills garenSkills;
         NativeHextechDefinition[] offered;
@@ -114,6 +119,7 @@ namespace HextechSeekers.Native
             preferredTargetId = -1;
             preferredSpectateId = -1;
             basicCooldown = 0;
+            humanContact = new NativeBasicContactWindow();
             loggedFinish = false;
             feedback = "Choose one of your three independent Hextech cards.";
             menu = Menu.Augment;
@@ -181,6 +187,22 @@ namespace HextechSeekers.Native
                 return;
             }
             rules.Begin();
+            if (!combatVfx) combatVfx = GetComponent<NativeCombatVfx>() ??
+                                       gameObject.AddComponent<NativeCombatVfx>();
+            try { combatVfx.Begin(rift.Navigation); }
+            catch (Exception fxError)
+            {
+                Debug.LogWarning("NATIVE_DEBUG_FX_UNAVAILABLE: " + fxError.Message);
+            }
+            // The source Garen rig may not include all the correct original
+            // spell clips; the map is optional and never guessed.
+            if (rift.HeroRig)
+            {
+                string garenFolder = Path.Combine(Application.streamingAssetsPath,
+                                                  "Champions", "Garen");
+                garenAnimationBindings = LoadBindings(garenFolder, "Garen",
+                                                     rift.HeroRig);
+            }
             hextech.ApplyPreparationPassives(HumanId, humanLoadout);
             foreach (var bot in bots)
             {
@@ -257,8 +279,11 @@ namespace HextechSeekers.Native
                               (rules.HunterWon ? "Hunter" : "Hiders") +
                               " humanScore=" + rules.Find(HumanId).Score);
                 }
+                humanContact.Cancel();
+                foreach (var bot in bots) bot.BasicContact.Cancel();
                 UpdateMarkers();
                 UpdatePrivateFog();
+                TickCombatPresentation();
                 return;
             }
 
@@ -282,17 +307,107 @@ namespace HextechSeekers.Native
                 basicCooldown = HumanBasicCooldown;
                 rift.PerformBasicAttack();
                 var target = NearestVisibleEnemy(HumanId);
-                bool capture = target != null && hextech.TryBasicAttackCapture(
-                    HumanId, target.Id, true, true,
-                    Vector2.Distance(rift.PlayerPosition, target.Position));
-                feedback = capture ? "Basic attack captured " + target.Hero :
-                    "Basic attack did not capture (range, immunity or visibility).";
-                Debug.Log("MATCH_BASIC_ATTACK: captured=" + capture);
+                if (target != null)
+                    humanContact.Begin(target.Id);
+                combatVfx?.Pulse(HumanId, rift.PlayerPosition, "Garen Basic");
+                feedback = "Attack animation started; target hit checked at contact frame.";
             }
 
+            ResolveHumanBasicContact(dt);
             foreach (var bot in bots) UpdateBot(bot, dt);
             UpdateMarkers();
             UpdatePrivateFog();
+            TickCombatPresentation();
+        }
+
+        bool CanSeeVisualCaster(int actorId)
+        {
+            if (rules == null) return false;
+            int viewerId = rules.Find(HumanId).Eliminated ?
+                SpectatedAlly() : HumanId;
+            if (viewerId < 0) return false;
+            var actor = rules.Find(actorId);
+            return actor != null && !actor.Eliminated &&
+                   (actorId == viewerId || VisibleTo(viewerId, actorId));
+        }
+
+        void TickCombatPresentation()
+        {
+            if (combatVfx && combatVfx.Ready)
+                combatVfx.Tick(CanSeeVisualCaster);
+        }
+
+        void UpdateBotCombatVfx(Bot bot)
+        {
+            if (!combatVfx || !combatVfx.Ready || bot.Combat == null) return;
+            combatVfx.SetHook(bot.Id, bot.Combat.HookActive,
+                              bot.Combat.HookLaunchPosition,
+                              bot.Combat.HookTipPosition);
+            combatVfx.SetWindWall(bot.Id, bot.Combat.WindWall);
+        }
+
+        void ResolveHumanBasicContact(float dt)
+        {
+            if (!humanContact.Tick(dt, out int targetId)) return;
+            var target = rules.Find(targetId);
+            if (target == null || target.Eliminated || !rules.CanAttack(HumanId) ||
+                hextech.Stunned(HumanId) || heroControl.Locked(HumanId)) return;
+            bool seen = VisibleTo(HumanId, targetId);
+            float distance = Vector2.Distance(rift.PlayerPosition, GetPosition(targetId));
+            bool caught = hextech.TryBasicAttackCapture(
+                HumanId, targetId, true, seen, distance);
+            feedback = caught ? "Contact: captured " + target.HeroKey :
+                "Contact: missed, evaded or capture immunity applied.";
+            Debug.Log("NATIVE_BASIC_CONTACT_HUMAN: caught=" + caught +
+                      " target=" + targetId + " visible=" + seen);
+        }
+
+        void ResolveBotBasicContact(Bot bot, float dt)
+        {
+            if (!bot.BasicContact.Tick(dt, out int targetId)) return;
+            var target = rules.Find(targetId);
+            if (target == null || target.Eliminated || !rules.CanAttack(bot.Id) ||
+                hextech.Stunned(bot.Id) || heroControl.Locked(bot.Id)) return;
+            bool seen = VisibleTo(bot.Id, targetId);
+            float distance = Vector2.Distance(bot.Position, GetPosition(targetId));
+            if (!rules.IsValidCaptureHit(bot.Id, targetId, true, seen, distance))
+                return;
+            // E is consumed by an actual valid basic hit even when Mirror
+            // protects the target from the capture. The skill itself does
+            // not score a capture, and an attack miss cannot consume E.
+            if (bot.Combat != null &&
+                bot.Combat.ConsumeEmpoweredBasicAttack(out float airborne))
+                heroControl.Apply(targetId, airborne);
+            bool caught = hextech.TryBasicAttackCapture(
+                bot.Id, targetId, true, seen, distance);
+            Debug.Log("NATIVE_BASIC_CONTACT_AI: actor=" + bot.Hero +
+                      " target=" + target.HeroKey + " captured=" + caught);
+        }
+
+        NativeAbilityAnimationBindings LoadBindings(
+            string folder, string hero, GarenRigRuntime rig)
+        {
+            if (!rig) return null;
+            try
+            {
+                return NativeAbilityAnimationBindings.LoadVerified(
+                    Path.Combine(folder, "animation-bindings.json"),
+                    hero, rig.HasClip);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("NATIVE_ANIMATION_MAPPING_REJECTED: " +
+                                 hero + " " + e.Message);
+                return null;
+            }
+        }
+
+        void PlayBotOriginalSkill(Bot bot, NativeSkillSlot slot, int stage = 1)
+        {
+            if (!bot.RealRig || bot.AnimationBindings == null) return;
+            string clip = bot.AnimationBindings.Resolve(slot, stage);
+            if (!string.IsNullOrEmpty(clip))
+                bot.RealRig.TryPlayOriginalSkillClip(clip);
         }
 
         void UpdatePrivateFog()
@@ -306,6 +421,10 @@ namespace HextechSeekers.Native
         {
             if (garenSkills.TryCast(slot, humanLoadout, rules, hextech, HumanId, false))
             {
+                if (rift.HeroRig && garenAnimationBindings != null)
+                    rift.HeroRig.TryPlayOriginalSkillClip(
+                        garenAnimationBindings.Resolve(slot));
+                combatVfx?.Pulse(HumanId, rift.PlayerPosition, "Garen " + slot);
                 feedback = slot == NativeSkillSlot.Q ?
                     "Garen Q: slow cleanse + brief movement speed (tuning pending)" :
                     "Garen W: tenacity window; ordinary shield does NOT block capture";
@@ -702,6 +821,8 @@ namespace HextechSeekers.Native
                 bot.Path.Clear();
                 bot.Waypoint = 0;
                 if (bot.RealRig) bot.RealRig.Tick(dt, false);
+                bot.BasicContact.Cancel();
+                UpdateBotCombatVfx(bot);
                 return;
             }
 
@@ -786,6 +907,8 @@ namespace HextechSeekers.Native
                 }
             }
             PlaceMarker(bot);
+            ResolveBotBasicContact(bot, dt);
+            UpdateBotCombatVfx(bot);
             if (bot.RealRig)
             {
                 Vector2 change = bot.Position - beforeMove;
@@ -809,14 +932,8 @@ namespace HextechSeekers.Native
                         bot.AttackCooldown = AiBasicCooldown;
                         if (bot.RealRig && bot.RealRig.HasClip("attack1"))
                             bot.RealRig.PlayAttack();
-                        if (bot.Combat != null &&
-                            bot.Combat.ConsumeEmpoweredBasicAttack(out float knockup))
-                            heroControl.Apply(targetId, knockup);
-                        bool captured = hextech.TryBasicAttackCapture(bot.Id,
-                            targetId, true, VisibleTo(bot.Id, targetId), distance);
-                        if (captured)
-                            Debug.Log("MATCH_AI_CAPTURE: " + bot.Hero +
-                                      " caught " + rules.Find(targetId).HeroKey);
+                        bot.BasicContact.Begin(targetId);
+                        combatVfx?.Pulse(bot.Id, bot.Position, bot.Hero + " Basic");
                     }
                 }
             }
@@ -834,6 +951,7 @@ namespace HextechSeekers.Native
                 try
                 {
                     bot.RealRig = GarenRigRuntime.LoadChampion(transform, folder, bot.Hero);
+                    bot.AnimationBindings = LoadBindings(folder, bot.Hero, bot.RealRig);
                     bot.Marker = bot.RealRig.gameObject;
                     PlaceMarker(bot);
                     Debug.Log("NATIVE_ORIGINAL_BOT_RIG_READY: " + bot.Hero);
@@ -945,6 +1063,8 @@ namespace HextechSeekers.Native
         void ReturnToRoleSelection()
         {
             if (privateFog) privateFog.End();
+            if (combatVfx) combatVfx.End();
+            humanContact.Cancel();
             CleanupBots();
             menu = Menu.Role;
             rules = null;
@@ -1151,6 +1271,7 @@ namespace HextechSeekers.Native
         void OnDestroy()
         {
             if (privateFog) privateFog.End();
+            if (combatVfx) combatVfx.End();
             CleanupBots();
         }
     }
