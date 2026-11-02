@@ -99,13 +99,24 @@ namespace HextechSeekers.Native
 
         public void SetWindWall(int actor, NativeWindWall barrier)
         {
-            if (barrier == null)
+            if (!Ready) return;
+            if (!walls.TryGetValue(actor, out Cue cue))
             {
-                SetTrace(walls, actor, false, default, default, Color.clear, "YASUO_W_WALL");
-                return;
+                if (barrier == null) return;
+                cue = Create(actor, "YASUO_W_WALL_FRAME",
+                    new Color(.56f, .8f, 1f), 13f, 5, false);
+                walls.Add(actor, cue);
             }
-            SetTrace(walls, actor, true, barrier.EndpointA, barrier.EndpointB,
-                     new Color(.56f, .8f, 1f), "YASUO_W_SEGMENT");
+            cue.Root.SetActive(barrier != null);
+            if (barrier == null) return;
+            // Outline a vertical 3D ribbon from the *actual* authoritative
+            // collision endpoints. Decorative wireframe, not original art.
+            Vector2 a = barrier.EndpointA, b = barrier.EndpointB;
+            cue.Line.SetPosition(0, World(a, 14f));
+            cue.Line.SetPosition(1, World(b, 14f));
+            cue.Line.SetPosition(2, World(b, 170f));
+            cue.Line.SetPosition(3, World(a, 170f));
+            cue.Line.SetPosition(4, World(a, 14f));
         }
 
         /// <summary>Event visual is at the *caster* anchor only. An unseen
