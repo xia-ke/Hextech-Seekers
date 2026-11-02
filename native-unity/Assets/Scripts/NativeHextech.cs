@@ -231,10 +231,17 @@ namespace HextechSeekers.Native
             {
                 if (!holders.TryGetValue(targetId, out var target) ||
                     target.Participant.Eliminated ||
-                    target.Participant.Role == actor.Participant.Role ||
-                    !targetVisible)
+                    target.Participant.Role == actor.Participant.Role)
                 {
-                    result = "No visible enemy target";
+                    result = "No eligible enemy target";
+                    return false;
+                }
+                // Card Sense is an explicit information-gathering exception:
+                // it must be able to locate an unseen enemy. A stun/silence
+                // still requires the enemy to be in current personal vision.
+                if (id != NativeHextech.CardSenseSilver && !targetVisible)
+                {
+                    result = "Enemy is outside your vision";
                     return false;
                 }
             }
