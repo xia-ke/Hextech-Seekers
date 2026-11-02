@@ -41,6 +41,7 @@ namespace HextechSeekers.Native
         public Vector2 PlayerPosition => location;
         public bool ExternalGameplayControl { get; set; }
         public bool ExternalMoveEnabled { get; set; } = true;
+        public float ExternalMoveMultiplier { get; set; } = 1f;
         public bool PlayerMoving => waypoint < route.Length;
         string problem = "Initializing 3D Rift...";
 
@@ -107,7 +108,7 @@ namespace HextechSeekers.Native
             }
             if (waypoint < route.Length && (!ExternalGameplayControl || ExternalMoveEnabled))
             {
-                float delta = moveSpeed * Time.deltaTime;
+                float delta = moveSpeed * (ExternalGameplayControl ? ExternalMoveMultiplier : 1f) * Time.deltaTime;
                 while (delta > 0 && waypoint < route.Length)
                 {
                     Vector2 to = route[waypoint] - location;
