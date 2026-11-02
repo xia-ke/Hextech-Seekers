@@ -45,6 +45,7 @@ namespace HextechSeekers.Native
             public GameObject Marker;
             public LineRenderer Ring;
             public Material RingMaterial;
+            public GarenRigRuntime RealRig;
             public NativeHeroLoadout Loadout;
             public NativeYasuoSkillState YasuoSkill;
             public NativeChampionCombat Combat;
@@ -607,6 +608,7 @@ namespace HextechSeekers.Native
             {
                 bot.Path.Clear();
                 bot.Waypoint = 0;
+                if (bot.RealRig) bot.RealRig.Tick(dt, false);
                 return;
             }
 
@@ -661,6 +663,7 @@ namespace HextechSeekers.Native
                 }
             }
 
+            Vector2 beforeMove = bot.Position;
             if (bot.Waypoint < bot.Path.Count)
             {
                 float allowance = (bot.Role == MatchRole.Hunter ? HunterSpeed : HiderSpeed)
@@ -686,6 +689,14 @@ namespace HextechSeekers.Native
                 }
             }
             PlaceMarker(bot);
+            if (bot.RealRig)
+            {
+                Vector2 change = bot.Position - beforeMove;
+                if (change.sqrMagnitude > .0001f)
+                    bot.RealRig.transform.rotation = Quaternion.LookRotation(
+                        new Vector3(change.x, 0, change.y), Vector3.up);
+                bot.RealRig.Tick(dt, change.sqrMagnitude > .0001f);
+            }
 
             bot.AttackCooldown = Mathf.Max(0f, bot.AttackCooldown - dt);
             if (bot.Role == MatchRole.Hunter && rules.CanAttack(bot.Id) &&
@@ -699,6 +710,11 @@ namespace HextechSeekers.Native
                         !heroControl.Locked(bot.Id))
                     {
                         bot.AttackCooldown = AiBasicCooldown;
+                        if (bot.RealRig && bot.RealRig.HasClip("attack1"))
+                            bot.RealRig.PlayAttack();
+                        if (bot.Combat != null &&
+                            bot.Combat.ConsumeEmpoweredBasicAttack(out float knockup))
+                            heroControl.Apply(targetId, knockup);
                         bool captured = hextech.TryBasicAttackCapture(bot.Id,
                             targetId, true, VisibleTo(bot.Id, targetId), distance);
                         if (captured)
@@ -711,6 +727,28 @@ namespace HextechSeekers.Native
 
         void CreateMarker(Bot bot)
         {
+            // Optional, externally provided ORIGINAL source meshes. The repo
+            // contains only Garen by default. Never silently substitute an
+            // invented skinned mesh for Blitzcrank/Riven/Yasuo.
+            string folder = Path.Combine(Application.streamingAssetsPath,
+                                          "Champions", bot.Hero);
+            if (GarenRigRuntime.SourceFilesPresent(folder, bot.Hero))
+            {
+                try
+                {
+                    bot.RealRig = GarenRigRuntime.LoadChampion(transform, folder, bot.Hero);
+                    bot.Marker = bot.RealRig.gameObject;
+                    PlaceMarker(bot);
+                    Debug.Log("NATIVE_ORIGINAL_BOT_RIG_READY: " + bot.Hero);
+                    return;
+                }
+                catch (Exception loadFailure)
+                {
+                    bot.RealRig = null;
+                    Debug.LogError("NATIVE_ORIGINAL_BOT_RIG_FAILED: " +
+                                   bot.Hero + " " + loadFailure);
+                }
+            }
             bot.Marker = new GameObject("AI_TACTICAL_MARKER_" + bot.Hero + "_NOT_CHAMPION_ART");
             bot.Ring = bot.Marker.AddComponent<LineRenderer>();
             bot.Ring.useWorldSpace = false;
@@ -785,11 +823,14 @@ namespace HextechSeekers.Native
             // With no surviving ally there is no legal active vision source.
             // Never leak enemies through the eliminated player's last position.
             foreach (var bot in bots)
-                if (bot.Ring)
-                    bot.Ring.enabled = observerId >= 0 &&
-                        !rules.Find(bot.Id).Eliminated &&
-                        bot.Id != observerId &&
-                        VisibleTo(observerId, bot.Id);
+            {
+                bool shown = observerId >= 0 &&
+                    !rules.Find(bot.Id).Eliminated &&
+                    bot.Id != observerId &&
+                    VisibleTo(observerId, bot.Id);
+                if (bot.Ring) bot.Ring.enabled = shown;
+                if (bot.RealRig) bot.RealRig.gameObject.SetActive(shown);
+            }
         }
 
         void CleanupBots()
