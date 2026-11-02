@@ -543,6 +543,12 @@ namespace HextechSeekers.Native
         void OnGUI()
         {
             if (!rift || !rift.IsReady) return;
+            if (menu == Menu.Augment)
+            {
+                if (NativeHextechDraftUI.Draw(offered, out var selected))
+                    SelectAugment(selected);
+                return;
+            }
             float width = 525;
             bool tall = menu == Menu.Augment || menu == Menu.Playing;
             GUI.Box(new Rect(12, 12, width, tall ? 278 : 218), "");
@@ -561,18 +567,6 @@ namespace HextechSeekers.Native
                     Configure(MatchRole.Hunter);
                 if (GUI.Button(new Rect(260, 128, 225, 44), "Play as HIDER"))
                     Configure(MatchRole.Hider);
-            }
-            else if (menu == Menu.Augment)
-            {
-                GUI.Label(new Rect(25, 53, 475, 25),
-                    "Choose 1 of 3 independently dealt Hextech cards");
-                for (int i = 0; i < offered.Length; i++)
-                {
-                    var candidate = offered[i];
-                    if (GUI.Button(new Rect(25, 91 + i * 52, 460, 42),
-                                   candidate.Name + (candidate.Active ? " | ACTIVE" : " | PASSIVE")))
-                        SelectAugment(candidate.Id);
-                }
             }
             else if (menu == Menu.Skill)
             {
