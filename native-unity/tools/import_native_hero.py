@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 NATIVE = Path(__file__).resolve().parents[1]
 REPO = NATIVE.parent
@@ -37,7 +38,7 @@ def sha256(path: Path) -> str:
 
 
 def import_source(hero: str, source: Path, stem: str, destination: Path,
-                  bindings: Path | None = None) -> dict:
+                  bindings: Optional[Path] = None) -> dict:
     if hero not in HEROES:
         raise ValueError("Optional imports are only Blitzcrank, Riven or Yasuo")
     source = source.resolve(strict=True)
@@ -110,7 +111,7 @@ def import_source(hero: str, source: Path, stem: str, destination: Path,
         if animation_binding is not None:
             binding_target = destination / "animation-bindings.json"
             binding_target.write_text(
-                json.dumps(animation_binding, indent=2, ensure_ascii=False) + "\\n",
+                json.dumps(animation_binding, indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",
             )
 
