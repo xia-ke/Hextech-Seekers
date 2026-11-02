@@ -66,6 +66,8 @@ namespace HextechSeekers.Native
                 rules.Advance(Time.deltaTime);
 
             rift.ExternalMoveEnabled = rules.CanMove(HumanId);
+            rift.ExternalMoveMultiplier = humanRole == MatchRole.Hunter ?
+                HunterMoveSpeed / HiderMoveSpeed : 1f;
             if (!rift.ExternalMoveEnabled) rift.StopMovement();
 
             if (rules.Phase == MatchPhase.Finished)
@@ -304,6 +306,7 @@ namespace HextechSeekers.Native
             rift.StopMovement();
             rift.ExternalGameplayControl = false;
             rift.ExternalMoveEnabled = true;
+            rift.ExternalMoveMultiplier = 1f;
             rift.TryTeleportTo(HiderStart);
         }
 
