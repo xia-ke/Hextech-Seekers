@@ -69,6 +69,10 @@ namespace HextechSeekers.Native.Editor
                 urp = UniversalRenderPipelineAsset.Create(data);
                 AssetDatabase.CreateAsset(urp, PipelinePath);
             }
+            // The native fog-of-war samples real URP scene depth to darken
+            // world geometry rather than drawing a fake 2D map overlay.
+            urp.supportsCameraDepthTexture = true;
+            EditorUtility.SetDirty(urp);
             GraphicsSettings.defaultRenderPipeline = urp;
             QualitySettings.renderPipeline = urp;
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
