@@ -178,7 +178,8 @@ namespace HextechSeekers.Native.Editor
                 throw new InvalidDataException("glTFast Unlit BLEND shader variant was not retained correctly.");
 
             Debug.Log("NATIVE_GLTF_SHADER_RESOURCES_READY: " + retained.Length);
-            Debug.Log("NATIVE_GLTF_ALPHA_VARIANTS_READY: pbrMask=true pbrBlend=true unlitMask=true unlitBlend=true");
+            Debug.Log("NATIVE_GLTF_ALPHA_VARIANTS_READY: mask=true blend=true");
+            Debug.Log("NATIVE_GLTF_ALPHA_VARIANTS_DETAIL: pbrMask=true pbrBlend=true unlitMask=true unlitBlend=true");
         }
 
         static void EnsureGarenRuntimeMaterial()
