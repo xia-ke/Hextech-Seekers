@@ -244,6 +244,48 @@ namespace HextechSeekers.Native.Tests
         }
 
         [Test]
+        public void RivenWControlsAllVisibleEnemiesInsideRadiusButNeverCaptures()
+        {
+            var nav = new RiftGrid(RawGrid());
+            var match = new NativeMatchRules(
+                new MatchParticipant(1, "Garen", MatchRole.Hider, true),
+                new MatchParticipant(2, "Riven", MatchRole.Hunter, false),
+                new MatchParticipant(3, "Yasuo", MatchRole.Hider, false));
+            var effects = new NativeHextechRuntime(match);
+            var skills = new NativeHeroLoadout("Riven", MatchRole.Hunter);
+            Assert.IsTrue(skills.Choose(NativeSkillSlot.W));
+            match.Begin();
+            match.Advance(120f);
+            var at = nav.Center(200, 200);
+            var enemies = new[] {
+                new NativeSkillTarget(1, nav.Center(201, 200),
+                                      MatchRole.Hider, false, true),
+                new NativeSkillTarget(3, nav.Center(200, 202),
+                                      MatchRole.Hider, false, true)
+            };
+            var state = new NativeChampionCombat(2, "Riven", skills, match,
+                                                 effects, nav);
+            var impact = state.TryRivenW(at, enemies);
+            Assert.IsNotNull(impact);
+            Assert.AreEqual(1, impact.TargetId);
+            CollectionAssert.Contains(impact.AdditionalHitTargets, 3);
+            Assert.AreEqual(0, match.CapturedCount);
+        }
+
+        [Test]
+        public void RigLoaderNeverCallsAnUnverifiedHeroSourceAnOriginalModel()
+        {
+            Assert.IsTrue(GarenRigRuntime.IsSupportedHero("Riven"));
+            Assert.IsTrue(GarenRigRuntime.IsSupportedHero("Blitzcrank"));
+            Assert.IsTrue(GarenRigRuntime.IsSupportedHero("Yasuo"));
+            Assert.IsFalse(GarenRigRuntime.IsSupportedHero("FakeChampion"));
+            string missing = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                "no-hextech-hero-" + Guid.NewGuid().ToString("N"));
+            Assert.IsFalse(GarenRigRuntime.SourceFilesPresent(missing, "Riven"));
+            Assert.IsFalse(GarenRigRuntime.SourceFilesPresent(missing, "FakeChampion"));
+        }
+
+        [Test]
         public void RivenComboWindowExpiresIfNotRepeated()
         {
             var nav = new RiftGrid(RawGrid());
