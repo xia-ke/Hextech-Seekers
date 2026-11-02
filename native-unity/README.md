@@ -1,4 +1,4 @@
-# Hextech-Seekers Native — Unity + URP (Windows), Phase 4 gameplay alpha
+# Hextech-Seekers Native — Unity + URP (Windows), Phase 5 gameplay implementation
 
 **Verified Phase 3 baseline:** Unity 6000.6.7f1, Editor tests, original Rift/Garen Windows Player and GPU screenshot technical acceptance all PASSED (Windows GPU run #41326056673; Editor run #41326056661). **Phase 4 gameplay vertical slice** (role selection, 1v1 tactical AI, preparation/roaming/capture/scoring) is now implemented in source; its newly added gameplay integration tests must pass before claiming the new phase accepted.
 
@@ -54,3 +54,13 @@ Detailed rules, controls, implementation and limitations: [docs/phase-4-gameplay
 After generating/building the scene, run without either QA flag to see the role selection menu. Play **Garen as hunter or hider** versus a visibly non-champion tactical AI ring; right-click to pathfind, S to stop and A to attack as a hunter. The rules engine uses the confirmed 120s preparation, 3/5/7-minute chase formula, 1-hit basic attack capture and source-specific survival points. The new Windows Player `-hextechGameplayQA` smoke (after the unchanged GPU screenshot acceptance) tests both roles in a native process and writes `gameplay-result.json`. See GitHub Actions to determine whether the current code passed.
 
 **Still incomplete:** actual verified fountain, four original hero models/skills, real 2–4 participant UI, dedicated fog-of-war shader, wild monsters and eight hextech options. AI tactical ring and native-navigation LOS are diagnostic placeholders, not substitutes for an authentic League client view.
+
+## Phase 5: continue development before acceptance
+
+The next source slice has been committed without using the Unity/Windows test result as a gate, per the project owner's request. See [docs/phase-5-multi-actor-hextech.md](docs/phase-5-multi-actor-hextech.md).
+
+This adds 2/3/4-player hero **slots** (one original Garen, 1–3 distinct AI tactical markers rather than unreconstructed models), a full-screen 3-card Hextech selection screen, the exact eight agreed augment names, individual active cooldowns, stun/silence/capture immunity, time-clock changes, two Garen skill states, and allied spectator camera behavior.
+
+**Do not equate a hero slot with an imported original hero mesh.** Blitzcrank/Riven/Yasuo source rig and animations, LoL-accurate scene fog and fountain, original animation hit contacts, plus verified wild-monster camp coordinates and their full entities are not implemented yet. Card Sense has an optional validated camp-data interface; it refuses to invent camp names when the catalog is absent.
+
+The prior GPU screenshot acceptance still applies to the earlier Phase 3 baseline. No new Phase 5 GPU or visual acceptance is claimed here.
