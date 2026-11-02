@@ -303,13 +303,53 @@ namespace HextechSeekers.Native
         void CycleVisibleTarget()
         {
             var eligible = new List<int>();
+            bool senseCanTargetUnseen = hextech.Selected(HumanId) == NativeHextech.CardSenseSilver;
             foreach (var p in rules.Players)
                 if (p.Id != HumanId && p.Role != humanRole && !p.Eliminated &&
-                    VisibleTo(HumanId, p.Id)) eligible.Add(p.Id);
-            if (eligible.Count == 0) { preferredTargetId = -1; feedback = "No visible enemy"; return; }
+                    (senseCanTargetUnseen || VisibleTo(HumanId, p.Id)))
+                    eligible.Add(p.Id);
+            if (eligible.Count == 0)
+            {
+                preferredTargetId = -1;
+                feedback = "No eligible target (Card Sense may select unseen enemies)";
+                return;
+            }
             int index = eligible.IndexOf(preferredTargetId);
             preferredTargetId = eligible[(index + 1) % eligible.Count];
             feedback = "Hextech target: " + rules.Find(preferredTargetId).HeroKey;
+        }
+
+        int FirstLivingEnemy()
+        {
+            foreach (var p in rules.Players)
+                if (p.Id != HumanId && p.Role != humanRole && !p.Eliminated)
+                    return p.Id;
+            return -1;
+        }
+
+        string VerifiedCampSense(NativeHextech selected, int targetId)
+        {
+            var catalog = rift.CampCatalog;
+            if (catalog == null || catalog.Camps.Count == 0)
+                return null; // no artificial camp-name responses
+            if (selected == NativeHextech.CardSenseSilver)
+            {
+                var target = rules.Find(targetId);
+                if (target == null || target.Eliminated) return null;
+                string camp = catalog.NearestName(GetPosition(targetId));
+                return target.HeroKey + ": nearest jungle camp " + camp;
+            }
+            if (selected == NativeHextech.CardSenseGold)
+            {
+                var lines = new List<string>();
+                foreach (var p in rules.Players)
+                {
+                    if (p.Id == HumanId || p.Role == humanRole || p.Eliminated) continue;
+                    lines.Add(p.HeroKey + ": " + catalog.NearestName(GetPosition(p.Id)));
+                }
+                return lines.Count == 0 ? null : "Enemy nearest camps: " + string.Join("; ", lines);
+            }
+            return null;
         }
 
         void TryUseHextech(int clockDirection)
@@ -317,16 +357,16 @@ namespace HextechSeekers.Native
             if (hextech == null) return;
             var selected = hextech.Selected(HumanId);
             if (!selected.HasValue) return;
+            bool senseCanTargetUnseen = selected == NativeHextech.CardSenseSilver;
             int target = preferredTargetId;
             if (target < 0 || rules.Find(target) == null ||
-                rules.Find(target).Eliminated || !VisibleTo(HumanId, target))
-                target = GetTargetForActor(HumanId);
+                rules.Find(target).Eliminated ||
+                (!senseCanTargetUnseen && !VisibleTo(HumanId, target)))
+                target = senseCanTargetUnseen ? FirstLivingEnemy() : GetTargetForActor(HumanId);
             bool sees = target >= 0 && VisibleTo(HumanId, target);
-            // Card Sense needs a verified camp-coordinate catalogue; no fake
-            // camp name is reported or cooldown spent in its absence.
-            float tenacity = target == HumanId ? garenSkills.CrowdControlDurationFactor : 1f;
-            if (!hextech.TryActive(HumanId, target, sees, clockDirection, null,
-                                    out feedback, tenacity))
+            string campInfo = VerifiedCampSense(selected.Value, target);
+            if (!hextech.TryActive(HumanId, target, sees, clockDirection, campInfo,
+                                    out feedback))
                 Debug.Log("MATCH_HEXTECH_REJECTED: " + feedback);
             else Debug.Log("MATCH_HEXTECH_USED: " + feedback);
         }
