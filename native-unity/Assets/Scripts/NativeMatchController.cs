@@ -223,9 +223,10 @@ namespace HextechSeekers.Native
                 if (Input.GetKeyDown(KeyCode.W)) TryGarenSkill(NativeSkillSlot.W);
             }
             basicCooldown = Mathf.Max(0f, basicCooldown - dt);
-            if (Input.GetKeyDown(KeyCode.Tab))
+            if (!rules.Find(HumanId).Eliminated && Input.GetKeyDown(KeyCode.Tab))
                 CycleVisibleTarget();
-            if (Input.GetKeyDown(KeyCode.F)) TryUseHextech(0);
+            if (!rules.Find(HumanId).Eliminated && Input.GetKeyDown(KeyCode.F))
+                TryUseHextech(0);
             if (Input.GetKeyDown(KeyCode.A) && rules.CanAttack(HumanId) &&
                 !hextech.Stunned(HumanId) && basicCooldown <= 0f)
             {
@@ -545,11 +546,14 @@ namespace HextechSeekers.Native
 
         void UpdateMarkers()
         {
-            int observerId = SpectatedAlly();
-            if (observerId < 0) observerId = HumanId;
+            if (rules == null) return;
+            bool humanEliminated = rules.Find(HumanId).Eliminated;
+            int observerId = humanEliminated ? SpectatedAlly() : HumanId;
+            // With no surviving ally there is no legal active vision source.
+            // Never leak enemies through the eliminated player's last position.
             foreach (var bot in bots)
                 if (bot.Ring)
-                    bot.Ring.enabled = rules != null &&
+                    bot.Ring.enabled = observerId >= 0 &&
                         !rules.Find(bot.Id).Eliminated &&
                         bot.Id != observerId &&
                         VisibleTo(observerId, bot.Id);
