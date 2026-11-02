@@ -49,6 +49,7 @@ namespace HextechSeekers.Native
         RiftBootstrap rift;
         NativeMatchRules rules;
         NativeHextechRuntime hextech;
+        NativeFogOfWar privateFog;
         NativeHeroLoadout humanLoadout;
         NativeGarenSkills garenSkills;
         NativeHextechDefinition[] offered;
@@ -85,6 +86,7 @@ namespace HextechSeekers.Native
         {
             if (!rift || !rift.IsReady) return;
             CleanupBots();
+            if (privateFog) privateFog.End();
             humanRole = role;
             var participants = new MatchParticipant[rosterSize];
             participants[0] = new MatchParticipant(HumanId, "Garen", role, true);
@@ -168,6 +170,18 @@ namespace HextechSeekers.Native
             foreach (var bot in bots) hextech.ApplyPreparationPassives(bot.Id, bot.Loadout);
             rift.ExternalMoveEnabled = rules.CanMove(HumanId);
             menu = Menu.Playing;
+            if (!privateFog) privateFog = GetComponent<NativeFogOfWar>() ??
+                                         gameObject.AddComponent<NativeFogOfWar>();
+            try
+            {
+                privateFog.Begin(rift.Navigation, rules, Camera.main);
+                privateFog.UpdateView(rules, HumanId, GetPosition);
+            }
+            catch (Exception fogError)
+            {
+                Debug.LogError("NATIVE_FOG_INITIALIZATION_FAILED: " + fogError);
+                feedback = "The 3D fog renderer is unavailable; inspect Player.log.";
+            }
             feedback = "120-second preparation started. Hunter cannot leave staging.";
             Debug.Log("MATCH_BEGIN: participants=" + rosterSize + " human=" + humanRole +
                       " hextech=" + hextech.Selected(HumanId));
@@ -211,6 +225,7 @@ namespace HextechSeekers.Native
                               " humanScore=" + rules.Find(HumanId).Score);
                 }
                 UpdateMarkers();
+                UpdatePrivateFog();
                 return;
             }
 
@@ -243,6 +258,14 @@ namespace HextechSeekers.Native
 
             foreach (var bot in bots) UpdateBot(bot, dt);
             UpdateMarkers();
+            UpdatePrivateFog();
+        }
+
+        void UpdatePrivateFog()
+        {
+            if (!privateFog || !privateFog.Running || rules == null) return;
+            int viewerId = rules.Find(HumanId).Eliminated ? SpectatedAlly() : HumanId;
+            privateFog.UpdateView(rules, viewerId, GetPosition);
         }
 
         void TryGarenSkill(NativeSkillSlot slot)
@@ -571,6 +594,7 @@ namespace HextechSeekers.Native
 
         void ReturnToRoleSelection()
         {
+            if (privateFog) privateFog.End();
             CleanupBots();
             menu = Menu.Role;
             rules = null;
@@ -764,6 +788,10 @@ namespace HextechSeekers.Native
             if (!Application.isEditor) Application.Quit(result.status == "PASS" ? 0 : 1);
         }
 
-        void OnDestroy() { CleanupBots(); }
+        void OnDestroy()
+        {
+            if (privateFog) privateFog.End();
+            CleanupBots();
+        }
     }
 }
