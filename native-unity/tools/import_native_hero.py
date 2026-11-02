@@ -36,7 +36,8 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def import_source(hero: str, source: Path, stem: str, destination: Path) -> dict:
+def import_source(hero: str, source: Path, stem: str, destination: Path,
+                  bindings: Path | None = None) -> dict:
     if hero not in HEROES:
         raise ValueError("Optional imports are only Blitzcrank, Riven or Yasuo")
     source = source.resolve(strict=True)
@@ -76,6 +77,23 @@ def import_source(hero: str, source: Path, stem: str, destination: Path) -> dict
         if source_provenance.get("meshSHA256") != sha256(mesh):
             raise ValueError("Source mesh SHA256 mismatch after conversion")
 
+        # A clip can only be bound when its original track is actually in
+        # the converted source. No guessed spell1=Q mapping is permitted.
+        animation_binding = None
+        if bindings is not None:
+            animation_binding = json.loads(bindings.read_text(encoding="utf-8"))
+            if (animation_binding.get("version") != 1 or
+                animation_binding.get("sourceVerified") is not True or
+                animation_binding.get("hero") != hero):
+                raise ValueError("Skill animation bindings need hero-specific verified provenance")
+            keys = ("q1", "q2", "q3", "w", "e")
+            if not any(animation_binding.get(key) for key in keys):
+                raise ValueError("Skill animation bindings must specify an actual source clip")
+            for key in keys:
+                value = animation_binding.get(key) or ""
+                if value and (not isinstance(value, str) or value not in clips):
+                    raise ValueError(f"Skill animation binding {key} is not an original imported clip: {value}")
+
         # Verify every file *before* modifying a live Unity input directory.
         files = [hero.lower() + ".json", binary, texture]
         for name in files:
@@ -89,11 +107,19 @@ def import_source(hero: str, source: Path, stem: str, destination: Path) -> dict
             if sha256(staged / name) != sha256(destination / name):
                 raise IOError("Copied Unity source failed SHA256 verification: " + name)
 
+        if animation_binding is not None:
+            binding_target = destination / "animation-bindings.json"
+            binding_target.write_text(
+                json.dumps(animation_binding, indent=2, ensure_ascii=False) + "\\n",
+                encoding="utf-8",
+            )
+
         report = {
             "hero": hero,
             "sourceMeshSha256": source_provenance["meshSHA256"],
             "sourceAnimationSha256": source_provenance["animationSHA256"],
             "clips": clips,
+            "verifiedAbilityBindings": animation_binding is not None,
             "source": str(source),
             "status": "SOURCE_PREPARED_NOT_VISUALLY_VALIDATED",
         }
@@ -109,11 +135,13 @@ def main():
     p.add_argument("--source", type=Path, required=True)
     p.add_argument("--stem", required=True)
     p.add_argument("--output", type=Path)
+    p.add_argument("--bindings", type=Path,
+                   help="Optional, manually checked animation-bindings.json with original clip names")
     args = p.parse_args()
     target = args.output or (
         NATIVE / "Assets" / "StreamingAssets" / "Champions" / args.hero
     )
-    report = import_source(args.hero, args.source, args.stem, target)
+    report = import_source(args.hero, args.source, args.stem, target, args.bindings)
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
