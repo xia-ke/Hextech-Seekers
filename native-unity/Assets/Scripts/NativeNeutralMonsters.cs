@@ -130,12 +130,14 @@ namespace HextechSeekers.Native
 
         readonly Dictionary<int, float> targetDashLocks = new Dictionary<int, float>();
         float clock;
+        float eAvailableAt;
         float qAvailableAt;
         float stackExpiresAt;
         int stacks;
 
         public int QStacks => stacks;
         public float CooldownQ => Mathf.Max(0, qAvailableAt - clock);
+        public float CooldownE => Mathf.Max(0, eAvailableAt - clock);
 
         public void Advance(float deltaSeconds)
         {
@@ -185,13 +187,52 @@ namespace HextechSeekers.Native
         {
             destination = default;
             if (!CanCast(loadout, match, effects, casterId, NativeSkillSlot.E) ||
-                world == null) return false;
+                world == null || clock < eAvailableAt) return false;
             if (targetDashLocks.TryGetValue(monsterId, out float lockedUntil) &&
                 lockedUntil > clock) return false;
             if (!world.TryDashLanding(monsterId, casterPosition,
                                       EDashRangeProvisional, EDashBeyondProvisional,
                                       out destination)) return false;
             targetDashLocks[monsterId] = clock + ERepeatTargetLockProvisional;
+            eAvailableAt = clock + .5f;
+            return true;
+        }
+
+        /// <summary>
+        /// E can pass through a currently perceived opposing champion as well
+        /// as a neutral camp target. The caster lands beyond the target only
+        /// when both the approach and exit path are navigable. No damage,
+        /// displacement, capture or target-state mutation is performed.
+        /// </summary>
+        public bool TryEDashThroughHero(
+            NativeHeroLoadout loadout, NativeMatchRules match,
+            NativeHextechRuntime effects, int casterId, Vector2 casterPosition,
+            NativeSkillTarget target, RiftGrid navigation, out Vector2 destination)
+        {
+            destination = default;
+            if (!CanCast(loadout, match, effects, casterId, NativeSkillSlot.E) ||
+                navigation == null || clock < eAvailableAt ||
+                target.Id == casterId || target.Eliminated ||
+                !target.VisibleToCaster ||
+                target.Role == match.Find(casterId).Role)
+                return false;
+            if (targetDashLocks.TryGetValue(target.Id, out float lockedUntil) &&
+                lockedUntil > clock) return false;
+            Vector2 to = target.Position - casterPosition;
+            if (to.sqrMagnitude < 1f ||
+                to.sqrMagnitude > EDashRangeProvisional * EDashRangeProvisional ||
+                !navigation.LineClear(casterPosition, target.Position))
+                return false;
+            Vector2 proposed = target.Position + to.normalized * EDashBeyondProvisional;
+            if (!navigation.TryNearest(proposed, out destination, 3) ||
+                !navigation.LineClear(target.Position, destination) ||
+                !navigation.LineClear(casterPosition, destination))
+            {
+                destination = default;
+                return false;
+            }
+            targetDashLocks[target.Id] = clock + ERepeatTargetLockProvisional;
+            eAvailableAt = clock + .5f;
             return true;
         }
     }
