@@ -111,6 +111,43 @@ namespace HextechSeekers.Native.Editor
                     material.renderQueue = (int)RenderQueue.Transparent;
                 });
 
+            var unlitAlphaMask = EnsureRetainedMaterial(
+                folder + "/GltfUnlitAlphaMask.mat",
+                unlitShader,
+                material =>
+                {
+                    if (!material.HasProperty("alphaCutoff") ||
+                        !material.HasProperty("_AlphaClip") ||
+                        !material.HasProperty("_Cull"))
+                        throw new InvalidDataException("glTFast Unlit Shader Graph lacks alpha-mask properties.");
+                    material.SetFloat("alphaCutoff", 0.5f);
+                    material.SetFloat("_AlphaClip", 1f);
+                    material.SetFloat("_Cull", 0f);
+                    material.EnableKeyword("_ALPHATEST_ON");
+                    material.SetOverrideTag("RenderType", "TransparentCutout");
+                    material.renderQueue = (int)RenderQueue.AlphaTest;
+                });
+
+            var unlitAlphaBlend = EnsureRetainedMaterial(
+                folder + "/GltfUnlitAlphaBlend.mat",
+                unlitShader,
+                material =>
+                {
+                    if (!material.HasProperty("_Surface"))
+                        throw new InvalidDataException("glTFast Unlit Shader Graph lacks _Surface property.");
+                    material.SetFloat("_Surface", 1f);
+                    material.SetFloat("_SrcBlend", (int)BlendMode.SrcAlpha);
+                    material.SetFloat("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
+                    material.SetFloat("_AlphaDstBlend", (int)BlendMode.OneMinusSrcAlpha);
+                    material.SetFloat("_ZWrite", 0f);
+                    material.SetFloat("_Cull", 0f);
+                    material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                    material.EnableKeyword("_DISABLE_SSR_TRANSPARENT");
+                    material.EnableKeyword("_ENABLE_FOG_ON_TRANSPARENT");
+                    material.SetOverrideTag("RenderType", "Transparent");
+                    material.renderQueue = (int)RenderQueue.Transparent;
+                });
+
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
@@ -131,10 +168,17 @@ namespace HextechSeekers.Native.Editor
                 throw new InvalidDataException("glTFast MASK shader variant was not retained correctly.");
             if (!alphaBlend || !alphaBlend.IsKeywordEnabled("_SURFACE_TYPE_TRANSPARENT") ||
                 alphaBlend.renderQueue != (int)RenderQueue.Transparent)
-                throw new InvalidDataException("glTFast BLEND shader variant was not retained correctly.");
+                throw new InvalidDataException("glTFast PBR BLEND shader variant was not retained correctly.");
+            if (!unlitAlphaMask || !unlitAlphaMask.IsKeywordEnabled("_ALPHATEST_ON") ||
+                unlitAlphaMask.GetFloat("_AlphaClip") < 0.5f ||
+                unlitAlphaMask.renderQueue != (int)RenderQueue.AlphaTest)
+                throw new InvalidDataException("glTFast Unlit MASK shader variant was not retained correctly.");
+            if (!unlitAlphaBlend || !unlitAlphaBlend.IsKeywordEnabled("_SURFACE_TYPE_TRANSPARENT") ||
+                unlitAlphaBlend.renderQueue != (int)RenderQueue.Transparent)
+                throw new InvalidDataException("glTFast Unlit BLEND shader variant was not retained correctly.");
 
             Debug.Log("NATIVE_GLTF_SHADER_RESOURCES_READY: " + retained.Length);
-            Debug.Log("NATIVE_GLTF_ALPHA_VARIANTS_READY: mask=true blend=true");
+            Debug.Log("NATIVE_GLTF_ALPHA_VARIANTS_READY: pbrMask=true pbrBlend=true unlitMask=true unlitBlend=true");
         }
 
         static void EnsureGarenRuntimeMaterial()
