@@ -20,6 +20,7 @@ namespace HextechSeekers.Native
             public int OwnerId;
             public GameObject Root;
             public LineRenderer Line;
+            public Material EffectMaterial;
             public float ExpiresAt;
         }
 
@@ -69,7 +70,9 @@ namespace HextechSeekers.Native
             material.SetColor("_BaseColor", color);
             ownedMaterials.Add(material);
             line.sharedMaterial = material;
-            return new Cue { OwnerId = owner, Root = go, Line = line };
+            return new Cue {
+                OwnerId = owner, Root = go, Line = line, EffectMaterial = material
+            };
         }
 
         void SetTrace(Dictionary<int, Cue> store, int owner, bool active,
@@ -136,6 +139,11 @@ namespace HextechSeekers.Native
         {
             collection.Remove(cue);
             if (cue.Root) Destroy(cue.Root);
+            if (cue.EffectMaterial)
+            {
+                ownedMaterials.Remove(cue.EffectMaterial);
+                Destroy(cue.EffectMaterial);
+            }
         }
 
         public void Tick(Func<int, bool> maySeeCaster)
