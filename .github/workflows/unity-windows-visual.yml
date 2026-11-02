@@ -66,6 +66,16 @@ jobs:
           [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "exe=$unity" + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
           Write-Host "Using Unity: $unity; Runner desktop user: $env:USERNAME"
 
+      - name: Activate the repository Unity license on the GPU runner
+        id: activate-unity
+        uses: game-ci/unity-activate@v2
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_PATH: ${{ steps.unity.outputs.exe }}
+
       - name: Prepare and verify original Rift and Garen assets
         run: |
           if (Get-Command py -ErrorAction SilentlyContinue) {
