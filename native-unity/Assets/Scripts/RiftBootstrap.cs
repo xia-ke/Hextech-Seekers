@@ -31,6 +31,7 @@ namespace HextechSeekers.Native
         Vector2 previousLocation;
         GameObject loadedMap;
         GltfImport mapImport;
+        Material[] retainedGltfFastMaterials;
         bool ready;
         public bool IsReady => ready;
         public bool HasLoadFailed => !ready && !string.Equals(problem, "Initializing 3D Rift...", StringComparison.Ordinal);
@@ -51,6 +52,54 @@ namespace HextechSeekers.Native
         public float ExternalMoveMultiplier { get; set; } = 1f;
         public bool PlayerMoving => waypoint < route.Length;
         string problem = "Initializing 3D Rift...";
+
+        static readonly string[] RequiredGltfShaderNames = {
+            "Shader Graphs/glTF-unlit",
+            "Shader Graphs/glTF-pbrMetallicRoughness"
+        };
+
+        void PreloadGltfFastShaders()
+        {
+            retainedGltfFastMaterials = Resources.LoadAll<Material>("Native/GLTFast");
+            foreach (string shaderName in RequiredGltfShaderNames)
+            {
+                bool found = false;
+                foreach (var material in retainedGltfFastMaterials)
+                    if (material && material.shader && material.shader.name == shaderName && material.shader.isSupported)
+                        found = true;
+                if (!found)
+                    throw new InvalidDataException("Required glTFast Player shader is not retained/supported: " + shaderName);
+            }
+            Debug.Log("NATIVE_GLTF_SHADERS_PRELOADED: materials=" + retainedGltfFastMaterials.Length);
+        }
+
+        static int ValidateMapMaterials(GameObject map)
+        {
+            int rendererCount = 0;
+            int materialCount = 0;
+            foreach (var renderer in map.GetComponentsInChildren<Renderer>(true))
+            {
+                var filter = renderer.GetComponent<MeshFilter>();
+                var skinned = renderer as SkinnedMeshRenderer;
+                if ((!filter || !filter.sharedMesh) && (!skinned || !skinned.sharedMesh)) continue;
+                rendererCount++;
+                var materials = renderer.sharedMaterials;
+                if (materials == null || materials.Length == 0)
+                    throw new InvalidDataException("Rift mesh has no material after glTFast import: " + renderer.name);
+                foreach (var material in materials)
+                {
+                    if (!material || !material.shader || !material.shader.isSupported ||
+                        material.shader.name == "Hidden/InternalErrorShader")
+                        throw new InvalidDataException("Rift mesh has a missing/unsupported shader: " + renderer.name);
+                    materialCount++;
+                }
+            }
+            if (rendererCount == 0 || materialCount == 0)
+                throw new InvalidDataException("Rift GLB instantiated without renderable mesh materials");
+            Debug.Log("NATIVE_MAP_MATERIAL_AUDIT_PASS: renderers=" + rendererCount +
+                      " materials=" + materialCount);
+            return rendererCount;
+        }
 
         async void Start()
         {
@@ -101,6 +150,8 @@ namespace HextechSeekers.Native
                 loadedMap.transform.SetParent(transform, false);
                 loadedMap.transform.localRotation = Quaternion.Euler(0, mapYawCorrection, 0);
                 loadedMap.transform.localScale = Vector3.one * worldScale;
+                // Load the retained Shader Graph materials before glTFast creates runtime materials.
+                PreloadGltfFastShaders();
                 // glTFast's default logger suppresses detailed diagnostics. Forward
                 // importer errors/warnings to Player.log for automated root-cause triage.
                 mapImport = new GltfImport(logger: new ConsoleLogger());
@@ -118,6 +169,7 @@ namespace HextechSeekers.Native
                           " renderers=" + loadedMap.GetComponentsInChildren<Renderer>(true).Length);
                 if (!instantiated)
                     throw new InvalidDataException("Original Rift map.glb loaded but glTFast scene instantiation failed; inspect Player.log");
+                ValidateMapMaterials(loadedMap);
                 // A real skinned original hero is a hard requirement for phase 2.
                 // Do not silently fall back to the old cyan diagnostic disc.
                 string heroPath = Path.Combine(root, "Champions", "Garen");
