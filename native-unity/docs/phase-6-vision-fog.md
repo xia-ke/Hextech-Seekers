@@ -20,6 +20,8 @@ Brush does not black out its terrain as if it were a solid wall. Characters insi
 
 ## Quality/performance scope, not yet claimed
 
+A captured hider can press **Tab** to cycle through surviving allied hiders. Both the follow camera and the displayed fog mask change to the selected ally. Each ally's exploration remains separate, with no combined shared vision. When there is no living ally, no observer's terrain visibility is shown.
+
 The renderer samples the **opaque camera depth** for its fog. Transparent particles, URP postprocessing, off-screen objects and unsupported depth paths may require additional treatment after actual GPU review. It is a first source implementation of the confirmed vision/darkness direction, **not** a finished recreation of League's exact vision polygons, brush-edge behavior or terrain-normal projection. The fog mask is sampled bilinearly to soften a single 50-world-unit cell edge. The provisional vision radius is `NativeSight.BasicSightDistance` and must eventually be calibrated to the target game version.
 
 No full-map enemy positioning, spectator wallhack, rune setup, summoner spell or fictional imported hero model is introduced by the fog module.
