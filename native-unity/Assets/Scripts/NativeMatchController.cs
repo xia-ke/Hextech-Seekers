@@ -170,6 +170,7 @@ namespace HextechSeekers.Native
             foreach (var bot in bots) hextech.ApplyPreparationPassives(bot.Id, bot.Loadout);
             rift.ExternalMoveEnabled = rules.CanMove(HumanId);
             menu = Menu.Playing;
+            string startMessage = "120-second preparation started. Hunter cannot leave staging.";
             if (!privateFog) privateFog = GetComponent<NativeFogOfWar>() ??
                                          gameObject.AddComponent<NativeFogOfWar>();
             try
@@ -180,15 +181,16 @@ namespace HextechSeekers.Native
             catch (Exception fogError)
             {
                 Debug.LogError("NATIVE_FOG_INITIALIZATION_FAILED: " + fogError);
-                feedback = "The 3D fog renderer is unavailable; inspect Player.log.";
+                startMessage = "Fog shader unavailable: inspect Player.log (not a visual PASS).";
             }
-            feedback = "120-second preparation started. Hunter cannot leave staging.";
+            feedback = startMessage;
             Debug.Log("MATCH_BEGIN: participants=" + rosterSize + " human=" + humanRole +
                       " hextech=" + hextech.Selected(HumanId));
         }
 
-        static bool HoveringHud(Vector2 mouse) =>
-            mouse.x < 545 && mouse.y > Screen.height - 300;
+        bool HoveringHud(Vector2 mouse) =>
+            mouse.x < 545 && mouse.y > Screen.height -
+            (rules != null && rules.Phase == MatchPhase.Finished ? 475 : 325);
 
         void Update()
         {
@@ -619,7 +621,9 @@ namespace HextechSeekers.Native
             }
             float width = 525;
             bool tall = menu == Menu.Augment || menu == Menu.Playing;
-            GUI.Box(new Rect(12, 12, width, tall ? 278 : 218), "");
+            float boxHeight = rules != null && rules.Phase == MatchPhase.Finished
+                ? 330f + rosterSize * 24f : (tall ? 310f : 218f);
+            GUI.Box(new Rect(12, 12, width, boxHeight), "");
             GUI.Label(new Rect(25, 19, 495, 26), "HEXTECH SEEKERS | NATIVE 3D | GAMEPLAY ALPHA");
             if (menu == Menu.Role)
             {
@@ -691,12 +695,16 @@ namespace HextechSeekers.Native
                         ReturnToRoleSelection();
                 }
                 GUI.Label(new Rect(25, 238, 490, 25), feedback);
+                GUI.Label(new Rect(25, 263, 490, 25),
+                    privateFog && privateFog.Running ?
+                    "Fog: private 3D terrain vision + explored darkness" :
+                    "Fog unavailable: no full-map sight protection");
                 if (rules.Phase == MatchPhase.Finished)
                 {
                     int row = 0;
                     foreach (var participant in rules.Players)
                     {
-                        GUI.Label(new Rect(25, 298 + row * 23, 480, 22),
+                        GUI.Label(new Rect(25, 305 + row * 23, 480, 22),
                             participant.HeroKey + " / " + participant.Role +
                             " / score " + participant.Score +
                             (participant.Eliminated ? " / eliminated" : " / alive"));
