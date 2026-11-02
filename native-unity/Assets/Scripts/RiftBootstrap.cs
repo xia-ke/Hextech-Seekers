@@ -71,24 +71,34 @@ namespace HextechSeekers.Native
                     throw new InvalidDataException("Required glTFast Player shader is not retained/supported: " + shaderName);
             }
 
-            bool hasAlphaMaskVariant = false;
-            bool hasAlphaBlendVariant = false;
+            bool pbrAlphaMask = false, pbrAlphaBlend = false;
+            bool unlitAlphaMask = false, unlitAlphaBlend = false;
             foreach (var material in retainedGltfFastMaterials)
             {
                 if (!material || !material.shader || !material.shader.isSupported) continue;
-                if (material.IsKeywordEnabled("_ALPHATEST_ON") &&
-                    material.HasProperty("_AlphaClip") && material.GetFloat("_AlphaClip") >= 0.5f)
-                    hasAlphaMaskVariant = true;
-                if (material.IsKeywordEnabled("_SURFACE_TYPE_TRANSPARENT"))
-                    hasAlphaBlendVariant = true;
+                bool mask = material.IsKeywordEnabled("_ALPHATEST_ON") &&
+                    material.HasProperty("_AlphaClip") && material.GetFloat("_AlphaClip") >= 0.5f;
+                bool blend = material.IsKeywordEnabled("_SURFACE_TYPE_TRANSPARENT");
+                string shaderName = material.shader.name;
+                if (shaderName == "Shader Graphs/glTF-pbrMetallicRoughness")
+                {
+                    pbrAlphaMask |= mask;
+                    pbrAlphaBlend |= blend;
+                }
+                else if (shaderName == "Shader Graphs/glTF-unlit")
+                {
+                    unlitAlphaMask |= mask;
+                    unlitAlphaBlend |= blend;
+                }
             }
-            if (!hasAlphaMaskVariant || !hasAlphaBlendVariant)
+            if (!pbrAlphaMask || !pbrAlphaBlend || !unlitAlphaMask || !unlitAlphaBlend)
                 throw new InvalidDataException(
-                    "Required glTFast alpha variants are not retained in the Player: mask=" +
-                    hasAlphaMaskVariant + " blend=" + hasAlphaBlendVariant);
+                    "Required glTFast alpha variants are not retained in the Player: " +
+                    "pbrMask=" + pbrAlphaMask + " pbrBlend=" + pbrAlphaBlend +
+                    " unlitMask=" + unlitAlphaMask + " unlitBlend=" + unlitAlphaBlend);
 
             Debug.Log("NATIVE_GLTF_SHADERS_PRELOADED: materials=" + retainedGltfFastMaterials.Length);
-            Debug.Log("NATIVE_GLTF_ALPHA_VARIANTS_PRELOADED: mask=true blend=true");
+            Debug.Log("NATIVE_GLTF_ALPHA_VARIANTS_PRELOADED: pbrMask=true pbrBlend=true unlitMask=true unlitBlend=true");
         }
 
         static int ValidateMapMaterials(GameObject map)
