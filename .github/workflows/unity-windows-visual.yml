@@ -3,7 +3,7 @@ name: Unity Windows Player real GPU visual acceptance
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'fix/**']
     paths:
       - '.github/workflows/unity-windows-visual.yml'
       - 'native-unity/**'
