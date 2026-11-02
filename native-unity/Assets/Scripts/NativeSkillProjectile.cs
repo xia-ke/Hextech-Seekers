@@ -68,10 +68,12 @@ namespace HextechSeekers.Native
                 Vector2.Distance(previous, next) / (RiftGrid.CellSize * .2f)));
             for (int i = 1; i <= steps; i++)
             {
-                Vector2 point = Vector2.Lerp(previous, next, i / (float)steps);
+                float fraction = i / (float)steps;
+                Vector2 point = Vector2.Lerp(previous, next, fraction);
                 if (!navigation.CanWalk(point) ||
                     (windWall != null && windWall.Crosses(previous, point, worldTime)))
                 {
+                    travelled = Mathf.Lerp(travelled, nextTravel, fraction);
                     active = false;
                     return new NativeSkillImpact {
                         Skill = skill, ProjectileBlocked = true
@@ -85,6 +87,7 @@ namespace HextechSeekers.Native
                         Vector2.Distance(point, target.Position) > radius)
                         continue;
                     if (!navigation.LineClear(origin, target.Position)) continue;
+                    travelled = Mathf.Lerp(travelled, nextTravel, fraction);
                     active = false;
                     return new NativeSkillImpact {
                         Skill = skill, TargetId = target.Id
