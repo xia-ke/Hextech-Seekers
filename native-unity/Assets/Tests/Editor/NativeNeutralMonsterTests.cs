@@ -77,7 +77,8 @@ namespace HextechSeekers.Native.Tests
             var monster = world.Find(1);
             Assert.IsNotNull(monster);
             Assert.AreEqual("TestCamp", monster.CampName);
-            Assert.AreEqual(point, monster.CampPosition);
+            // Camp anchors are computed through float world/grid transforms; compare with a small world-space tolerance.
+            Assert.Less(Vector2.Distance(point, monster.CampPosition), .01f);
             Assert.IsTrue(monster.Alive);
             Assert.IsFalse(monster.Aggressive);
             Assert.IsNull(world.Find(2));
