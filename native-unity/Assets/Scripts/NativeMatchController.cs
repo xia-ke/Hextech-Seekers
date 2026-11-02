@@ -274,6 +274,7 @@ namespace HextechSeekers.Native
                 if (!loggedFinish)
                 {
                     loggedFinish = true;
+                    if (combatVfx) combatVfx.End();
                     feedback = rules.HunterWon ? "Hunter captured every hider" : "Hiders survived";
                     Debug.Log("MATCH_FINISHED: winner=" +
                               (rules.HunterWon ? "Hunter" : "Hiders") +
