@@ -323,6 +323,52 @@ jobs:
         run: |
           $source = Join-Path $env:RUNNER_TEMP "hextech-native-gpu-$env:GITHUB_RUN_ID"
           $runnerHome = Split-Path -Parent (Split-Path -Parent $env:RUNNER_TEMP)
+
+          # Player builds are untracked workspace output. A later checkout in
+          # the Editor workflow runs git clean -ffdx and removes native-unity/Build.
+          # Keep a durable copy outside _work so the game remains playable.
+          $buildSource = Join-Path $env:GITHUB_WORKSPACE 'native-unity/Build/Windows'
+          $buildRoot = Join-Path $runnerHome 'HextechBuilds'
+          $buildTarget = Join-Path (Join-Path $buildRoot $env:GITHUB_RUN_ID) 'Windows'
+          $latestTarget = Join-Path $buildRoot 'latest'
+          $exeName = 'HextechSeekers.exe'
+          if ((Test-Path -LiteralPath (Join-Path $buildSource $exeName) -PathType Leaf) -and
+              (Test-Path -LiteralPath (Join-Path $buildSource 'HextechSeekers_Data') -PathType Container)) {
+            New-Item -ItemType Directory -Force -Path $buildTarget | Out-Null
+            Copy-Item -Path (Join-Path $buildSource '*') -Destination $buildTarget -Recurse -Force -ErrorAction Stop
+            if (Test-Path -LiteralPath $latestTarget) {
+              Remove-Item -LiteralPath $latestTarget -Recurse -Force
+            }
+            New-Item -ItemType Directory -Force -Path $latestTarget | Out-Null
+            Copy-Item -Path (Join-Path $buildSource '*') -Destination $latestTarget -Recurse -Force -ErrorAction Stop
+            $buildInfo = @(
+              'Hextech Seekers Windows x64 Player'
+              ('GitHub run: ' + $env:GITHUB_RUN_ID)
+              ('Commit: ' + $env:GITHUB_SHA)
+              ('Built from: ' + $buildSource)
+              ('Stable build: ' + $buildTarget)
+              ('Latest build: ' + $latestTarget)
+              'Keep HextechSeekers.exe beside HextechSeekers_Data.'
+            )
+            Set-Content -LiteralPath (Join-Path $buildTarget 'BUILD-INFO.txt') -Value $buildInfo -Encoding UTF8
+            Set-Content -LiteralPath (Join-Path $latestTarget 'BUILD-INFO.txt') -Value $buildInfo -Encoding UTF8
+            Write-Host ('PLAYER_BUILD_DIR=' + $buildTarget)
+            Write-Host ('PLAYER_BUILD_EXE=' + (Join-Path $latestTarget $exeName))
+            $buildBytes = (Get-ChildItem -LiteralPath $latestTarget -Recurse -File | Measure-Object -Property Length -Sum).Sum
+            Write-Host ('PLAYER_BUILD_TOTAL_BYTES=' + $buildBytes)
+            if ($summary) {
+              Add-Content -LiteralPath $summary -Encoding UTF8 -Value @(
+                '### Playable Windows build preserved outside the Git workspace'
+                ''
+                ('Latest executable: ' + (Join-Path $latestTarget $exeName))
+                ('Run-specific copy: ' + $buildTarget)
+                ('Commit: ' + $env:GITHUB_SHA)
+              )
+            }
+          } else {
+            Write-Warning ('Windows Player build not found; nothing to preserve at ' + $buildSource)
+          }
+
           $archiveRoot = Join-Path $runnerHome 'HextechVisualEvidence'
           $target = Join-Path $archiveRoot $env:GITHUB_RUN_ID
           $summary = $env:GITHUB_STEP_SUMMARY
