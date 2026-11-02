@@ -104,6 +104,8 @@ namespace HextechSeekers.Native
         public NativeWindWall WindWall { get; private set; }
 
         public bool HookActive => hookActive;
+        public Vector2 HookLaunchPosition => hookStart;
+        public Vector2 HookTipPosition => hookStart + hookDirection * hookTravel;
         public int RivenQStage => rivenQStage;
         public bool BlitzEArmed => blitzEArmed && blitzEExpires > now;
         public float MoveMultiplier =>
@@ -334,6 +336,8 @@ namespace HextechSeekers.Native
             Vector2 along = tangent.normalized * halfLength;
             a = center - along; b = center + along; expireAt = expireTime;
         }
+        public Vector2 EndpointA => a;
+        public Vector2 EndpointB => b;
         public bool Active(float at) => at <= expireAt;
         public bool Crosses(Vector2 segmentA, Vector2 segmentB, float at) =>
             Active(at) && NativeSkillGeometry.SegmentsIntersect(segmentA, segmentB, a, b);
