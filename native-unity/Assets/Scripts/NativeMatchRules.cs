@@ -142,15 +142,37 @@ namespace HextechSeekers.Native
                 Complete();
         }
 
+        /// <summary>Validate the real attack BEFORE allowing passive protection to consume.</summary>
+        public bool IsValidCaptureHit(int attackerId, int targetId, bool basicAttackHit,
+                                      bool visible, float worldDistance)
+        {
+            if (!basicAttackHit || !visible || !CanAttack(attackerId) ||
+                float.IsNaN(worldDistance) || float.IsInfinity(worldDistance) ||
+                worldDistance < 0 || worldDistance > BasicAttackReach) return false;
+            var target = Find(targetId);
+            return target != null && target.Role == MatchRole.Hider && !target.Eliminated;
+        }
+
+        /// <summary>
+        /// Time Clock changes the chase end time only. ChaseElapsedSeconds and
+        /// EarlyCaptureBonusSeconds() are deliberately unchanged.
+        /// </summary>
+        public bool ShiftPursuitEndTime(float deltaSeconds)
+        {
+            if (Phase != MatchPhase.Pursuit || float.IsNaN(deltaSeconds) ||
+                float.IsInfinity(deltaSeconds) || Mathf.Abs(deltaSeconds) != 60f)
+                return false;
+            RemainingSeconds = Mathf.Max(0f, RemainingSeconds + deltaSeconds);
+            if (RemainingSeconds <= 0) Complete();
+            return true;
+        }
+
         public bool TryCapture(int attackerId, int targetId, bool basicAttackHit,
                                bool visible, float worldDistance)
         {
-            if (!basicAttackHit || !visible || !CanAttack(attackerId) ||
-                float.IsNaN(worldDistance) || worldDistance < 0 ||
-                worldDistance > BasicAttackReach) return false;
-            var target = Find(targetId);
-            if (target == null || target.Role != MatchRole.Hider || target.Eliminated)
+            if (!IsValidCaptureHit(attackerId, targetId, basicAttackHit, visible, worldDistance))
                 return false;
+            var target = Find(targetId);
             target.Eliminated = true;
             CapturedCount++;
             if (CapturedCount == hiders) Complete();
