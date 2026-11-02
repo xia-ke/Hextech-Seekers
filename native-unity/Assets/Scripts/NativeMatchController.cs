@@ -143,7 +143,12 @@ namespace HextechSeekers.Native
                     Id = p.Id, Hero = p.HeroKey, Role = p.Role,
                     Loadout = new NativeHeroLoadout(p.HeroKey, p.Role),
                 };
-                bot.Loadout.Choose(NativeSkillSlot.Q);
+                NativeSkillSlot primarySkill =
+                    p.Role == MatchRole.Hider &&
+                    (bot.Hero == "Riven" || bot.Hero == "Yasuo") ?
+                    NativeSkillSlot.E : NativeSkillSlot.Q;
+                bot.Loadout.Choose(primarySkill);
+                Debug.Log("NATIVE_AI_PRIMARY_SKILL: " + bot.Hero + " " + primarySkill);
                 if (string.Equals(bot.Hero, "Yasuo", StringComparison.OrdinalIgnoreCase))
                     bot.YasuoSkill = new NativeYasuoSkillState();
                 bot.Combat = new NativeChampionCombat(bot.Id, bot.Hero,
@@ -225,8 +230,8 @@ namespace HextechSeekers.Native
                         secondary = bot.Role == MatchRole.Hunter ?
                             NativeSkillSlot.E : NativeSkillSlot.W;
                     else if (bot.Hero == "Riven" || bot.Hero == "Yasuo")
-                        secondary = bot.Role == MatchRole.Hider ?
-                            NativeSkillSlot.E : NativeSkillSlot.W;
+                        secondary = bot.Loadout.Primary == NativeSkillSlot.E ?
+                            NativeSkillSlot.Q : NativeSkillSlot.W;
                     else
                         secondary = NativeSkillSlot.W;
                     if (!bot.Loadout.Choose(secondary))
