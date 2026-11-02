@@ -37,6 +37,11 @@ namespace HextechSeekers.Native
         public string LoadProblem => problem;
         public GarenRigRuntime HeroRig => heroRig;
         public GameObject LoadedMap => loadedMap;
+        public RiftGrid Navigation => nav;
+        public Vector2 PlayerPosition => location;
+        public bool ExternalGameplayControl { get; set; }
+        public bool ExternalMoveEnabled { get; set; } = true;
+        public bool PlayerMoving => waypoint < route.Length;
         string problem = "Initializing 3D Rift...";
 
         async void Start()
@@ -95,9 +100,12 @@ namespace HextechSeekers.Native
         void LateUpdate()
         {
             if (!ready) return;
-            if (Input.GetMouseButtonDown(1)) SetDestination();
-            if (Input.GetKeyDown(KeyCode.A)) heroRig.PlayAttack();
-            if (waypoint < route.Length)
+            if (!ExternalGameplayControl)
+            {
+                if (Input.GetMouseButtonDown(1)) SetDestination();
+                if (Input.GetKeyDown(KeyCode.A)) heroRig.PlayAttack();
+            }
+            if (waypoint < route.Length && (!ExternalGameplayControl || ExternalMoveEnabled))
             {
                 float delta = moveSpeed * Time.deltaTime;
                 while (delta > 0 && waypoint < route.Length)
@@ -124,6 +132,48 @@ namespace HextechSeekers.Native
             sceneCamera.orthographic = true;
             sceneCamera.orthographicSize = cameraOrthographicSize;
         }
+        public bool TryTeleportTo(Vector2 desired)
+        {
+            if (!ready || !nav.TryNearest(desired, out var destination, 65)) return false;
+            location = destination;
+            previousLocation = destination;
+            route = Array.Empty<Vector2>();
+            waypoint = 0;
+            heroRig.transform.position = ToScene(location);
+            return true;
+        }
+
+        public void StopMovement()
+        {
+            route = Array.Empty<Vector2>();
+            waypoint = 0;
+        }
+
+        public bool TryNavigateTo(Vector2 target)
+        {
+            if (!ready || (ExternalGameplayControl && !ExternalMoveEnabled)) return false;
+            var result = new System.Collections.Generic.List<Vector2>();
+            if (!nav.TryPath(location, target, result) || result.Count == 0) return false;
+            route = result.ToArray();
+            waypoint = 0;
+            return true;
+        }
+
+        public bool TryNavigateFromScreen(Vector2 screen)
+        {
+            if (!ready || !sceneCamera) return false;
+            var ray = sceneCamera.ScreenPointToRay(screen);
+            var plane = new Plane(Vector3.up, ToScene(location));
+            if (!plane.Raycast(ray, out float distance)) return false;
+            var point = ray.GetPoint(distance);
+            return TryNavigateTo(new Vector2(point.x, point.z));
+        }
+
+        public void PerformBasicAttack()
+        {
+            if (ready && heroRig) heroRig.PlayAttack();
+        }
+
         public bool VisualQAMove(float distance)
         {
             if (!ready || nav == null || !nav.TryNearest(location + new Vector2(distance, 0), out var destination))
@@ -136,19 +186,13 @@ namespace HextechSeekers.Native
         Vector3 ToScene(Vector2 p) => new Vector3(p.x, nav.HeightAt(p), p.y);
         void SetDestination()
         {
-            Ray ray = sceneCamera.ScreenPointToRay(Input.mousePosition);
-            // Phase1 plane hit: nav height snapping is authoritative, not visual terrain mesh collision.
-            var plane = new Plane(Vector3.up, ToScene(location));
-            if (!plane.Raycast(ray, out float t)) return;
-            Vector3 point = ray.GetPoint(t);
-            var result = new System.Collections.Generic.List<Vector2>();
-            if (!nav.TryPath(location, new Vector2(point.x, point.z), result)) return;
-            route = result.ToArray(); waypoint = 0;
+            TryNavigateFromScreen(Input.mousePosition);
         }
         void OnGUI()
         {
             GUI.color = Color.white;
-            GUI.Label(new Rect(18, 16, 1100, 32), "HEXTECH SEEKERS — NATIVE / PHASE 1 · ORIGINAL 3D RIFT");
+            if (ExternalGameplayControl) return;
+            GUI.Label(new Rect(18, 16, 1100, 32), "HEXTECH SEEKERS — NATIVE / PHASE 2 · ORIGINAL 3D RIFT");
             if (!ready) { GUI.Label(new Rect(18, 44, Screen.width - 36, 90), "Not ready: " + problem); return; }
             GUI.Label(new Rect(18, 44, 900, 30), $"RMB move | World x={location.x:F0} z={location.y:F0} | Path nodes={route.Length - waypoint}");
             GUI.Label(new Rect(18, 72, 950, 30), "Original skinned Garen | RMB move | A attack | idle/run/attack1 clips");
