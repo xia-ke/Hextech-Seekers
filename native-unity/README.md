@@ -1,13 +1,13 @@
-# Hextech-Seekers Native — Unity + URP (Windows), Phase 2
+# Hextech-Seekers Native — Unity + URP (Windows), Phase 4 gameplay alpha
 
-**Status (2026-11-01): Unity Editor C# compile and 5/5 EditMode tests PASSED on Windows Unity 6000.6.7f1 (GitHub Actions #41305706294). A separate Windows Player build and real GPU screenshot acceptance workflow is implemented but is NOT accepted until the actual runner succeeds.**
+**Verified Phase 3 baseline:** Unity 6000.6.7f1, Editor tests, original Rift/Garen Windows Player and GPU screenshot technical acceptance all PASSED (Windows GPU run #41326056673; Editor run #41326056661). **Phase 4 gameplay vertical slice** (role selection, 1v1 tactical AI, preparation/roaming/capture/scoring) is now implemented in source; its newly added gameplay integration tests must pass before claiming the new phase accepted.
 
 This directory coexists with the unchanged `dist/` web client. Open `native-unity/` with **Unity 6000.0.40f1** (Unity Hub; use same major if patch unavailable). Unity Package Manager resolves **URP 17.0.3** and **Unity glTFast 6.20.0**.
 
 ## First-run procedure
 
 1. From the repository root: `python native-unity/tools/prepare_assets.py` — downloads the original pinned `map.glb` and copies the original `navigation.bin` into `Assets/StreamingAssets/Rift/`, verifying SHA256. The map is intentionally not checked into git.
-2. Open `native-unity/` with Unity Hub. Allow Package Manager imports. Menu **Hextech Seekers → 1. Create Native Rift Phase 1** generates `Assets/Scenes/NativeRiftPhase1.unity`, a URP pipeline asset, a MainCamera and bootstrap script.
+2. Open `native-unity/` with Unity Hub. Allow Package Manager imports. Menu **Hextech Seekers → 1. Create Native Rift Phase 2** generates `Assets/Scenes/NativeRiftPhase2.unity`, a URP pipeline asset, a MainCamera and bootstrap script.
 3. Run Play: it loads the **original map.glb** via glTFast (not the flattened 2D map tiles), and the **existing original navigation.bin**. Right-click to select a navigable destination. A real original skinned Garen model follows the navigation route. Press **A** to play the original `attack1` clip; idle and run clips are selected based on movement. No fake hero model or pre-rendered 2D sprite is used.
 4. In Unity Editor menu **Hextech Seekers → 2. Build Windows** or batch-mode: `Unity -batchmode -nographics -quit -projectPath <absolute/native-unity> -executeMethod HextechSeekers.Native.Editor.HextechNativeSetup.BuildWindows -logFile native-unity-build.log`. Windows Build Support (IL2CPP/Mono as appropriate) and Unity licensing are required. No claim of Windows build without running this.
 
@@ -46,3 +46,11 @@ On Unity-native code changes or manual `workflow_dispatch`, the job:
 **Acceptance distinctions:** A green GPU QA run proves that a real Player ran and generated non-blank native images on that Runner. It does **not** prove visual fidelity, correct skeletal deformation, map/gameplay scale, terrain alignment, materials, or screenshots' aesthetic similarity to League of Legends; review all three PNGs before signing off. A blank screen, missing map, missing animation, null/virtual graphics device, wrong checksum, startup failure or timeout fails CI rather than producing a false pass.
 
 The native Player binary embeds original Riot artwork, so CI deliberately uploads **evidence only**, not a redistributable public game ZIP. The compiled Windows Player remains in the local Runner working tree after successful execution. Do not redistribute binaries/artwork without confirming appropriate permissions.
+
+## Phase 4: native hide-and-seek gameplay vertical slice
+
+Detailed rules, controls, implementation and limitations: [docs/phase-4-gameplay.md](docs/phase-4-gameplay.md).
+
+After generating/building the scene, run without either QA flag to see the role selection menu. Play **Garen as hunter or hider** versus a visibly non-champion tactical AI ring; right-click to pathfind, S to stop and A to attack as a hunter. The rules engine uses the confirmed 120s preparation, 3/5/7-minute chase formula, 1-hit basic attack capture and source-specific survival points. The new Windows Player `-hextechGameplayQA` smoke (after the unchanged GPU screenshot acceptance) tests both roles in a native process and writes `gameplay-result.json`. See GitHub Actions to determine whether the current code passed.
+
+**Still incomplete:** actual verified fountain, four original hero models/skills, real 2–4 participant UI, dedicated fog-of-war shader, wild monsters and eight hextech options. AI tactical ring and native-navigation LOS are diagnostic placeholders, not substitutes for an authentic League client view.
