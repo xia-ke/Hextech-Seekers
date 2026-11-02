@@ -109,8 +109,39 @@ namespace HextechSeekers.Native
                 width = Screen.width, height = Screen.height
             };
             var images = new List<string>();
-            try
+            IEnumerator worker = RunCore(report, images, output);
+            while (true)
             {
+                bool next;
+                object yielded = null;
+                try
+                {
+                    next = worker.MoveNext();
+                    if (next) yielded = worker.Current;
+                }
+                catch (Exception failure)
+                {
+                    report.status = "FAIL";
+                    report.reason = failure.ToString();
+                    Debug.LogException(failure);
+                    break;
+                }
+                if (!next) break;
+                yield return yielded;
+            }
+            if (fx) fx.End();
+            File.WriteAllText(Path.Combine(output, "phase10-visual-result.json"),
+                JsonUtility.ToJson(report, true));
+            Debug.Log("PHASE10_QA_RESULT: " + report.status +
+                      " scenarios=" + report.scenarios +
+                      " screenshots=" + report.screenshots +
+                      " fog=" + report.hiddenFxInvisible);
+            if (!Application.isEditor)
+                Application.Quit(report.status == "CAPTURED_REQUIRES_VISUAL_REVIEW" ? 0 : 1);
+        }
+
+        IEnumerator RunCore(Report report, List<string> images, string output)
+        {
                 string name = (SystemInfo.graphicsDeviceName ?? "").ToLowerInvariant();
                 report.hardwareGraphics =
                     SystemInfo.graphicsDeviceType.ToString() != "Null" &&
@@ -227,25 +258,6 @@ namespace HextechSeekers.Native
                 if (report.scenarios != 5)
                     throw new InvalidOperationException("Not all Phase 10 visuals were exercised");
                 report.status = "CAPTURED_REQUIRES_VISUAL_REVIEW";
-            }
-            catch (Exception failure)
-            {
-                report.status = "FAIL";
-                report.reason = failure.ToString();
-                Debug.LogException(failure);
-            }
-            finally
-            {
-                if (fx) fx.End();
-            }
-            File.WriteAllText(Path.Combine(output, "phase10-visual-result.json"),
-                JsonUtility.ToJson(report, true));
-            Debug.Log("PHASE10_QA_RESULT: " + report.status +
-                      " scenarios=" + report.scenarios +
-                      " screenshots=" + report.screenshots +
-                      " fog=" + report.hiddenFxInvisible);
-            if (!Application.isEditor)
-                Application.Quit(report.status == "CAPTURED_REQUIRES_VISUAL_REVIEW" ? 0 : 1);
         }
     }
 }
