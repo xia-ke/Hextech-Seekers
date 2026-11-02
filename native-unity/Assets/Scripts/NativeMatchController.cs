@@ -672,12 +672,14 @@ namespace HextechSeekers.Native
                     PlayBotOriginalSkill(bot, NativeSkillSlot.Q);
                     combatVfx?.Pulse(bot.Id, bot.Position, "Blitzcrank Q");
                     Debug.Log("NATIVE_BLITZ_Q_FIRED: actor=" + bot.Id);
+                    return; // one fresh champion cast per AI decision
                 }
                 if (bot.Loadout.Knows(NativeSkillSlot.W) &&
                     bot.Combat.TryBlitzW())
                 {
                     PlayBotOriginalSkill(bot, NativeSkillSlot.W);
                     combatVfx?.Pulse(bot.Id, bot.Position, "Blitzcrank W");
+                    return;
                 }
                 if (bot.Role == MatchRole.Hunter &&
                     bot.Loadout.Knows(NativeSkillSlot.E) &&
@@ -692,17 +694,23 @@ namespace HextechSeekers.Native
                 Vector2 castDirection = bot.Role == MatchRole.Hider ?
                     -direction : direction;
                 var q = bot.Combat.TryRivenQ(bot.Position, castDirection, targets);
-                if (q != null) ApplyBotSkillImpact(bot, q);
+                if (q != null)
+                {
+                    ApplyBotSkillImpact(bot, q);
+                    return;
+                }
                 if (bot.Loadout.Knows(NativeSkillSlot.W))
-                    ApplyBotSkillImpact(bot,
-                        bot.Combat.TryRivenW(bot.Position, targets));
+                {
+                    var w = bot.Combat.TryRivenW(bot.Position, targets);
+                    if (w != null) { ApplyBotSkillImpact(bot, w); return; }
+                }
                 if (bot.Loadout.Knows(NativeSkillSlot.E))
                     ApplyBotSkillImpact(bot,
                         bot.Combat.TryRivenE(bot.Position, castDirection));
             }
             else if (bot.Hero == "Yasuo")
             {
-                BotYasuoHeroQ(bot, targets, direction);
+                if (BotYasuoHeroQ(bot, targets, direction)) return;
                 if (bot.Loadout.Knows(NativeSkillSlot.W))
                 {
                     // No additional enemy reveal: each AI has already
@@ -716,14 +724,14 @@ namespace HextechSeekers.Native
             }
         }
 
-        void BotYasuoHeroQ(Bot bot,
+        bool BotYasuoHeroQ(Bot bot,
                              IReadOnlyList<NativeSkillTarget> targets,
                              Vector2 direction)
         {
             if (bot.YasuoSkill == null || !bot.Loadout.Knows(NativeSkillSlot.Q) ||
                 bot.YasuoSkill.CooldownQ > 0 || !hextech.CanUseHeroSkill(bot.Id) ||
                 direction.sqrMagnitude < 1f)
-                return;
+                return false;
             bool tornadoReady = bot.YasuoSkill.QStacks >= 2;
             float reach = tornadoReady ? 660f : NativeYasuoSkillState.QReachProvisional;
             float width = tornadoReady ? 90f : NativeYasuoSkillState.QHalfWidthProvisional;
@@ -757,7 +765,9 @@ namespace HextechSeekers.Native
                           " target=" + hitId + " tornado=" + tornado +
                           " stacks=" + bot.YasuoSkill.QStacks +
                           " skillCapture=false damage=0");
+                return true;
             }
+            return false;
         }
 
         void BotYasuoNeutralEscape(Bot bot, int hunterId)
