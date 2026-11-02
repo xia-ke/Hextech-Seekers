@@ -39,6 +39,9 @@ namespace HextechSeekers.Native
         public GameObject LoadedMap => loadedMap;
         public RiftGrid Navigation => nav;
         public Vector2 PlayerPosition => location;
+        // Observer-only camera follow. Does not move the locally controlled
+        // original Garen rig or grant any other participant vision.
+        public Vector2? CameraFollowOverride { get; set; }
         public bool ExternalGameplayControl { get; set; }
         public bool ExternalMoveEnabled { get; set; } = true;
         public float ExternalMoveMultiplier { get; set; } = 1f;
@@ -128,7 +131,9 @@ namespace HextechSeekers.Native
                 previousLocation = location;
             }
             var forward = Quaternion.Euler(cameraPitch, 0, 0) * Vector3.forward;
-            sceneCamera.transform.position = at - forward * 900f;
+            Vector3 focus = CameraFollowOverride.HasValue ?
+                ToScene(CameraFollowOverride.Value) : at;
+            sceneCamera.transform.position = focus - forward * 900f;
             sceneCamera.transform.rotation = Quaternion.Euler(cameraPitch, 0, 0);
             sceneCamera.orthographic = true;
             sceneCamera.orthographicSize = cameraOrthographicSize;
