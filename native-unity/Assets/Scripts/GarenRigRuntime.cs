@@ -56,6 +56,9 @@ namespace HextechSeekers.Native
 
         public string CurrentClip => current != null ? current.name : string.Empty;
         public bool IsAttacking => attacking;
+        public bool HasClip(string name) =>
+            motions != null && !string.IsNullOrEmpty(name) && motions.ContainsKey(name);
+        public string HeroName => source != null ? source.hero : string.Empty;
 
         static float[] ReadFloats(byte[] data, BufferView view)
         {
@@ -104,23 +107,69 @@ namespace HextechSeekers.Native
             throw new InvalidDataException("Missing native animation clip: " + string.Join("/", names));
         }
 
-        public static GarenRigRuntime Load(Transform parent, string nativeFolder)
+        public static GarenRigRuntime Load(Transform parent, string nativeFolder) =>
+            LoadChampion(parent, nativeFolder, "Garen");
+
+        /// <summary>
+        /// This historical component name stays intact for binary/source
+        /// compatibility with the accepted Garen GPU baseline. The actual
+        /// mesh/68+ bone runtime decoder is hero-independent. Only ingest
+        /// real converted mesh/texture/animations for the four legal heroes.
+        /// </summary>
+        public static bool IsSupportedHero(string hero) =>
+            string.Equals(hero, "Garen", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(hero, "Blitzcrank", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(hero, "Riven", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(hero, "Yasuo", StringComparison.OrdinalIgnoreCase);
+
+        public static bool SourceFilesPresent(string nativeFolder, string hero)
         {
-            string manifestPath = Path.Combine(nativeFolder, "garen.json");
-            if (!File.Exists(manifestPath)) throw new FileNotFoundException("Garen mesh manifest missing", manifestPath);
+            if (!IsSupportedHero(hero) || string.IsNullOrEmpty(nativeFolder)) return false;
+            string stem = hero.ToLowerInvariant();
+            return File.Exists(Path.Combine(nativeFolder, stem + ".json")) &&
+                   File.Exists(Path.Combine(nativeFolder, stem + ".bin"));
+        }
+
+        public static GarenRigRuntime LoadChampion(
+            Transform parent, string nativeFolder, string hero)
+        {
+            if (!IsSupportedHero(hero) || !parent || string.IsNullOrEmpty(nativeFolder))
+                throw new ArgumentException("Use a verified Garen/Blitzcrank/Riven/Yasuo source");
+            string stem = hero.ToLowerInvariant();
+            string manifestPath = Path.Combine(nativeFolder, stem + ".json");
+            if (!File.Exists(manifestPath))
+                throw new FileNotFoundException("Native champion manifest absent", manifestPath);
             var manifest = JsonUtility.FromJson<Manifest>(File.ReadAllText(manifestPath));
-            if (manifest == null || manifest.hero != "Garen" ||
-                manifest.geometry == null || manifest.bones == null || manifest.bones.Length == 0)
-                throw new InvalidDataException("Invalid verified original Garen mesh manifest");
-            string geometryPath = Path.Combine(nativeFolder, "garen.bin");
+            if (manifest == null ||
+                !string.Equals(manifest.hero, hero, StringComparison.OrdinalIgnoreCase) ||
+                manifest.geometry == null || manifest.bones == null ||
+                manifest.bones.Length == 0 || manifest.clips == null ||
+                string.IsNullOrEmpty(manifest.texture) ||
+                Path.GetFileName(manifest.texture) != manifest.texture ||
+                !string.Equals(manifest.binary, stem + ".bin", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Invalid or mismatched original native hero manifest for " + hero);
+            if (Array.Find(manifest.clips, c => c != null &&
+                           (c.name == "idle1" || c.name == "idle")) == null ||
+                Array.Find(manifest.clips, c => c != null && c.name == "run") == null)
+                throw new InvalidDataException("Native hero must include real idle and run animation tracks");
+
+            string geometryPath = Path.Combine(nativeFolder, stem + ".bin");
             string texturePath = Path.Combine(nativeFolder, manifest.texture);
             if (!File.Exists(geometryPath) || !File.Exists(texturePath))
-                throw new FileNotFoundException("Garen mesh buffer/texture absent. Run prepare_assets.py");
-            var go = new GameObject("ORIGINAL_GAREN_SKINNED_3D");
+                throw new FileNotFoundException("Original native hero buffer or texture missing: " + hero);
+            var go = new GameObject("ORIGINAL_" + hero.ToUpperInvariant() + "_SKINNED_3D");
             go.transform.SetParent(parent, false);
-            var renderer = go.AddComponent<GarenRigRuntime>();
-            renderer.Build(manifest, File.ReadAllBytes(geometryPath), File.ReadAllBytes(texturePath));
-            return renderer;
+            try
+            {
+                var renderer = go.AddComponent<GarenRigRuntime>();
+                renderer.Build(manifest, File.ReadAllBytes(geometryPath), File.ReadAllBytes(texturePath));
+                return renderer;
+            }
+            catch
+            {
+                Destroy(go);
+                throw;
+            }
         }
 
         void Build(Manifest model, byte[] geometryBuffer, byte[] png)
@@ -178,7 +227,7 @@ namespace HextechSeekers.Native
             }
             var uv = new Vector2[count];
             for (int i = 0; i < count; i++) uv[i] = new Vector2(uvFlat[2 * i], 1f - uvFlat[2 * i + 1]);
-            builtMesh = new Mesh { name = "Original Garen skinned mesh" };
+            builtMesh = new Mesh { name = "Original " + model.hero + " skinned mesh" };
             builtMesh.indexFormat = count > 65535 ?
                 UnityEngine.Rendering.IndexFormat.UInt32 : UnityEngine.Rendering.IndexFormat.UInt16;
             builtMesh.vertices = positions;
@@ -212,7 +261,7 @@ namespace HextechSeekers.Native
                     "Runtime URP material resource missing: Assets/Resources/Native/GarenLit.mat. " +
                     "Run HextechNativeSetup.BuildWindows so the shader is included in the Player.");
             builtMaterial = new Material(materialTemplate);
-            builtMaterial.name = "Original Garen diffuse";
+            builtMaterial.name = "Original " + model.hero + " diffuse";
             builtMaterial.SetTexture("_BaseMap", builtTexture);
             builtMaterial.SetFloat("_Cull", 0f); // initial handedness diagnostic; needs Unity visual confirmation
             var skinned = gameObject.AddComponent<SkinnedMeshRenderer>();
@@ -241,7 +290,7 @@ namespace HextechSeekers.Native
             }
             ChangeClip(ChooseClip(motions, "idle1", "idle"));
             ApplyFrame();
-            Debug.Log($"Native Garen rig: {count} vertices, {indices.Length / 3} triangles, {skeleton.Length} bones, {motions.Count} clips.");
+            Debug.Log($"Native {model.hero} rig: {count} vertices, {indices.Length / 3} triangles, {skeleton.Length} bones, {motions.Count} clips.");
         }
 
         void ChangeClip(string name)
