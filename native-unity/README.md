@@ -1,4 +1,4 @@
-# Hextech-Seekers Native — Unity + URP (Windows), Phase 5 gameplay implementation
+# Hextech-Seekers Native — Unity + URP (Windows), Phase 6 gameplay and fog implementation
 
 **Verified Phase 3 baseline:** Unity 6000.6.7f1, Editor tests, original Rift/Garen Windows Player and GPU screenshot technical acceptance all PASSED (Windows GPU run #41326056673; Editor run #41326056661). **Phase 4 gameplay vertical slice** (role selection, 1v1 tactical AI, preparation/roaming/capture/scoring) is now implemented in source; its newly added gameplay integration tests must pass before claiming the new phase accepted.
 
@@ -53,7 +53,7 @@ Detailed rules, controls, implementation and limitations: [docs/phase-4-gameplay
 
 After generating/building the scene, run without either QA flag to see the role selection menu. Play **Garen as hunter or hider** versus a visibly non-champion tactical AI ring; right-click to pathfind, S to stop and A to attack as a hunter. The rules engine uses the confirmed 120s preparation, 3/5/7-minute chase formula, 1-hit basic attack capture and source-specific survival points. The new Windows Player `-hextechGameplayQA` smoke (after the unchanged GPU screenshot acceptance) tests both roles in a native process and writes `gameplay-result.json`. See GitHub Actions to determine whether the current code passed.
 
-**Still incomplete:** actual verified fountain, four original hero models/skills, real 2–4 participant UI, dedicated fog-of-war shader, wild monsters and eight hextech options. AI tactical ring and native-navigation LOS are diagnostic placeholders, not substitutes for an authentic League client view.
+**Phase 4 limitations at the time:** the verified fountain, additional original hero meshes/skills, complete 2–4 roster UI, fog-of-war shader, wild monsters and Hextech effects were not yet part of that earlier slice. The subsequent phases below add code but have not undergone the same visual sign-off as the Phase 3 baseline.
 
 ## Phase 5: continue development before acceptance
 
@@ -64,3 +64,11 @@ This adds 2/3/4-player hero **slots** (one original Garen, 1–3 distinct AI tac
 **Do not equate a hero slot with an imported original hero mesh.** Blitzcrank/Riven/Yasuo source rig and animations, LoL-accurate scene fog and fountain, original animation hit contacts, plus verified wild-monster camp coordinates and their full entities are not implemented yet. Card Sense has an optional validated camp-data interface; it refuses to invent camp names when the catalog is absent.
 
 The prior GPU screenshot acceptance still applies to the earlier Phase 3 baseline. No new Phase 5 GPU or visual acceptance is claimed here.
+
+## Phase 6: private world-depth fog of war (source implemented; not accepted)
+
+See [docs/phase-6-vision-fog.md](docs/phase-6-vision-fog.md).
+
+The native URP player now has a `NativeVisionGrid` with current, explored, and unexplored world cells; a depth-reconstructed 3D fog shader; and separate memory per hunter/hider. It is attached to the native gameplay controller after the match begins, and removed between rounds. Eliminated hiders can see a living ally's own private mask while spectating, not the union of every hider's explored territory. Enemy tactical AI markers remain governed by their personal navigation LOS and brush concealment rather than the rendered fog alone.
+
+Six extra EditMode test cases for this logic have been authored. As requested, we are **continuing development without waiting for Windows CI or GPU visual acceptance of Phase 6**. Full LoL-equivalent vision geometry, original character asset import and enemy-only grass hiding are still not verified pixel-for-pixel.
