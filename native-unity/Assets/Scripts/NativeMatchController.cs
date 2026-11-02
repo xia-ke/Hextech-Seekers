@@ -921,8 +921,10 @@ namespace HextechSeekers.Native
             {
                 bool shown = observerId >= 0 &&
                     !rules.Find(bot.Id).Eliminated &&
-                    bot.Id != observerId &&
-                    VisibleTo(observerId, bot.Id);
+                    (bot.Id == observerId || VisibleTo(observerId, bot.Id));
+                // The spectated ally is the viewer, not a hidden enemy:
+                // display its own authentic rig/diagnostic marker while
+                // keeping other enemies subject to that ally's private LOS.
                 if (bot.Ring) bot.Ring.enabled = shown;
                 if (bot.RealRig) bot.RealRig.gameObject.SetActive(shown);
             }
