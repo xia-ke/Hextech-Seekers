@@ -80,6 +80,7 @@ namespace HextechSeekers.Native
         public const float BlitzEReadySecondsProvisional = 5f;
         public const float RivenQDashProvisional = 210f;
         public const float RivenQComboWindowProvisional = 4f;
+        public const float RivenQRecastMinimumProvisional = .25f;
         public const float RivenQCooldownProvisional = 12f;
         public const float RivenWRadiusProvisional = 260f;
         public const float RivenWStunSecondsProvisional = .75f;
@@ -93,7 +94,7 @@ namespace HextechSeekers.Native
         readonly NativeMatchRules match;
         readonly NativeHextechRuntime hextech;
         readonly RiftGrid nav;
-        float now, nextQ, nextW, nextE, comboExpires;
+        float now, nextQ, nextW, nextE, comboExpires, rivenRecastAt;
         float blitzBoostUntil, blitzSlowUntil, blitzEExpires;
         int rivenQStage;
         bool blitzEArmed;
@@ -242,6 +243,7 @@ namespace HextechSeekers.Native
             if (!hero.Equals("Riven", StringComparison.OrdinalIgnoreCase) ||
                 !Can(NativeSkillSlot.Q) || direction.sqrMagnitude < .001f ||
                 (rivenQStage == 0 && now < nextQ) ||
+                (rivenQStage > 0 && now < rivenRecastAt) ||
                 !nav.CanWalk(origin)) return null;
             if (rivenQStage == 0)
             {
@@ -249,6 +251,7 @@ namespace HextechSeekers.Native
                 comboExpires = now + RivenQComboWindowProvisional;
             }
             int upcoming = rivenQStage + 1;
+            rivenRecastAt = now + RivenQRecastMinimumProvisional;
             Vector2 destination = NativeSkillGeometry.WalkableDash(
                 nav, origin, direction, RivenQDashProvisional);
             rivenQStage = upcoming == 3 ? 0 : upcoming;
