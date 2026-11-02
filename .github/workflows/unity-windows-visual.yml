@@ -253,6 +253,68 @@ jobs:
             throw "Native gameplay smoke failed (process=$($proc.ExitCode), status=$($json.status))"
           }
 
+      - name: Capture and verify Phase 10 combat effects on the actual GPU
+        run: |
+          $project = Join-Path $env:GITHUB_WORKSPACE 'native-unity'
+          $exe = Join-Path $project 'Build\Windows\HextechSeekers.exe'
+          $root = Join-Path $env:RUNNER_TEMP "hextech-native-gpu-$env:GITHUB_RUN_ID"
+          $evidence = Join-Path $root 'evidence'
+          $log = Join-Path $root 'Phase10Visual.log'
+          $args = @(
+            '-force-d3d11',
+            '-screen-fullscreen', '0',
+            '-screen-width', '1280',
+            '-screen-height', '720',
+            '-logFile', ('"{0}"' -f $log),
+            '-hextechPhase10QA',
+            '-hextechEvidenceDir', ('"{0}"' -f $evidence)
+          )
+          Write-Host 'Testing Phase 10 diagnostic skill FX: Blitz Q, Yasuo Q/W, Riven dash and visible-only impacts'
+          $proc = Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe) -ArgumentList $args -PassThru
+          if (-not $proc.WaitForExit(240000)) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            throw 'Phase 10 GPU screenshot smoke timed out after 4 minutes'
+          }
+          Write-Host "Phase 10 GPU smoke exit code: $($proc.ExitCode)"
+          if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 95 }
+          $report = Join-Path $evidence 'phase10-visual-result.json'
+          if (-not (Test-Path -LiteralPath $report -PathType Leaf)) {
+            throw 'Phase 10 Player failed to write phase10-visual-result.json'
+          }
+          $json = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          Write-Host (Get-Content -LiteralPath $report -Raw)
+          if ($proc.ExitCode -ne 0 -or $json.status -ne 'CAPTURED_REQUIRES_VISUAL_REVIEW' -or
+              -not $json.hardwareGraphics -or -not $json.mapLoaded -or
+              -not $json.hiddenFxInvisible -or $json.scenarios -ne 5 -or
+              $json.screenshots -ne 5) {
+            throw "Phase 10 GPU test failed: status=$($json.status) reason=$($json.reason)"
+          }
+          $expected = @(
+            'phase10-blitz-hook.png',
+            'phase10-yasuo-tornado.png',
+            'phase10-yasuo-windwall.png',
+            'phase10-riven-dash.png',
+            'phase10-visible-impact.png'
+          )
+          foreach ($name in $expected) {
+            $file = Join-Path $evidence $name
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+              throw "Missing actual GPU screenshot: $name"
+            }
+            $bytes = [System.IO.File]::ReadAllBytes($file)
+            if ($bytes.Length -lt 16384) { throw "Phase 10 screenshot too small: $name" }
+            $signature = @(137,80,78,71,13,10,26,10)
+            for ($i = 0; $i -lt $signature.Length; $i++) {
+              if ($bytes[$i] -ne $signature[$i]) { throw "Screenshot is not a valid PNG: $name" }
+            }
+            $w = [System.Net.IPAddress]::NetworkToHostOrder([BitConverter]::ToInt32($bytes, 16))
+            $h = [System.Net.IPAddress]::NetworkToHostOrder([BitConverter]::ToInt32($bytes, 20))
+            if ($w -lt 800 -or $h -lt 450) { throw "Phase 10 screenshot has wrong dimensions: $name ($w x $h)" }
+            Write-Host "PHASE10_EVIDENCE_OK: $name bytes=$($bytes.Length) dimensions=$w x $h"
+          }
+          Write-Host 'PHASE10_GPU_VISUAL_QA_PASS: 5 real PNGs, hardware GPU, per-caster fog visibility gating'
+          Write-Host 'NOTE: original champion art/VFX fidelity still requires manual screenshot review'
+
       # Do not depend on actions/upload-artifact during job startup:
       # this self-hosted Runner intermittently times out fetching its code
       # from codeload.github.com, before Unity/Python steps can even start.
