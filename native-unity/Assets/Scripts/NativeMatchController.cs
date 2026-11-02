@@ -47,6 +47,7 @@ namespace HextechSeekers.Native
             public Material RingMaterial;
             public NativeHeroLoadout Loadout;
             public NativeYasuoSkillState YasuoSkill;
+            public NativeChampionCombat Combat;
         }
 
         readonly List<Bot> bots = new List<Bot>();
@@ -54,6 +55,7 @@ namespace HextechSeekers.Native
         RiftBootstrap rift;
         NativeMatchRules rules;
         NativeHextechRuntime hextech;
+        NativeHeroControl heroControl;
         NativeFogOfWar privateFog;
         NativeHeroLoadout humanLoadout;
         NativeGarenSkills garenSkills;
@@ -104,6 +106,7 @@ namespace HextechSeekers.Native
             }
             rules = new NativeMatchRules(participants);
             hextech = new NativeHextechRuntime(rules);
+            heroControl = new NativeHeroControl();
             humanLoadout = new NativeHeroLoadout("Garen", role);
             garenSkills = new NativeGarenSkills();
             offered = NativeHextechPool.Deal(role, random);
@@ -127,6 +130,8 @@ namespace HextechSeekers.Native
                 bot.Loadout.Choose(NativeSkillSlot.Q);
                 if (string.Equals(bot.Hero, "Yasuo", StringComparison.OrdinalIgnoreCase))
                     bot.YasuoSkill = new NativeYasuoSkillState();
+                bot.Combat = new NativeChampionCombat(bot.Id, bot.Hero,
+                    bot.Loadout, rules, hextech, rift.Navigation);
                 var offeredBot = NativeHextechPool.Deal(p.Role, random);
                 // Each AI rolls and selects independently; duplicate choices
                 // across different characters are intentionally legal.
@@ -176,7 +181,18 @@ namespace HextechSeekers.Native
             }
             rules.Begin();
             hextech.ApplyPreparationPassives(HumanId, humanLoadout);
-            foreach (var bot in bots) hextech.ApplyPreparationPassives(bot.Id, bot.Loadout);
+            foreach (var bot in bots)
+            {
+                hextech.ApplyPreparationPassives(bot.Id, bot.Loadout);
+                if (bot.Loadout.Level >= 2 && !bot.Loadout.Secondary.HasValue)
+                {
+                    // The second skill is an independent learned slot, never
+                    // an automatic unlearned ability granted to every bot.
+                    var secondary = bot.Hero == "Yasuo" ?
+                        NativeSkillSlot.W : NativeSkillSlot.W;
+                    bot.Loadout.Choose(secondary);
+                }
+            }
             rift.ExternalMoveEnabled = rules.CanMove(HumanId);
             menu = Menu.Playing;
             string startMessage = rift.SpawnCalibration != null
@@ -212,6 +228,7 @@ namespace HextechSeekers.Native
             {
                 hextech.Advance(dt);
                 garenSkills.Advance(dt);
+                heroControl.Advance(dt);
                 rules.Advance(dt);
             }
 
@@ -223,7 +240,7 @@ namespace HextechSeekers.Native
             rift.CameraFollowOverride = spectatedId >= 0 ?
                 (Vector2?)GetPosition(spectatedId) : null;
             rift.ExternalMoveEnabled = rules.CanMove(HumanId) &&
-                !hextech.Stunned(HumanId);
+                !hextech.Stunned(HumanId) && !heroControl.Locked(HumanId);
             rift.ExternalMoveMultiplier =
                 (humanRole == MatchRole.Hunter ? HunterSpeed / HiderSpeed : 1f) *
                 hextech.MoveMultiplier(HumanId) * garenSkills.MovementMultiplier;
@@ -258,7 +275,8 @@ namespace HextechSeekers.Native
             if (!rules.Find(HumanId).Eliminated && Input.GetKeyDown(KeyCode.F))
                 TryUseHextech(0);
             if (Input.GetKeyDown(KeyCode.A) && rules.CanAttack(HumanId) &&
-                !hextech.Stunned(HumanId) && basicCooldown <= 0f)
+                !hextech.Stunned(HumanId) && !heroControl.Locked(HumanId) &&
+                basicCooldown <= 0f)
             {
                 basicCooldown = HumanBasicCooldown;
                 rift.PerformBasicAttack();
@@ -435,6 +453,106 @@ namespace HextechSeekers.Native
             }
         }
 
+        List<NativeSkillTarget> GetSkillTargets(int actorId)
+        {
+            var current = rules.Find(actorId);
+            var targets = new List<NativeSkillTarget>(rules.Players.Count);
+            foreach (var participant in rules.Players)
+            {
+                if (participant.Id == actorId || participant.Eliminated ||
+                    participant.Role == current.Role) continue;
+                targets.Add(new NativeSkillTarget(participant.Id,
+                    GetPosition(participant.Id), participant.Role,
+                    participant.Eliminated, VisibleTo(actorId, participant.Id)));
+            }
+            return targets;
+        }
+
+        NativeWindWall ActiveEnemyWindWall(int actorId)
+        {
+            var actor = rules.Find(actorId);
+            foreach (var bot in bots)
+                if (bot.Id != actorId && bot.Role != actor.Role &&
+                    bot.Combat != null && bot.Combat.WindWall != null)
+                    return bot.Combat.WindWall;
+            return null;
+        }
+
+        void ApplyBotSkillImpact(Bot caster, NativeSkillImpact impact)
+        {
+            if (impact == null) return;
+            if (impact.CasterLanding.HasValue)
+            {
+                caster.Position = impact.CasterLanding.Value;
+                caster.Path.Clear();
+                caster.Waypoint = 0;
+                PlaceMarker(caster);
+            }
+            if (impact.TargetId >= 0)
+            {
+                // Target capture is *never* called here. Q, W, E only move,
+                // block or control and cannot consume Mirror capture immunity.
+                if (impact.TargetLanding.HasValue)
+                {
+                    if (impact.TargetId == HumanId)
+                    {
+                        rift.StopMovement();
+                        rift.TryTeleportTo(impact.TargetLanding.Value);
+                    }
+                    else
+                    {
+                        var target = FindBot(impact.TargetId);
+                        if (target != null)
+                        {
+                            target.Position = impact.TargetLanding.Value;
+                            target.Path.Clear();
+                            target.Waypoint = 0;
+                            PlaceMarker(target);
+                        }
+                    }
+                }
+                if (impact.LockSeconds > 0)
+                    heroControl.Apply(impact.TargetId, impact.LockSeconds);
+            }
+            Debug.Log("NATIVE_AI_SKILL_CONTACT: " + caster.Hero + " " +
+                      impact.Skill + " target=" + impact.TargetId +
+                      " moved=" + impact.TargetLanding.HasValue +
+                      " blocked=" + impact.ProjectileBlocked +
+                      " capture=false");
+        }
+
+        void BotCastChampionSkill(Bot bot, int enemyId)
+        {
+            if (bot.Combat == null || enemyId < 0 ||
+                !hextech.CanUseHeroSkill(bot.Id)) return;
+            Vector2 direction = GetPosition(enemyId) - bot.Position;
+            if (direction.sqrMagnitude < 1f) return;
+            var targets = GetSkillTargets(bot.Id);
+            if (bot.Hero == "Blitzcrank")
+            {
+                if (bot.Loadout.Knows(NativeSkillSlot.Q) &&
+                    bot.Combat.TryBlitzHook(bot.Position, direction))
+                    Debug.Log("NATIVE_BLITZ_Q_FIRED: actor=" + bot.Id);
+                if (bot.Loadout.Knows(NativeSkillSlot.W))
+                    bot.Combat.TryBlitzW();
+            }
+            else if (bot.Hero == "Riven")
+            {
+                var q = bot.Combat.TryRivenQ(bot.Position, direction, targets);
+                if (q != null) ApplyBotSkillImpact(bot, q);
+                if (bot.Loadout.Knows(NativeSkillSlot.W))
+                    ApplyBotSkillImpact(bot,
+                        bot.Combat.TryRivenW(bot.Position, targets));
+            }
+            else if (bot.Hero == "Yasuo" &&
+                     bot.Loadout.Knows(NativeSkillSlot.W))
+            {
+                // Skill does not give a free enemy reveal: the tactical AI
+                // has already verified target visibility before casting.
+                bot.Combat.TryYasuoWindWall(bot.Position, direction);
+            }
+        }
+
         void BotYasuoNeutralQ(Bot bot)
         {
             if (bot.YasuoSkill == null || rift.NeutralMonsters == null ||
@@ -476,9 +594,16 @@ namespace HextechSeekers.Native
         void UpdateBot(Bot bot, float dt)
         {
             if (bot.YasuoSkill != null) bot.YasuoSkill.Advance(dt);
+            if (bot.Combat != null) bot.Combat.Advance(dt);
             var person = rules.Find(bot.Id);
             if (person.Eliminated || rules.Phase == MatchPhase.Finished) return;
-            if (!rules.CanMove(bot.Id) || hextech.Stunned(bot.Id))
+            // Active projectiles keep flying even if the caster becomes
+            // stunned after cast. Motion and fresh casts remain blocked.
+            if (bot.Combat != null && bot.Combat.HookActive)
+                ApplyBotSkillImpact(bot, bot.Combat.StepBlitzHook(
+                    dt, GetSkillTargets(bot.Id), ActiveEnemyWindWall(bot.Id)));
+            if (!rules.CanMove(bot.Id) || hextech.Stunned(bot.Id) ||
+                heroControl.Locked(bot.Id))
             {
                 bot.Path.Clear();
                 bot.Waypoint = 0;
@@ -511,6 +636,7 @@ namespace HextechSeekers.Native
                 // tornado stacks, without damage, killing or capturing.
                 // This is mechanics-only; Yasuo's rig/VFX are not imported.
                 BotYasuoNeutralQ(bot);
+                BotCastChampionSkill(bot, enemyId);
 
                 // AI can use control augments on enemies within its own
                 // perception. Its hextech selection/cooldown is independent.
@@ -538,7 +664,8 @@ namespace HextechSeekers.Native
             if (bot.Waypoint < bot.Path.Count)
             {
                 float allowance = (bot.Role == MatchRole.Hunter ? HunterSpeed : HiderSpeed)
-                    * hextech.MoveMultiplier(bot.Id) * dt;
+                    * hextech.MoveMultiplier(bot.Id) *
+                    (bot.Combat != null ? bot.Combat.MoveMultiplier : 1f) * dt;
                 while (allowance > 0 && bot.Waypoint < bot.Path.Count)
                 {
                     Vector2 goal = bot.Path[bot.Waypoint];
@@ -568,7 +695,8 @@ namespace HextechSeekers.Native
                 if (targetId >= 0)
                 {
                     float distance = Vector2.Distance(bot.Position, GetPosition(targetId));
-                    if (distance <= NativeMatchRules.BasicAttackReach)
+                    if (distance <= NativeMatchRules.BasicAttackReach &&
+                        !heroControl.Locked(bot.Id))
                     {
                         bot.AttackCooldown = AiBasicCooldown;
                         bool captured = hextech.TryBasicAttackCapture(bot.Id,
@@ -681,6 +809,7 @@ namespace HextechSeekers.Native
             menu = Menu.Role;
             rules = null;
             hextech = null;
+            heroControl = null;
             offered = null;
             preferredSpectateId = -1;
             rift.StopMovement();
