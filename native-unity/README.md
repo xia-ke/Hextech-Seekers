@@ -107,6 +107,8 @@ The gameplay scene now draws temporary world-space **diagnostic** skill effects 
 
 A `NativeBasicContactWindow` delays basic-attack hit resolution by a provisional 0.23s rather than instantly capturing at button press. When the contact time arrives, the game rechecks live attack phase, range, LOS, stun and actual one-use capture immunity. Blitz E empowerment is consumed on a valid attack hit rather than by an E cast or missed basic.
 
-Nine focused EditMode tests are added in `NativeAnimationContactTests.cs`; **these tests and the new GPU features have NOT been executed or accepted in Phase 9**, at the owner's request to keep implementing before a consolidated acceptance.
+Fourteen focused EditMode tests are authored across `NativeAnimationContactTests.cs` (9) and `NativeDashMotionTests.cs` (5); **these tests and the new GPU features have NOT been executed or accepted in Phase 9**, at the owner's request to keep implementing before a consolidated acceptance.
 
 Model limitations persist: only Garen's original rig is in the repository. Other heroes require separately sourced, appropriately permitted genuine models, animation and art. Original skill VFX/pose matching, exact animation contact frames, audio and visual-quality review are future work.
+
+**Additional Phase 9 motion change:** accepted Riven Q/E and Yasuo E movements now use `NativeDashMotion` to interpolate over 0.20s on a legal Rift path, rather than changing the hero's position instantly. AI will not acquire new ability targets mid-dash; stuns interrupt motion. Original animation root-motion timing remains to be measured against verified source clips.
