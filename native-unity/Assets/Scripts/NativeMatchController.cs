@@ -7,60 +7,623 @@ using UnityEngine;
 namespace HextechSeekers.Native
 {
     /// <summary>
-    /// Playable Phase 4 vertical slice: 1 human Garen vs. one tactical AI marker
-    /// on the original 3D Rift. The AI marker is NOT a completed champion model;
-    /// all four distinct original champion assets/skills remain later milestones.
-    ///
-    /// Right mouse: move via the same validated Rift A*; S: stop; A: basic attack
-    /// when hunter. During preparation, hunter cannot leave the staging point.
+    /// Native 3D hide-and-seek alpha. One original skinned Garen plus 1-3 AI
+    /// tactical markers using distinct hero SLOTS. A marker is never presented
+    /// as the actual unimported Blitzcrank/Riven/Yasuo character artwork.
+    /// Selection -> three Hextech cards -> Garen skill -> preparation -> pursuit.
     /// </summary>
     public sealed class NativeMatchController : MonoBehaviour
     {
         const int HumanId = 1;
-        const int AiId = 2;
-        const float AiDecisionInterval = .65f;
-        const float HunterMoveSpeed = 365f; // modest speed advantage, subject to tuning
-        const float HiderMoveSpeed = 340f;
-        const float AiAttackCooldown = 1.1f;
-        const float HumanAttackCooldown = .8f;
-
+        const float AiThinkSeconds = .65f;
+        const float HunterSpeed = 365f;
+        const float HiderSpeed = 340f;
+        const float HumanBasicCooldown = .8f;
+        const float AiBasicCooldown = 1.1f;
         static readonly Vector2 HiderStart = new Vector2(7765f, -4020f);
-        // Interim valid staging zone. Verified fountain world coordinates are
-        // not yet established on this lower-jungle navigation prototype.
+        // Original fountain bounds still require geometric calibration.
         static readonly Vector2 HunterStaging = new Vector2(13000f, -1100f);
+        static readonly string[] BotHeroSlots = { "Blitzcrank", "Riven", "Yasuo" };
 
-        readonly List<Vector2> aiRoute = new List<Vector2>();
-        readonly List<Vector2> candidatePath = new List<Vector2>();
+        enum Menu { Role, Augment, Skill, Playing }
+        sealed class Bot
+        {
+            public int Id;
+            public string Hero;
+            public MatchRole Role;
+            public Vector2 Position;
+            public Vector2 Destination;
+            public readonly List<Vector2> Path = new List<Vector2>();
+            public readonly List<Vector2> Candidate = new List<Vector2>();
+            public int Waypoint;
+            public float ThinkCooldown;
+            public float AttackCooldown;
+            public GameObject Marker;
+            public LineRenderer Ring;
+            public Material RingMaterial;
+            public NativeHeroLoadout Loadout;
+        }
+
+        readonly List<Bot> bots = new List<Bot>();
         readonly System.Random random = new System.Random(1439);
-
         RiftBootstrap rift;
         NativeMatchRules rules;
-        MatchRole humanRole, aiRole;
-        GameObject aiIndicator;
-        LineRenderer aiRing;
-        Vector2 aiPosition;
-        Vector2 aiDestination;
-        int aiWaypoint;
-        float decisionCooldown;
-        float aiAttackCooldown;
-        float humanAttackCooldown;
-        bool resultLogged;
+        NativeHextechRuntime hextech;
+        NativeHeroLoadout humanLoadout;
+        NativeGarenSkills garenSkills;
+        NativeHextechDefinition[] offered;
+        MatchRole humanRole;
+        Menu menu = Menu.Role;
+        int rosterSize = 2;
+        float basicCooldown;
+        bool loggedFinish;
+        string feedback = "";
+        int preferredTargetId = -1;
 
         void Awake()
         {
-            // Preserve the already accepted Player GPU test: the acceptance
-            // flag must never launch the match GUI, AI, or change QA camera.
             if (Array.IndexOf(Environment.GetCommandLineArgs(), "-hextechVisualQA") >= 0)
             {
                 enabled = false;
                 return;
             }
             rift = GetComponent<RiftBootstrap>();
-            if (!rift) { Debug.LogError("MATCH: RiftBootstrap is required"); enabled = false; }
+            if (!rift)
+            {
+                Debug.LogError("NativeMatchController requires RiftBootstrap on the same object");
+                enabled = false;
+            }
+        }
+
+        void Start()
+        {
+            if (Array.IndexOf(Environment.GetCommandLineArgs(), "-hextechGameplayQA") >= 0)
+                StartCoroutine(VerifyGameplay());
+        }
+
+        void Configure(MatchRole role)
+        {
+            if (!rift || !rift.IsReady) return;
+            CleanupBots();
+            humanRole = role;
+            var participants = new MatchParticipant[rosterSize];
+            participants[0] = new MatchParticipant(HumanId, "Garen", role, true);
+            for (int i = 1; i < rosterSize; i++)
+            {
+                var botRole = role == MatchRole.Hunter ? MatchRole.Hider :
+                    (i == 1 ? MatchRole.Hunter : MatchRole.Hider);
+                participants[i] = new MatchParticipant(i + 1, BotHeroSlots[i - 1], botRole, false);
+            }
+            rules = new NativeMatchRules(participants);
+            hextech = new NativeHextechRuntime(rules);
+            humanLoadout = new NativeHeroLoadout("Garen", role);
+            garenSkills = new NativeGarenSkills();
+            offered = NativeHextechPool.Deal(role, random);
+            preferredTargetId = -1;
+            basicCooldown = 0;
+            loggedFinish = false;
+            feedback = "Choose one of your three independent Hextech cards.";
+            menu = Menu.Augment;
+            rift.ExternalGameplayControl = true;
+            rift.ExternalMoveEnabled = false;
+            rift.StopMovement();
+
+            for (int i = 1; i < rosterSize; i++)
+            {
+                var p = participants[i];
+                var bot = new Bot {
+                    Id = p.Id, Hero = p.HeroKey, Role = p.Role,
+                    Loadout = new NativeHeroLoadout(p.HeroKey, p.Role),
+                };
+                bot.Loadout.Choose(NativeSkillSlot.Q);
+                var offeredBot = NativeHextechPool.Deal(p.Role, random);
+                // Each AI rolls and selects independently; duplicate choices
+                // across different characters are intentionally legal.
+                var selected = offeredBot[random.Next(offeredBot.Length)].Id;
+                hextech.Select(p.Id, selected);
+                Vector2 basePoint = p.Role == MatchRole.Hunter ?
+                    HunterStaging : HiderStart + new Vector2(i * 345f, i * 175f);
+                if (!rift.Navigation.TryNearest(basePoint, out bot.Position, 65))
+                    bot.Position = rift.PlayerPosition;
+                CreateMarker(bot);
+                bots.Add(bot);
+            }
+            Debug.Log("MATCH_ROSTER_CREATED: participants=" + rosterSize +
+                      " human=" + role + " distinctHeroSlots=true");
+        }
+
+        void SelectAugment(NativeHextech selected)
+        {
+            if (menu != Menu.Augment || rules == null) return;
+            bool offeredToHuman = false;
+            foreach (var choice in offered)
+                if (choice.Id == selected) offeredToHuman = true;
+            if (!offeredToHuman || !hextech.Select(HumanId, selected)) return;
+            feedback = "Choose Garen Q or W as your starting skill.";
+            menu = Menu.Skill;
+        }
+
+        void SelectSkill(NativeSkillSlot slot)
+        {
+            if (menu != Menu.Skill || !humanLoadout.Choose(slot)) return;
+            StartRound();
+        }
+
+        void StartRound()
+        {
+            // Hunter must be staged for the entire preparation interval.
+            bool spawned = rift.TryTeleportTo(humanRole == MatchRole.Hunter ?
+                HunterStaging : HiderStart);
+            if (!spawned)
+            {
+                feedback = "Player staging is outside navigable bounds";
+                menu = Menu.Role;
+                CleanupBots();
+                rules = null;
+                rift.ExternalGameplayControl = false;
+                return;
+            }
+            rules.Begin();
+            hextech.ApplyPreparationPassives(HumanId, humanLoadout);
+            foreach (var bot in bots) hextech.ApplyPreparationPassives(bot.Id, bot.Loadout);
+            rift.ExternalMoveEnabled = rules.CanMove(HumanId);
+            menu = Menu.Playing;
+            feedback = "120-second preparation started. Hunter cannot leave staging.";
+            Debug.Log("MATCH_BEGIN: participants=" + rosterSize + " human=" + humanRole +
+                      " hextech=" + hextech.Selected(HumanId));
+        }
+
+        static bool HoveringHud(Vector2 mouse) =>
+            mouse.x < 545 && mouse.y > Screen.height - 300;
+
+        void Update()
+        {
+            if (!rift || !rift.IsReady || rules == null || menu != Menu.Playing)
+                return;
+            float dt = Time.deltaTime;
+            if (rules.Phase != MatchPhase.Finished)
+            {
+                hextech.Advance(dt);
+                garenSkills.Advance(dt);
+                rules.Advance(dt);
+            }
+
+            rift.ExternalMoveEnabled = rules.CanMove(HumanId) &&
+                !hextech.Stunned(HumanId);
+            rift.ExternalMoveMultiplier =
+                (humanRole == MatchRole.Hunter ? HunterSpeed / HiderSpeed : 1f) *
+                hextech.MoveMultiplier(HumanId) * garenSkills.MovementMultiplier;
+            if (!rift.ExternalMoveEnabled) rift.StopMovement();
+            if (rules.Phase == MatchPhase.Finished)
+            {
+                rift.StopMovement();
+                if (!loggedFinish)
+                {
+                    loggedFinish = true;
+                    feedback = rules.HunterWon ? "Hunter captured every hider" : "Hiders survived";
+                    Debug.Log("MATCH_FINISHED: winner=" +
+                              (rules.HunterWon ? "Hunter" : "Hiders") +
+                              " humanScore=" + rules.Find(HumanId).Score);
+                }
+                UpdateMarkers();
+                return;
+            }
+
+            if (rift.ExternalMoveEnabled)
+            {
+                if (Input.GetKeyDown(KeyCode.S)) rift.StopMovement();
+                if (Input.GetMouseButtonDown(1) && !HoveringHud(Input.mousePosition))
+                    rift.TryNavigateFromScreen(Input.mousePosition);
+                if (Input.GetKeyDown(KeyCode.Q)) TryGarenSkill(NativeSkillSlot.Q);
+                if (Input.GetKeyDown(KeyCode.W)) TryGarenSkill(NativeSkillSlot.W);
+            }
+            basicCooldown = Mathf.Max(0f, basicCooldown - dt);
+            if (Input.GetKeyDown(KeyCode.Tab))
+                CycleVisibleTarget();
+            if (Input.GetKeyDown(KeyCode.F)) TryUseHextech(0);
+            if (Input.GetKeyDown(KeyCode.A) && rules.CanAttack(HumanId) &&
+                !hextech.Stunned(HumanId) && basicCooldown <= 0f)
+            {
+                basicCooldown = HumanBasicCooldown;
+                rift.PerformBasicAttack();
+                var target = NearestVisibleEnemy(HumanId);
+                bool capture = target != null && hextech.TryBasicAttackCapture(
+                    HumanId, target.Id, true, true,
+                    Vector2.Distance(rift.PlayerPosition, target.Position));
+                feedback = capture ? "Basic attack captured " + target.Hero :
+                    "Basic attack did not capture (range, immunity or visibility).";
+                Debug.Log("MATCH_BASIC_ATTACK: captured=" + capture);
+            }
+
+            foreach (var bot in bots) UpdateBot(bot, dt);
+            UpdateMarkers();
+        }
+
+        void TryGarenSkill(NativeSkillSlot slot)
+        {
+            if (garenSkills.TryCast(slot, humanLoadout, rules, hextech, HumanId, false))
+            {
+                feedback = slot == NativeSkillSlot.Q ?
+                    "Garen Q: slow cleanse + brief movement speed (tuning pending)" :
+                    "Garen W: tenacity window; ordinary shield does NOT block capture";
+                Debug.Log("MATCH_GAREN_SKILL: " + slot + " (non-damaging adapted mechanics)");
+            }
+            else feedback = "Skill unavailable: check chosen skills, cooldown, stun or silence";
+        }
+
+        Bot FindBot(int id)
+        {
+            foreach (var bot in bots) if (bot.Id == id) return bot;
+            return null;
+        }
+
+        Vector2 GetPosition(int id) =>
+            id == HumanId ? rift.PlayerPosition : FindBot(id).Position;
+
+        bool VisibleTo(int observerId, int targetId) =>
+            NativeSight.Visible(rift.Navigation, GetPosition(observerId), GetPosition(targetId));
+
+        Bot NearestVisibleEnemy(int observer)
+        {
+            Bot found = null;
+            float nearest = float.MaxValue;
+            foreach (var bot in bots)
+            {
+                var p = rules.Find(bot.Id);
+                if (p.Eliminated || p.Role == rules.Find(observer).Role ||
+                    !VisibleTo(observer, bot.Id)) continue;
+                float distance = Vector2.Distance(GetPosition(observer), bot.Position);
+                if (distance < nearest) { nearest = distance; found = bot; }
+            }
+            return found;
+        }
+
+        int GetTargetForActor(int actorId)
+        {
+            var p = rules.Find(actorId);
+            if (p == null) return -1;
+            int chosen = -1;
+            float nearest = float.MaxValue;
+            foreach (var target in rules.Players)
+            {
+                if (target.Id == actorId || target.Role == p.Role || target.Eliminated)
+                    continue;
+                if (!VisibleTo(actorId, target.Id)) continue;
+                float distance = Vector2.Distance(GetPosition(actorId), GetPosition(target.Id));
+                if (distance < nearest) { chosen = target.Id; nearest = distance; }
+            }
+            return chosen;
+        }
+
+        void CycleVisibleTarget()
+        {
+            var eligible = new List<int>();
+            foreach (var p in rules.Players)
+                if (p.Id != HumanId && p.Role != humanRole && !p.Eliminated &&
+                    VisibleTo(HumanId, p.Id)) eligible.Add(p.Id);
+            if (eligible.Count == 0) { preferredTargetId = -1; feedback = "No visible enemy"; return; }
+            int index = eligible.IndexOf(preferredTargetId);
+            preferredTargetId = eligible[(index + 1) % eligible.Count];
+            feedback = "Hextech target: " + rules.Find(preferredTargetId).HeroKey;
+        }
+
+        void TryUseHextech(int clockDirection)
+        {
+            if (hextech == null) return;
+            var selected = hextech.Selected(HumanId);
+            if (!selected.HasValue) return;
+            int target = preferredTargetId;
+            if (target < 0 || rules.Find(target) == null ||
+                rules.Find(target).Eliminated || !VisibleTo(HumanId, target))
+                target = GetTargetForActor(HumanId);
+            bool sees = target >= 0 && VisibleTo(HumanId, target);
+            // Card Sense needs a verified camp-coordinate catalogue; no fake
+            // camp name is reported or cooldown spent in its absence.
+            float tenacity = target == HumanId ? garenSkills.CrowdControlDurationFactor : 1f;
+            if (!hextech.TryActive(HumanId, target, sees, clockDirection, null,
+                                    out feedback, tenacity))
+                Debug.Log("MATCH_HEXTECH_REJECTED: " + feedback);
+            else Debug.Log("MATCH_HEXTECH_USED: " + feedback);
+        }
+
+        void BotChoosePath(Bot bot, Vector2 destination)
+        {
+            bot.Candidate.Clear();
+            if (!rift.Navigation.TryPath(bot.Position, destination, bot.Candidate) ||
+                bot.Candidate.Count == 0) return;
+            bot.Path.Clear();
+            bot.Path.AddRange(bot.Candidate);
+            bot.Waypoint = 0;
+            bot.Destination = destination;
+        }
+
+        void BotWander(Bot bot)
+        {
+            for (int attempt = 0; attempt < 8; attempt++)
+            {
+                float angle = (float)random.NextDouble() * Mathf.PI * 2;
+                float radius = 350f + (float)random.NextDouble() * 750f;
+                Vector2 raw = bot.Position +
+                    new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+                if (!rift.Navigation.TryNearest(raw, out var goal, 15)) continue;
+                BotChoosePath(bot, goal);
+                if (bot.Waypoint < bot.Path.Count) return;
+            }
+        }
+
+        void UpdateBot(Bot bot, float dt)
+        {
+            var person = rules.Find(bot.Id);
+            if (person.Eliminated || rules.Phase == MatchPhase.Finished) return;
+            if (!rules.CanMove(bot.Id) || hextech.Stunned(bot.Id))
+            {
+                bot.Path.Clear();
+                bot.Waypoint = 0;
+                return;
+            }
+
+            bot.ThinkCooldown -= dt;
+            if (bot.ThinkCooldown <= 0f)
+            {
+                bot.ThinkCooldown = AiThinkSeconds;
+                int enemyId = GetTargetForActor(bot.Id);
+                if (enemyId >= 0)
+                {
+                    Vector2 enemy = GetPosition(enemyId);
+                    if (bot.Role == MatchRole.Hunter)
+                        BotChoosePath(bot, enemy);
+                    else if (rules.Phase == MatchPhase.Pursuit)
+                    {
+                        Vector2 direction = (bot.Position - enemy).normalized;
+                        if (direction.sqrMagnitude < .1f) direction = Vector2.right;
+                        if (rift.Navigation.TryNearest(bot.Position + direction * 900f,
+                                                       out var escape, 17))
+                            BotChoosePath(bot, escape);
+                    }
+                }
+                else if (bot.Waypoint >= bot.Path.Count)
+                    BotWander(bot);
+
+                // AI can use control augments on enemies within its own
+                // perception. Its hextech selection/cooldown is independent.
+                if (enemyId >= 0 && hextech.CanUseActiveHextech(bot.Id))
+                {
+                    var skill = hextech.Selected(bot.Id);
+                    if (skill == NativeHextech.FreezeGold ||
+                        skill == NativeHextech.AstralSilenceSilver)
+                    {
+                        float tenacity = enemyId == HumanId ?
+                            garenSkills.CrowdControlDurationFactor : 1f;
+                        if (hextech.TryActive(bot.Id, enemyId, true, 0, null,
+                                              out var message, tenacity))
+                            Debug.Log("MATCH_AI_HEXTECH: " + bot.Hero + " " + message);
+                    }
+                    else if (skill == NativeHextech.TimeClockSilver)
+                    {
+                        int direction = bot.Role == MatchRole.Hunter ? -1 : 1;
+                        hextech.TryActive(bot.Id, enemyId, true, direction, null,
+                                          out var message);
+                    }
+                }
+            }
+
+            if (bot.Waypoint < bot.Path.Count)
+            {
+                float allowance = (bot.Role == MatchRole.Hunter ? HunterSpeed : HiderSpeed)
+                    * hextech.MoveMultiplier(bot.Id) * dt;
+                while (allowance > 0 && bot.Waypoint < bot.Path.Count)
+                {
+                    Vector2 goal = bot.Path[bot.Waypoint];
+                    Vector2 difference = goal - bot.Position;
+                    float length = difference.magnitude;
+                    if (length < .001f || length <= allowance)
+                    {
+                        bot.Position = goal;
+                        allowance -= length;
+                        bot.Waypoint++;
+                    }
+                    else
+                    {
+                        Vector2 next = bot.Position + difference.normalized * allowance;
+                        if (rift.Navigation.CanWalk(next)) bot.Position = next;
+                        allowance = 0f;
+                    }
+                }
+            }
+            PlaceMarker(bot);
+
+            bot.AttackCooldown = Mathf.Max(0f, bot.AttackCooldown - dt);
+            if (bot.Role == MatchRole.Hunter && rules.CanAttack(bot.Id) &&
+                bot.AttackCooldown <= 0)
+            {
+                int targetId = GetTargetForActor(bot.Id);
+                if (targetId >= 0)
+                {
+                    float distance = Vector2.Distance(bot.Position, GetPosition(targetId));
+                    if (distance <= NativeMatchRules.BasicAttackReach)
+                    {
+                        bot.AttackCooldown = AiBasicCooldown;
+                        bool captured = hextech.TryBasicAttackCapture(bot.Id,
+                            targetId, true, VisibleTo(bot.Id, targetId), distance);
+                        if (captured)
+                            Debug.Log("MATCH_AI_CAPTURE: " + bot.Hero +
+                                      " caught " + rules.Find(targetId).HeroKey);
+                    }
+                }
+            }
+        }
+
+        void CreateMarker(Bot bot)
+        {
+            bot.Marker = new GameObject("AI_TACTICAL_MARKER_" + bot.Hero + "_NOT_CHAMPION_ART");
+            bot.Ring = bot.Marker.AddComponent<LineRenderer>();
+            bot.Ring.useWorldSpace = false;
+            bot.Ring.loop = true;
+            bot.Ring.positionCount = 32;
+            bot.Ring.startWidth = 12f;
+            bot.Ring.endWidth = 12f;
+            for (int i = 0; i < 32; i++)
+            {
+                float angle = i * Mathf.PI * 2f / 32f;
+                bot.Ring.SetPosition(i,
+                    new Vector3(Mathf.Cos(angle) * 55f, 14f,
+                                Mathf.Sin(angle) * 55f));
+            }
+            var template = Resources.Load<Material>("Native/GarenLit");
+            if (!template) throw new InvalidOperationException(
+                "Native/GarenLit is absent from the Player build");
+            bot.RingMaterial = new Material(template);
+            bot.RingMaterial.name = "AI tactical ring for " + bot.Hero;
+            bot.RingMaterial.SetColor("_BaseColor", bot.Role == MatchRole.Hunter ?
+                new Color(1f, .25f, .2f) : new Color(1f, .75f, .25f));
+            bot.Ring.sharedMaterial = bot.RingMaterial;
+            PlaceMarker(bot);
+        }
+
+        void PlaceMarker(Bot bot)
+        {
+            if (bot.Marker && rift && rift.Navigation != null)
+                bot.Marker.transform.position = new Vector3(
+                    bot.Position.x, rift.Navigation.HeightAt(bot.Position),
+                    bot.Position.y);
+        }
+
+        void UpdateMarkers()
+        {
+            foreach (var bot in bots)
+                if (bot.Ring)
+                    bot.Ring.enabled = rules != null &&
+                        !rules.Find(bot.Id).Eliminated &&
+                        VisibleTo(HumanId, bot.Id);
+        }
+
+        void CleanupBots()
+        {
+            foreach (var bot in bots)
+            {
+                if (bot.RingMaterial) Destroy(bot.RingMaterial);
+                if (bot.Marker) Destroy(bot.Marker);
+            }
+            bots.Clear();
+        }
+
+        void ReturnToRoleSelection()
+        {
+            CleanupBots();
+            menu = Menu.Role;
+            rules = null;
+            hextech = null;
+            offered = null;
+            rift.StopMovement();
+            rift.ExternalGameplayControl = false;
+            rift.ExternalMoveEnabled = true;
+            rift.ExternalMoveMultiplier = 1f;
+            rift.TryTeleportTo(HiderStart);
+        }
+
+        void OnGUI()
+        {
+            if (!rift || !rift.IsReady) return;
+            float width = 525;
+            bool tall = menu == Menu.Augment || menu == Menu.Playing;
+            GUI.Box(new Rect(12, 12, width, tall ? 278 : 218), "");
+            GUI.Label(new Rect(25, 19, 495, 26), "HEXTECH SEEKERS | NATIVE 3D | GAMEPLAY ALPHA");
+            if (menu == Menu.Role)
+            {
+                GUI.Label(new Rect(25, 52, 470, 25),
+                    "Player: original Garen | AI slots: unimported tactical markers");
+                GUI.Label(new Rect(25, 83, 460, 25), "Total participants: " + rosterSize +
+                    " (one hunter, remainder hiders)");
+                if (GUI.Button(new Rect(295, 78, 45, 30), "-"))
+                    rosterSize = Mathf.Max(2, rosterSize - 1);
+                if (GUI.Button(new Rect(350, 78, 45, 30), "+"))
+                    rosterSize = Mathf.Min(4, rosterSize + 1);
+                if (GUI.Button(new Rect(25, 128, 223, 44), "Play as HUNTER"))
+                    Configure(MatchRole.Hunter);
+                if (GUI.Button(new Rect(260, 128, 225, 44), "Play as HIDER"))
+                    Configure(MatchRole.Hider);
+            }
+            else if (menu == Menu.Augment)
+            {
+                GUI.Label(new Rect(25, 53, 475, 25),
+                    "Choose 1 of 3 independently dealt Hextech cards");
+                for (int i = 0; i < offered.Length; i++)
+                {
+                    var candidate = offered[i];
+                    if (GUI.Button(new Rect(25, 91 + i * 52, 460, 42),
+                                   candidate.Name + (candidate.Active ? " | ACTIVE" : " | PASSIVE")))
+                        SelectAugment(candidate.Id);
+                }
+            }
+            else if (menu == Menu.Skill)
+            {
+                GUI.Label(new Rect(25, 52, 478, 30),
+                    "Garen: choose your first legal Q/W. E is pure damage.");
+                if (GUI.Button(new Rect(25, 94, 215, 47), "Q | movement / cleanse"))
+                    SelectSkill(NativeSkillSlot.Q);
+                if (GUI.Button(new Rect(252, 94, 230, 47), "W | tenacity"))
+                    SelectSkill(NativeSkillSlot.W);
+                GUI.Label(new Rect(25, 156, 470, 25),
+                    "No normal summoner spells, runes or damage-only abilities.");
+            }
+            else if (rules != null)
+            {
+                string phase = rules.Phase == MatchPhase.Preparation ? "PREPARATION" :
+                               rules.Phase == MatchPhase.Pursuit ? "PURSUIT" : "FINISHED";
+                GUI.Label(new Rect(25, 47, 482, 24),
+                    "Role " + humanRole + " | " + phase + " | " +
+                    Mathf.CeilToInt(rules.RemainingSeconds) + "s | " + rosterSize + " actors");
+                GUI.Label(new Rect(25, 76, 480, 22),
+                    "Captured " + rules.CapturedCount + "/" + rules.HiderCount +
+                    " | Your score " + rules.Find(HumanId).Score);
+                var selected = hextech.Selected(HumanId);
+                GUI.Label(new Rect(25, 101, 480, 25),
+                    "Hextech: " + (selected.HasValue ? NativeHextechPool.Find(selected.Value).Name : "-") +
+                    " | Cooldown " + Mathf.CeilToInt(hextech.RemainingCooldown(HumanId)) + "s");
+                GUI.Label(new Rect(25, 127, 485, 23),
+                    "RMB move | S stop | A basic | Q/W chosen skills | Tab target | F hextech");
+                if (selected == NativeHextech.TimeClockSilver &&
+                    rules.Phase == MatchPhase.Pursuit)
+                {
+                    if (GUI.Button(new Rect(25, 158, 213, 34), "Clock: -1 min"))
+                        TryUseHextech(-1);
+                    if (GUI.Button(new Rect(251, 158, 220, 34), "Clock: +1 min"))
+                        TryUseHextech(1);
+                }
+                if (humanLoadout != null && humanLoadout.Level == 2 &&
+                    !humanLoadout.Secondary.HasValue &&
+                    rules.Phase == MatchPhase.Preparation)
+                {
+                    var secondary = humanLoadout.Primary == NativeSkillSlot.Q ?
+                        NativeSkillSlot.W : NativeSkillSlot.Q;
+                    if (GUI.Button(new Rect(25, 195, 250, 32), "Level 2: learn " + secondary))
+                        humanLoadout.Choose(secondary);
+                }
+                if (rules.Phase == MatchPhase.Finished)
+                {
+                    GUI.Label(new Rect(25, 172, 475, 25),
+                        rules.HunterWon ? "Hunter wins" : "Hiders survived");
+                    if (GUI.Button(new Rect(275, 196, 215, 33), "Return to role select"))
+                        ReturnToRoleSelection();
+                }
+                GUI.Label(new Rect(25, 238, 490, 25), feedback);
+                if (rules.Phase == MatchPhase.Finished)
+                {
+                    int row = 0;
+                    foreach (var participant in rules.Players)
+                    {
+                        GUI.Label(new Rect(25, 298 + row * 23, 480, 22),
+                            participant.HeroKey + " / " + participant.Role +
+                            " / score " + participant.Score +
+                            (participant.Eliminated ? " / eliminated" : " / alive"));
+                        row++;
+                    }
+                }
+            }
         }
 
         [Serializable]
-        sealed class GameplayQaReport
+        sealed class GameplayReport
         {
             public string status;
             public string reason;
@@ -75,23 +638,14 @@ namespace HextechSeekers.Native
             public int numberOfActors;
         }
 
-        void Start()
-        {
-            if (Array.IndexOf(Environment.GetCommandLineArgs(), "-hextechGameplayQA") >= 0)
-            {
-                Debug.Log("MATCH_QA_START: native gameplay integration smoke");
-                StartCoroutine(VerifyGameplay());
-            }
-        }
-
         IEnumerator VerifyGameplay()
         {
-            var result = new GameplayQaReport { status = "FAIL" };
-            string output = Path.Combine(Application.persistentDataPath, "HextechGameplayQA");
+            var result = new GameplayReport { status = "FAIL" };
+            string evidence = Path.Combine(Application.persistentDataPath, "HextechGameplayQA");
             var args = Environment.GetCommandLineArgs();
             for (int i = 0; i + 1 < args.Length; i++)
-                if (args[i] == "-hextechEvidenceDir") output = Path.GetFullPath(args[i + 1]);
-            Directory.CreateDirectory(output);
+                if (args[i] == "-hextechEvidenceDir") evidence = Path.GetFullPath(args[i + 1]);
+            Directory.CreateDirectory(evidence);
             float started = Time.realtimeSinceStartup;
             while (rift != null && !rift.IsReady && !rift.HasLoadFailed &&
                    Time.realtimeSinceStartup - started < 180f)
@@ -99,31 +653,33 @@ namespace HextechSeekers.Native
             try
             {
                 if (!rift || !rift.IsReady)
-                    throw new InvalidOperationException("Rift failed to load: " + (rift ? rift.LoadProblem : "no bootstrap"));
+                    throw new InvalidOperationException("Rift unavailable " +
+                                                        (rift ? rift.LoadProblem : "no bootstrap"));
                 result.loadedRift = true;
-
-                BeginMatch(MatchRole.Hunter);
-                if (rules == null) throw new InvalidOperationException("Hunter round did not start");
+                rosterSize = 2;
+                Configure(MatchRole.Hunter);
+                SelectAugment(offered[0].Id);
+                SelectSkill(NativeSkillSlot.Q);
                 result.numberOfActors = rules.Players.Count;
                 result.hunterLockedDuringPreparation = !rules.CanMove(HumanId) &&
-                    rules.CanMove(AiId);
+                    rules.CanMove(2);
                 rules.Advance(120f);
                 result.hunterReleasedAfterPreparation = rules.CanMove(HumanId);
-                if (!rift.TryTeleportTo(aiPosition))
-                    throw new InvalidOperationException("Cannot position human on AI's navigable cell");
-                bool visible = NativeSight.Visible(rift.Navigation, rift.PlayerPosition, aiPosition);
+                rift.TryTeleportTo(bots[0].Position);
+                bool visible = VisibleTo(HumanId, 2);
                 rift.PerformBasicAttack();
-                result.hunterCapturedUsingBasicAttack = rules.TryCapture(HumanId, AiId,
-                    true, visible, Vector2.Distance(rift.PlayerPosition, aiPosition));
-                result.caughtHiderEliminated = rules.Find(AiId).Eliminated &&
-                    rules.Phase == MatchPhase.Finished;
+                result.hunterCapturedUsingBasicAttack = rules.TryCapture(HumanId, 2,
+                    true, visible, Vector2.Distance(rift.PlayerPosition, bots[0].Position));
+                result.caughtHiderEliminated = rules.Find(2).Eliminated &&
+                                               rules.Phase == MatchPhase.Finished;
                 result.hunterEarlyBonusApplied = rules.Find(HumanId).Score == 2;
-                ReturnToMenu();
 
-                BeginMatch(MatchRole.Hider);
-                if (rules == null) throw new InvalidOperationException("Hider round did not start");
+                ReturnToRoleSelection();
+                Configure(MatchRole.Hider);
+                SelectAugment(offered[0].Id);
+                SelectSkill(NativeSkillSlot.Q);
                 result.hiderCanMoveDuringPreparation = rules.CanMove(HumanId) &&
-                    !rules.CanMove(AiId);
+                                                       !rules.CanMove(2);
                 rules.Advance(120f + NativeMatchRules.ChaseSeconds(1));
                 result.hiderWinsBySurviving = rules.Phase == MatchPhase.Finished &&
                     !rules.HunterWon && rules.Find(HumanId).Score == 1;
@@ -133,7 +689,7 @@ namespace HextechSeekers.Native
                     !result.caughtHiderEliminated || !result.hunterEarlyBonusApplied ||
                     !result.hiderCanMoveDuringPreparation || !result.hiderWinsBySurviving ||
                     result.numberOfActors != 2)
-                    throw new InvalidOperationException("Native 3D gameplay smoke assertions failed");
+                    throw new InvalidOperationException("Gameplay smoke assertions failed");
                 result.status = "PASS";
             }
             catch (Exception ex)
@@ -142,311 +698,12 @@ namespace HextechSeekers.Native
                 result.reason = ex.ToString();
                 Debug.LogException(ex);
             }
-            File.WriteAllText(Path.Combine(output, "gameplay-result.json"), JsonUtility.ToJson(result, true));
-            Debug.Log("MATCH_QA_RESULT: " + result.status + " at " + output);
+            File.WriteAllText(Path.Combine(evidence, "gameplay-result.json"),
+                              JsonUtility.ToJson(result, true));
+            Debug.Log("MATCH_QA_RESULT: " + result.status);
             if (!Application.isEditor) Application.Quit(result.status == "PASS" ? 0 : 1);
         }
 
-        void Update()
-        {
-            if (!rift || !rift.IsReady) return;
-            if (rules == null) return;
-
-            if (rules.Phase != MatchPhase.Finished)
-                rules.Advance(Time.deltaTime);
-
-            rift.ExternalMoveEnabled = rules.CanMove(HumanId);
-            rift.ExternalMoveMultiplier = humanRole == MatchRole.Hunter ?
-                HunterMoveSpeed / HiderMoveSpeed : 1f;
-            if (!rift.ExternalMoveEnabled) rift.StopMovement();
-
-            if (rules.Phase == MatchPhase.Finished)
-            {
-                rift.StopMovement();
-                if (!resultLogged)
-                {
-                    resultLogged = true;
-                    Debug.Log("MATCH_FINISHED: winner=" + (rules.HunterWon ? "Hunter" : "Hiders") +
-                              " humanScore=" + rules.Find(HumanId).Score +
-                              " aiScore=" + rules.Find(AiId).Score);
-                }
-                RenderAiVisibility();
-                return;
-            }
-
-            if (rift.ExternalMoveEnabled)
-            {
-                if (Input.GetKeyDown(KeyCode.S)) rift.StopMovement();
-                if (Input.GetMouseButtonDown(1) && !OverHud(Input.mousePosition))
-                    rift.TryNavigateFromScreen(Input.mousePosition);
-            }
-
-            humanAttackCooldown = Mathf.Max(0, humanAttackCooldown - Time.deltaTime);
-            aiAttackCooldown = Mathf.Max(0, aiAttackCooldown - Time.deltaTime);
-            if (Input.GetKeyDown(KeyCode.A) && rules.CanAttack(HumanId) && humanAttackCooldown <= 0)
-            {
-                humanAttackCooldown = HumanAttackCooldown;
-                rift.PerformBasicAttack();
-                bool visible = NativeSight.Visible(rift.Navigation, rift.PlayerPosition, aiPosition);
-                bool caught = rules.TryCapture(HumanId, AiId, true, visible,
-                    Vector2.Distance(rift.PlayerPosition, aiPosition));
-                Debug.Log("MATCH_BASIC_ATTACK: role=human hunter; hit=" + caught +
-                          " visible=" + visible);
-            }
-
-            if (rules.Phase != MatchPhase.Finished && !rules.Find(AiId).Eliminated)
-                UpdateAi(Time.deltaTime);
-
-            RenderAiVisibility();
-        }
-
-        static bool OverHud(Vector2 mouse)
-        {
-            // IMGUI coordinates are top-left, Unity input coordinates bottom-left.
-            return mouse.x <= 475 && mouse.y >= Screen.height - 235;
-        }
-
-        void CreateTrainingMarker()
-        {
-            if (aiIndicator) Destroy(aiIndicator);
-            aiIndicator = new GameObject("AI_TACTICAL_MARKER_NOT_CHAMPION");
-            aiRing = aiIndicator.AddComponent<LineRenderer>();
-            aiRing.useWorldSpace = false;
-            aiRing.loop = true;
-            aiRing.positionCount = 32;
-            aiRing.startWidth = 12f;
-            aiRing.endWidth = 12f;
-            aiRing.numCapVertices = 2;
-            aiRing.numCornerVertices = 2;
-            for (int i = 0; i < 32; i++)
-            {
-                float angle = i * Mathf.PI * 2 / 32f;
-                aiRing.SetPosition(i, new Vector3(Mathf.Cos(angle) * 55f, 14f,
-                                                  Mathf.Sin(angle) * 55f));
-            }
-            Material baseMaterial = Resources.Load<Material>("Native/GarenLit");
-            if (!baseMaterial)
-                throw new InvalidOperationException("Native/GarenLit material missing from built Player");
-            var material = new Material(baseMaterial);
-            material.name = "Tactical AI position marker";
-            material.SetColor("_BaseColor", aiRole == MatchRole.Hunter ?
-                new Color(1f, .25f, .2f) : new Color(1f, .74f, .2f));
-            aiRing.sharedMaterial = material;
-            UpdateMarkerLocation();
-        }
-
-        void UpdateMarkerLocation()
-        {
-            if (aiIndicator && rift && rift.Navigation != null)
-                aiIndicator.transform.position = new Vector3(aiPosition.x,
-                    rift.Navigation.HeightAt(aiPosition), aiPosition.y);
-        }
-
-        void BeginMatch(MatchRole selectedRole)
-        {
-            if (!rift || !rift.IsReady) return;
-            if (aiIndicator) { Destroy(aiRing.sharedMaterial); Destroy(aiIndicator); }
-            humanRole = selectedRole;
-            aiRole = humanRole == MatchRole.Hunter ? MatchRole.Hider : MatchRole.Hunter;
-
-            // Garen is the only fully reconstructed native champion. This
-            // opponent uses a distinct, explicitly labeled *training* slot.
-            rules = new NativeMatchRules(
-                new MatchParticipant(HumanId, "Garen", humanRole, true),
-                new MatchParticipant(AiId, "TrainingAI", aiRole, false));
-            rift.ExternalGameplayControl = true;
-            rift.ExternalMoveEnabled = true;
-            if (!rift.TryTeleportTo(humanRole == MatchRole.Hunter ? HunterStaging : HiderStart))
-            {
-                Debug.LogError("MATCH_START_ABORTED: player staging position unavailable");
-                rift.ExternalGameplayControl = false;
-                rules = null;
-                return;
-            }
-            if (!rift.Navigation.TryNearest(aiRole == MatchRole.Hunter ?
-                         HunterStaging : HiderStart + new Vector2(420f, 180f),
-                         out aiPosition, 65))
-            {
-                Debug.LogError("MATCH_START_ABORTED: AI spawn unavailable");
-                rift.ExternalGameplayControl = false;
-                rules = null;
-                return;
-            }
-            aiRoute.Clear(); aiWaypoint = 0;
-            decisionCooldown = aiAttackCooldown = humanAttackCooldown = 0;
-            resultLogged = false;
-            CreateTrainingMarker();
-            rules.Begin();
-            rift.ExternalMoveEnabled = rules.CanMove(HumanId);
-            Debug.Log("MATCH_BEGIN: mode=1v1 native 3D; player=" + humanRole +
-                      " 120s preparation; 180s chase; no champion placeholders claimed");
-        }
-
-        void ChooseAiRoute(Vector2 destination)
-        {
-            candidatePath.Clear();
-            if (rift.Navigation.TryPath(aiPosition, destination, candidatePath) &&
-                candidatePath.Count > 0)
-            {
-                aiRoute.Clear();
-                aiRoute.AddRange(candidatePath);
-                aiWaypoint = 0;
-                aiDestination = destination;
-            }
-        }
-
-        void Wander()
-        {
-            for (int attempt = 0; attempt < 7; attempt++)
-            {
-                double direction = random.NextDouble() * Math.PI * 2;
-                float distance = 500f + (float)random.NextDouble() * 650f;
-                Vector2 candidate = aiPosition +
-                    new Vector2((float)Math.Cos(direction), (float)Math.Sin(direction)) * distance;
-                if (!rift.Navigation.TryNearest(candidate, out var snapped, 13)) continue;
-                ChooseAiRoute(snapped);
-                if (aiRoute.Count > 0) return;
-            }
-        }
-
-        void UpdateAi(float dt)
-        {
-            var nav = rift.Navigation;
-            bool canMove = rules.CanMove(AiId);
-            bool seesHuman = NativeSight.Visible(nav, aiPosition, rift.PlayerPosition);
-            if (!canMove) { aiRoute.Clear(); aiWaypoint = 0; return; }
-
-            decisionCooldown -= dt;
-            if (decisionCooldown <= 0f)
-            {
-                decisionCooldown = AiDecisionInterval;
-                if (aiRole == MatchRole.Hunter && seesHuman)
-                {
-                    if (Vector2.Distance(aiDestination, rift.PlayerPosition) > 125f ||
-                        aiWaypoint >= aiRoute.Count)
-                        ChooseAiRoute(rift.PlayerPosition);
-                }
-                else if (aiRole == MatchRole.Hider && seesHuman &&
-                         rules.Phase == MatchPhase.Pursuit)
-                {
-                    Vector2 flee = (aiPosition - rift.PlayerPosition).normalized;
-                    if (flee.sqrMagnitude < .01f) flee = Vector2.right;
-                    Vector2 candidate = aiPosition + flee * 900f;
-                    if (nav.TryNearest(candidate, out var snap, 18))
-                        ChooseAiRoute(snap);
-                }
-                else if (aiWaypoint >= aiRoute.Count)
-                    Wander();
-            }
-
-            if (aiWaypoint < aiRoute.Count)
-            {
-                float available = (aiRole == MatchRole.Hunter ? HunterMoveSpeed : HiderMoveSpeed) * dt;
-                while (available > 0 && aiWaypoint < aiRoute.Count)
-                {
-                    Vector2 next = aiRoute[aiWaypoint];
-                    Vector2 delta = next - aiPosition;
-                    if (delta.magnitude <= available)
-                    {
-                        aiPosition = next;
-                        available -= delta.magnitude;
-                        aiWaypoint++;
-                    }
-                    else
-                    {
-                        Vector2 step = aiPosition + delta.normalized * available;
-                        if (nav.CanWalk(step)) aiPosition = step;
-                        available = 0;
-                    }
-                }
-            }
-
-            UpdateMarkerLocation();
-            if (aiRole == MatchRole.Hunter && rules.CanAttack(AiId) &&
-                aiAttackCooldown <= 0f)
-            {
-                float distance = Vector2.Distance(aiPosition, rift.PlayerPosition);
-                if (distance <= NativeMatchRules.BasicAttackReach && seesHuman)
-                {
-                    aiAttackCooldown = AiAttackCooldown;
-                    bool captured = rules.TryCapture(AiId, HumanId, true,
-                        NativeSight.Visible(nav, aiPosition, rift.PlayerPosition), distance);
-                    Debug.Log("MATCH_AI_BASIC_ATTACK: hit=" + captured + " distance=" + distance);
-                }
-            }
-        }
-
-        void RenderAiVisibility()
-        {
-            if (!aiRing || rules == null) return;
-            // Individual perception only: no global wallhack. The tactical
-            // ring is explicitly not an original champion model.
-            bool allowed = !rules.Find(AiId).Eliminated &&
-                rules.Phase != MatchPhase.Lobby &&
-                NativeSight.Visible(rift.Navigation, rift.PlayerPosition, aiPosition);
-            aiRing.enabled = allowed;
-        }
-
-        void ReturnToMenu()
-        {
-            if (aiIndicator) { Destroy(aiRing.sharedMaterial); Destroy(aiIndicator); }
-            aiIndicator = null;
-            aiRing = null;
-            rules = null;
-            rift.StopMovement();
-            rift.ExternalGameplayControl = false;
-            rift.ExternalMoveEnabled = true;
-            rift.ExternalMoveMultiplier = 1f;
-            rift.TryTeleportTo(HiderStart);
-        }
-
-        void OnGUI()
-        {
-            if (!rift || !rift.IsReady) return;
-            GUI.Box(new Rect(12, 12, 465, rules == null ? 180 : 210), "");
-            GUI.Label(new Rect(28, 20, 440, 26), "HEXTECH SEEKERS | NATIVE 3D | PLAYABLE MATCH ALPHA");
-            if (rules == null)
-            {
-                GUI.Label(new Rect(28, 51, 420, 26), "Garen vs tactical AI marker (not a finished champion).");
-                GUI.Label(new Rect(28, 74, 420, 26), "Choose your role. 120s hiding preparation.");
-                if (GUI.Button(new Rect(28, 110, 194, 38), "Play as HUNTER"))
-                    BeginMatch(MatchRole.Hunter);
-                if (GUI.Button(new Rect(234, 110, 194, 38), "Play as HIDER"))
-                    BeginMatch(MatchRole.Hider);
-                return;
-            }
-            string phase = rules.Phase == MatchPhase.Preparation ? "HIDING PREPARATION" :
-                           rules.Phase == MatchPhase.Pursuit ? "PURSUIT" : "ROUND OVER";
-            GUI.Label(new Rect(28, 49, 435, 24),
-                "Role: " + humanRole + " | " + phase +
-                " | " + Mathf.CeilToInt(rules.RemainingSeconds) + "s");
-            GUI.Label(new Rect(28, 73, 435, 24),
-                "Captured: " + rules.CapturedCount + "/" + rules.HiderCount +
-                " | Scores: you " + rules.Find(HumanId).Score +
-                ", AI " + rules.Find(AiId).Score);
-            if (rules.Phase == MatchPhase.Finished)
-            {
-                GUI.Label(new Rect(28, 102, 435, 26),
-                    (rules.HunterWon ? "Hunter wins" : "Hiders survive") +
-                    " | " + (rules.Find(HumanId).Eliminated ? "SPECTATING" : "ALIVE"));
-                if (GUI.Button(new Rect(28, 140, 200, 42), "Return to role select"))
-                    ReturnToMenu();
-            }
-            else
-            {
-                GUI.Label(new Rect(28, 105, 430, 26),
-                    rules.Phase == MatchPhase.Preparation && humanRole == MatchRole.Hunter ?
-                    "Hunter locked in staging until preparation ends." :
-                    "RMB: move  |  S: stop  |  A: hunter basic attack");
-                GUI.Label(new Rect(28, 133, 432, 24),
-                    "Sight: local LOS + bush detection (full fog pending).");
-            }
-        }
-
-        void OnDestroy()
-        {
-            if (aiRing && aiRing.sharedMaterial) Destroy(aiRing.sharedMaterial);
-            if (aiIndicator) Destroy(aiIndicator);
-        }
+        void OnDestroy() { CleanupBots(); }
     }
 }
