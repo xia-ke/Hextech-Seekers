@@ -515,6 +515,9 @@ namespace HextechSeekers.Native
                 if (impact.LockSeconds > 0)
                     heroControl.Apply(impact.TargetId, impact.LockSeconds);
             }
+            if (impact.LockSeconds > 0)
+                foreach (int affectedId in impact.AdditionalHitTargets)
+                    heroControl.Apply(affectedId, impact.LockSeconds);
             Debug.Log("NATIVE_AI_SKILL_CONTACT: " + caster.Hero + " " +
                       impact.Skill + " target=" + impact.TargetId +
                       " moved=" + impact.TargetLanding.HasValue +
