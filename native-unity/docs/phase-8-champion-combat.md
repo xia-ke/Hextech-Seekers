@@ -13,7 +13,7 @@
 
 | Champion | Current integration | Important scope boundary |
 | --- | --- | --- |
-| Blitzcrank Q | Directional launched projectile with finite flight speed, continuous path sampling against the *actual navigation grid*, first legal visible enemy collision, a pull landing near caster and small control window; stops on terrain walls and an active Yasuo windwall | Hook visual mesh, original cast windup, multi-hit physics and monster-pull policy require original-asset/mechanics review |
+| Blitzcrank Q | Directional launched projectile with finite flight speed, continuous path sampling against the *actual navigation grid*, first physically collided enemy (including blind hits into grass), a pull landing near caster and small control window; stops on terrain walls and an active Yasuo windwall | Hook visual mesh, original cast windup, multi-hit physics and monster-pull policy require original-asset/mechanics review |
 | Blitzcrank W | Own movement-speed window followed by a self-slow window, with a cooldown | Tuning constants provisional |
 | Blitzcrank E | Arms next actual legal basic attack to knock up; arm alone never catches | Only legal for hunter in V1 skill whitelist |
 | Riven Q | Three separately cast directional dashes; minimum recast delay, combo timeout, first-cast cooldown, dash stops at blocked terrain, third cast knocks up every valid enemy in its landing area | Multi-attack animation root motion/cast orientation and exact original timing not yet integrated |
@@ -22,6 +22,8 @@
 | Yasuo Q | Already supports stacking on actual verified non-aggressive neutral targets; now also checks living visible hero targets, two landed Qs charge a third tornado with knockup, never directly captures | Third Q tornado hit uses provisional collision footprint rather than finished projectile/VFX |
 | Yasuo W | Creates a timed line-segment windwall; hostile Blitz Q projectiles crossing it are blocked; it does **not** block hunter melee basic attacks | Full League projectile/type table and visual wall animation pending |
 | Yasuo E | Previously added legal verified-monster dash with per-target re-use lock; AI can now use a neutral target to escape a visible pursuer if it increases separation | Enemy-target dashes and exact original interpolation/FX still pending |
+
+**Sight and collision are separate.** AI skill **aim decisions** use only the caster's independent `NativeSight` (no wallhack), but a skillshot/area ability **already fired** may physically collide with a currently concealed enemy along the path. This collision alone is never a valid basic-attack capture, and the hit test itself is not supplied to the AI as a new precise position oracle. This preserves the difference between brush concealment and projectile collision.
 
 No unrelated rune, summoner spell, traditional damage/health, turret or minion systems were added.
 
@@ -48,7 +50,7 @@ The MIT license of the **model-format converter implementation** does not transf
 
 ## Tests authored, not accepted
 
-`Assets/Tests/Editor/NativeChampionCombatTests.cs` currently defines 13 test cases for hook travel time, blocked and invisible targets, windwall intercept, Riven Q staged recasts and wall safety, multi-target W control, Garen-source fallback rules, W self-slow, E empowered basic semantics, status expiry and non-capturing skill effects.
+`Assets/Tests/Editor/NativeChampionCombatTests.cs` currently defines 13 test cases for hook travel time, wall-blocked attacks and blind hits on concealed targets, windwall intercept, Riven Q staged recasts and wall safety, multi-target W control, Garen-source fallback rules, W self-slow, E empowered basic semantics, status expiry and non-capturing skill effects.
 
 The tests are committed but **no new Unity Editor/Windows Player run is being claimed as proof of this phase**. Existing automated workflows remain installed; they are not being used as a blocking acceptance gate for this continued development request.
 
