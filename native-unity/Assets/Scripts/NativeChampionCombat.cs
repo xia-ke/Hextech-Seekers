@@ -110,7 +110,7 @@ namespace HextechSeekers.Native
         public float BlitzBoostRemaining => Mathf.Max(0f, blitzBoostUntil - now);
         public float BlitzSlowRemaining => Mathf.Max(0f, blitzSlowUntil - now);
         public float BlitzEArmRemaining => blitzEArmed ? Mathf.Max(0f, blitzEExpires - now) : 0f;
-        public float WindWallRemaining => WindWall != null ? Mathf.Max(0f, GetWindWallExpiry() - now) : 0f;
+        public float WindWallRemaining => WindWall != null ? WindWall.Remaining(now) : 0f;
         public Vector2 HookLaunchPosition => hookStart;
         public Vector2 HookTipPosition => hookStart + hookDirection * hookTravel;
         public int RivenQStage => rivenQStage;
@@ -351,6 +351,7 @@ namespace HextechSeekers.Native
         public Vector2 EndpointA => a;
         public Vector2 EndpointB => b;
         public bool Active(float at) => at <= expireAt;
+        public float Remaining(float at) => Mathf.Max(0f, expireAt - at);
         public bool Crosses(Vector2 segmentA, Vector2 segmentB, float at) =>
             Active(at) && NativeSkillGeometry.SegmentsIntersect(segmentA, segmentB, a, b);
     }
