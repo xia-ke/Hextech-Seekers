@@ -39,6 +39,7 @@ namespace HextechSeekers.Native
         public GameObject LoadedMap => loadedMap;
         public RiftGrid Navigation => nav;
         public NativeCampCatalog CampCatalog { get; private set; }
+        public NativeSpawnCalibration SpawnCalibration { get; private set; }
         public NativeNeutralMonsterWorld NeutralMonsters { get; private set; }
         NativeNeutralMonsterScene neutralScene;
         public Vector2 PlayerPosition => location;
@@ -65,6 +66,21 @@ namespace HextechSeekers.Native
                 if (!File.Exists(navPath) || !File.Exists(glbPath))
                     throw new FileNotFoundException("Run tools/prepare_assets.py before loading the Rift scene. Both original map.glb and navigation.bin are required.");
                 nav = new RiftGrid(File.ReadAllBytes(navPath));
+                string spawnPath = Path.Combine(root, "Rift", "spawns.json");
+                if (File.Exists(spawnPath))
+                {
+                    try
+                    {
+                        SpawnCalibration = NativeSpawnCalibration.LoadVerified(spawnPath, nav);
+                        Debug.Log("NATIVE_VERIFIED_SPAWNS_READY: " +
+                                  SpawnCalibration.VerificationSource);
+                    }
+                    catch (Exception badSpawn)
+                    {
+                        SpawnCalibration = null;
+                        Debug.LogWarning("NATIVE_VERIFIED_SPAWNS_UNAVAILABLE: " + badSpawn.Message);
+                    }
+                }
                 string campPath = Path.Combine(root, "Rift", "camps.json");
                 if (File.Exists(campPath))
                 {
