@@ -46,6 +46,11 @@ namespace HextechSeekers.Native
                 collider.isTrigger = true;
                 collider.radius = 60f;
                 collider.center = new Vector3(0, 38f, 0);
+                // A kinematic rigidbody makes this static-position neutral a
+                // valid trigger counterpart for future animated skill hitboxes.
+                var body = entity.AddComponent<Rigidbody>();
+                body.isKinematic = true;
+                body.useGravity = false;
 
                 var ring = entity.AddComponent<LineRenderer>();
                 ring.positionCount = 24;
