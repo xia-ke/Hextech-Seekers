@@ -168,12 +168,21 @@ namespace HextechSeekers.Native
             // A third Q fires the tornado but does not auto-capture anything.
             if (tornado) stacks = 0;
             else if (landedOnLegalTarget)
-            {
-                stacks++;
-                stackExpiresAt = clock + QStackLifetimeProvisional;
-            }
+                RegisterQHit(false);
             qAvailableAt = clock + QCooldownProvisional;
             return true;
+        }
+
+        /// <summary>
+        /// Called only after a normal Q projectile physically contacts an
+        /// eligible enemy. A tornado cast consumes its two prepared stacks
+        /// when launched and does not re-stack on its own hit.
+        /// </summary>
+        public void RegisterQHit(bool tornado)
+        {
+            if (tornado) return;
+            stacks = Mathf.Min(2, stacks + 1);
+            stackExpiresAt = clock + QStackLifetimeProvisional;
         }
 
         /// <summary>Monsters count as dash targets but never die. The actor's
