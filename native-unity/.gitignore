@@ -11,3 +11,7 @@ Assets/StreamingAssets/Rift/navigation.bin
 Assets/StreamingAssets/Rift/asset-provenance.json
 *.csproj
 *.sln
+# Original champion files are local/provenance-bound assets, never redistribute.
+Assets/StreamingAssets/Champions/Blitzcrank/
+Assets/StreamingAssets/Champions/Riven/
+Assets/StreamingAssets/Champions/Yasuo/
