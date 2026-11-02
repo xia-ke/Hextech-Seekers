@@ -170,7 +170,7 @@ namespace HextechSeekers.Native.Tests
         }
 
         [Test]
-        public void MissingSkillOrStunBlocksMonsterAbility()
+        public void MissingSkillAndIncorrectHeroCannotCastMonsterAbility()
         {
             var match = Round(out var effects);
             var q = new NativeYasuoSkillState();
