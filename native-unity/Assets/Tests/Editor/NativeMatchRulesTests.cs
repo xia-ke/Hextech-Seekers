@@ -153,9 +153,12 @@ namespace HextechSeekers.Native.Tests
             Assert.IsFalse(NativeSight.Visible(nav, observer, beyond));
             var cell = nav.Cell(close.x, close.y);
             buffer[RiftGrid.BushOffset + cell.y * RiftGrid.Width + cell.x] = 4;
+            Vector2 fartherBush = nav.Center(217, 210);
+            var fartherCell = nav.Cell(fartherBush.x, fartherBush.y);
+            buffer[RiftGrid.BushOffset + fartherCell.y * RiftGrid.Width + fartherCell.x] = 4;
             nav = new RiftGrid(buffer);
             Assert.IsTrue(NativeSight.Visible(nav, observer, close), "Proximity reveals bush");
-            Assert.IsFalse(NativeSight.Visible(nav, observer, nav.Center(217, 210)));
+            Assert.IsFalse(NativeSight.Visible(nav, observer, fartherBush));
         }
 
         [Test]
