@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace HextechSeekers.Native
 {
@@ -23,6 +24,7 @@ namespace HextechSeekers.Native
             public float fpsAverage, worstFrameMilliseconds;
             public bool originalSceneLoaded, skinnedModelExists, cameraSeesHero, hardwareGraphics;
             public bool hasIdle, hasRun, hasAttack;
+            public bool unityWatermarkVisible, developmentWatermarkEnabled, debugHudEnabled;
         }
 
         static bool VisualQaRequested()
@@ -45,6 +47,10 @@ namespace HextechSeekers.Native
 
             Application.runInBackground = true;
             QualitySettings.vSyncCount = 0;
+            // BuildOptions.None already excludes Development Build. Explicitly
+            // suppress only Unity's developer watermark; the separate trial
+            // watermark is license-controlled and must make QA fail.
+            Watermark.showDeveloperWatermark = false;
 
             var driver = FindObjectOfType<NativeVisualAcceptance>();
             if (driver)
@@ -145,6 +151,10 @@ namespace HextechSeekers.Native
         {
             string evidence = EvidenceDirectory();
             Directory.CreateDirectory(evidence);
+            Watermark.showDeveloperWatermark = false;
+            bool unityWatermarkVisible = Watermark.IsVisible();
+            bool debugHudEnabled =
+                Array.IndexOf(Environment.GetCommandLineArgs(), "-hextechDebugHud") >= 0;
             File.WriteAllText(Path.Combine(evidence, "player-started.txt"),
                 "Unity=" + Application.unityVersion + Environment.NewLine + "Scene=" +
                 UnityEngine.SceneManagement.SceneManager.GetActiveScene().name +
@@ -161,8 +171,28 @@ namespace HextechSeekers.Native
                 hero = "Garen",
                 width = Screen.width,
                 height = Screen.height,
-                screenshots = Array.Empty<string>()
+                screenshots = Array.Empty<string>(),
+                unityWatermarkVisible = unityWatermarkVisible,
+                developmentWatermarkEnabled = Watermark.showDeveloperWatermark,
+                debugHudEnabled = debugHudEnabled
             };
+            Debug.Log("NATIVE_UNITY_WATERMARK_AUDIT: visible=" +
+                      report.unityWatermarkVisible +
+                      " development=" + report.developmentWatermarkEnabled +
+                      " debugHud=" + report.debugHudEnabled);
+            if (report.unityWatermarkVisible)
+            {
+                Finish(report, evidence, "FAIL_UNITY_TRIAL_WATERMARK",
+                    "Unity reports a visible trial watermark. Activate/repair a valid Unity Editor license on the self-hosted Windows GPU runner; this watermark cannot be removed by game code.");
+                yield break;
+            }
+            if (report.developmentWatermarkEnabled || report.debugHudEnabled)
+            {
+                Finish(report, evidence, "FAIL_DEBUG_WATERMARK",
+                    "Development watermark or diagnostic HUD is enabled during release visual QA.");
+                yield break;
+            }
+
             string renderer = report.device == null ? "" : report.device.ToLowerInvariant();
             report.hardwareGraphics =
                 report.graphicsApi != "Null" &&
