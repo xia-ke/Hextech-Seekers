@@ -104,6 +104,13 @@ namespace HextechSeekers.Native
         public NativeWindWall WindWall { get; private set; }
 
         public bool HookActive => hookActive;
+        public float CooldownQ => Mathf.Max(0f, nextQ - now);
+        public float CooldownW => Mathf.Max(0f, nextW - now);
+        public float CooldownE => Mathf.Max(0f, nextE - now);
+        public float BlitzBoostRemaining => Mathf.Max(0f, blitzBoostUntil - now);
+        public float BlitzSlowRemaining => Mathf.Max(0f, blitzSlowUntil - now);
+        public float BlitzEArmRemaining => blitzEArmed ? Mathf.Max(0f, blitzEExpires - now) : 0f;
+        public float WindWallRemaining => WindWall != null ? Mathf.Max(0f, GetWindWallExpiry() - now) : 0f;
         public Vector2 HookLaunchPosition => hookStart;
         public Vector2 HookTipPosition => hookStart + hookDirection * hookTravel;
         public int RivenQStage => rivenQStage;
@@ -249,15 +256,16 @@ namespace HextechSeekers.Native
                 (rivenQStage == 0 && now < nextQ) ||
                 (rivenQStage > 0 && now < rivenRecastAt) ||
                 !nav.CanWalk(origin)) return null;
+            int upcoming = rivenQStage + 1;
+            Vector2 destination = NativeSkillGeometry.WalkableDash(
+                nav, origin, direction, RivenQDashProvisional);
+            if ((destination - origin).sqrMagnitude < 25f) return null;
             if (rivenQStage == 0)
             {
                 nextQ = now + RivenQCooldownProvisional;
                 comboExpires = now + RivenQComboWindowProvisional;
             }
-            int upcoming = rivenQStage + 1;
             rivenRecastAt = now + RivenQRecastMinimumProvisional;
-            Vector2 destination = NativeSkillGeometry.WalkableDash(
-                nav, origin, direction, RivenQDashProvisional);
             rivenQStage = upcoming == 3 ? 0 : upcoming;
             var result = new NativeSkillImpact {
                 Skill = "Riven Q" + upcoming, CasterLanding = destination
@@ -284,7 +292,6 @@ namespace HextechSeekers.Native
             if (!hero.Equals("Riven", StringComparison.OrdinalIgnoreCase) ||
                 !Can(NativeSkillSlot.W) || now < nextW || actors == null)
                 return null;
-            nextW = now + 11f;
             var result = new NativeSkillImpact { Skill = "Riven W" };
             foreach (var target in actors)
                 if (target.Id != actorId && !target.Eliminated &&
@@ -296,6 +303,10 @@ namespace HextechSeekers.Native
                     else result.AdditionalHitTargets.Add(target.Id);
                     result.LockSeconds = RivenWStunSecondsProvisional;
                 }
+            // A cast with no physical target is not an impact and must not
+            // burn the cooldown; the AI may still use a learned E to escape.
+            if (result.TargetId < 0) return null;
+            nextW = now + 11f;
             return result;
         }
 
@@ -306,11 +317,12 @@ namespace HextechSeekers.Native
             if (!hero.Equals("Riven", StringComparison.OrdinalIgnoreCase) ||
                 !Can(NativeSkillSlot.E) || now < nextE ||
                 direction.sqrMagnitude < .001f || !nav.CanWalk(origin)) return null;
+            Vector2 destination = NativeSkillGeometry.WalkableDash(
+                nav, origin, direction, RivenEDashProvisional);
+            if ((destination - origin).sqrMagnitude < 25f) return null;
             nextE = now + 10f;
             return new NativeSkillImpact {
-                Skill = "Riven E",
-                CasterLanding = NativeSkillGeometry.WalkableDash(nav, origin,
-                    direction, RivenEDashProvisional)
+                Skill = "Riven E", CasterLanding = destination
             };
         }
 
