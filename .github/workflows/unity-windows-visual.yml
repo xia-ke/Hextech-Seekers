@@ -180,6 +180,15 @@ jobs:
           $meta = Join-Path $rift 'map-unity.conversion.json'
           if (-not (Test-Path -LiteralPath $meta -PathType Leaf)) { throw 'Converted GLB exists but conversion metadata missing' }
           Copy-Item -LiteralPath $meta -Destination (Join-Path $root 'map-conversion.json')
+          $conversion = Get-Content -LiteralPath $meta -Raw | ConvertFrom-Json
+          if (-not $conversion.alphaAudit) { throw 'Alpha audit missing from GLB conversion metadata' }
+          $audit = $conversion.alphaAudit
+          Write-Host ("NATIVE_GLB_ALPHA_AUDIT: imagesWithTransparency={0} materialsWithAlpha={1} opaqueWithAlpha={2}" -f $audit.imagesWithTransparency, $audit.baseColorMaterialsUsingTransparentImages, $audit.opaqueModeWithTransparentBaseColor)
+          foreach ($material in @($audit.materials)) {
+            if ($material.alphaMode -eq 'OPAQUE' -and $material.name -match '(?i)leaf|leaves|foliage|grass|tree|bush|plant|shrub') {
+              Write-Warning ("OPAQUE_FOLIAGE_ALPHA: index={0} name={1} transparentPixels={2}" -f $material.materialIndex, $material.name, $material.transparentPixels)
+            }
+          }
           Write-Host "Converted Unity-compatible GLB size: $((Get-Item $output).Length) bytes"
 
       - name: Build real Windows x64 Player
@@ -260,7 +269,14 @@ jobs:
             Write-Host '=== Player.log last 120 lines ==='
             Get-Content -LiteralPath $log -Tail 120
           } else { Write-Warning 'Unity Player.log missing' }
-          if ($proc.ExitCode -ne 0) { throw "GPU Player exited with code $($proc.ExitCode); inspect Player.log and result.json" }
+          $qaResult = Join-Path $evidence 'result.json'
+          if (Test-Path -LiteralPath $qaResult -PathType Leaf) {
+            Write-Host '=== Player result.json ==='
+            Get-Content -LiteralPath $qaResult | ForEach-Object { Write-Host $_ }
+          } else {
+            Write-Warning 'Player did not write result.json; inspect NATIVE_QA_* markers in Player.log'
+          }
+          if ($proc.ExitCode -ne 0) { throw "GPU Player exited with code $($proc.ExitCode); inspect Player.log, result.json, and archived evidence" }
           $playerLogText = if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Raw } else { '' }
           foreach ($marker in @(
             'NATIVE_GLTF_SHADERS_PRELOADED',
@@ -276,12 +292,8 @@ jobs:
           if ($playerLogText -match "Shader 'Shader Graphs/glTF-(unlit|pbrMetallicRoughness)' is missing") {
             throw 'Player still reports a missing glTFast shader graph'
           }
-          $qaResult = Join-Path $evidence 'result.json'
           if (-not (Test-Path -LiteralPath $qaResult -PathType Leaf)) {
-            Write-Error 'Player exited without result.json. Runtime QA bootstrap did not finish; inspect NATIVE_QA_* markers in Player.log.'
-          } else {
-            Write-Host '=== Player result.json ==='
-            Get-Content -LiteralPath $qaResult
+            throw 'Player exited without result.json after a zero exit code.'
           }
 
       - name: Verify real GPU PNGs and evidence without extra dependencies
