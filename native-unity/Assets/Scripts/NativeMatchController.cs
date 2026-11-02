@@ -92,12 +92,12 @@ namespace HextechSeekers.Native
             for (int i = 0; i + 1 < args.Length; i++)
                 if (args[i] == "-hextechEvidenceDir") output = Path.GetFullPath(args[i + 1]);
             Directory.CreateDirectory(output);
+            float started = Time.realtimeSinceStartup;
+            while (rift != null && !rift.IsReady && !rift.HasLoadFailed &&
+                   Time.realtimeSinceStartup - started < 180f)
+                yield return null;
             try
             {
-                float started = Time.realtimeSinceStartup;
-                while (rift != null && !rift.IsReady && !rift.HasLoadFailed &&
-                       Time.realtimeSinceStartup - started < 180f)
-                    yield return null;
                 if (!rift || !rift.IsReady)
                     throw new InvalidOperationException("Rift failed to load: " + (rift ? rift.LoadProblem : "no bootstrap"));
                 result.loadedRift = true;
