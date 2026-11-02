@@ -237,6 +237,51 @@ namespace HextechSeekers.Native
             transients.Add(ring);
         }
 
+        /// <summary>
+        /// A contact burst is rendered at a victim only when the current
+        /// observer independently has vision of that victim. Hidden brush
+        /// contacts still affect gameplay but never disclose their location.
+        /// </summary>
+        public void Impact(int owner, Vector2 targetPosition, string skill,
+                           bool targetVisibleToObserver)
+        {
+            if (!Ready || !targetVisibleToObserver) return;
+            while (transients.Count >= MaxTransientCues)
+                DestroyCue(transients[0], transients);
+            Color color = skill.StartsWith("Riven", StringComparison.OrdinalIgnoreCase)
+                ? new Color(1f, .67f, .2f)
+                : skill.StartsWith("Yasuo", StringComparison.OrdinalIgnoreCase)
+                    ? new Color(.4f, .94f, .9f)
+                    : new Color(.2f, .7f, 1f);
+            var cue = Create(owner, skill.Replace(' ', '_') + "_VISIBLE_IMPACT",
+                             color, 10f, 24, true);
+            Vector3 center = World(targetPosition, 22f);
+            for (int i = 0; i < 24; i++)
+            {
+                float angle = Mathf.PI * 2f * i / 24f;
+                cue.Line.SetPosition(i, center + new Vector3(
+                    Mathf.Cos(angle) * 96f, 0, Mathf.Sin(angle) * 96f));
+            }
+            var verticalObject = new GameObject("DEBUG_SKILL_IMPACT_VERTICAL_RING");
+            verticalObject.transform.SetParent(cue.Root.transform, false);
+            var vertical = verticalObject.AddComponent<LineRenderer>();
+            vertical.useWorldSpace = true;
+            vertical.loop = true;
+            vertical.positionCount = 24;
+            vertical.startWidth = 7f;
+            vertical.endWidth = 7f;
+            vertical.sharedMaterial = cue.EffectMaterial;
+            cue.ExtraLines.Add(vertical);
+            for (int i = 0; i < 24; i++)
+            {
+                float angle = Mathf.PI * 2f * i / 24f;
+                vertical.SetPosition(i, center + new Vector3(
+                    0, Mathf.Cos(angle) * 84f, Mathf.Sin(angle) * 84f));
+            }
+            cue.ExpiresAt = Time.unscaledTime + .42f;
+            transients.Add(cue);
+        }
+
         void DestroyCue(Cue cue, List<Cue> collection)
         {
             collection.Remove(cue);
