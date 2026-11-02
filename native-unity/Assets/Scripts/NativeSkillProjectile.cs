@@ -23,6 +23,7 @@ namespace HextechSeekers.Native
         bool active;
 
         public bool Active => active;
+        public Vector2 Origin => origin;
         public Vector2 Position => origin + direction * travelled;
         public float Travelled => travelled;
         public float RemainingRange => Mathf.Max(0f, range - travelled);
