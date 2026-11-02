@@ -51,6 +51,8 @@ namespace HextechSeekers.Native
             public readonly NativeDashMotion Pull = new NativeDashMotion();
             public Vector2 VisualPreviousPosition;
             public NativeYasuoSkillState YasuoSkill;
+            public NativeDirectionalProjectile YasuoQFlight;
+            public bool YasuoQTornadoFlight;
             public NativeChampionCombat Combat;
             public NativeAbilityAnimationBindings AnimationBindings;
             public readonly NativeBasicContactWindow BasicContact = new NativeBasicContactWindow();
@@ -380,6 +382,11 @@ namespace HextechSeekers.Native
             bool movingByAbility = forceDashTrail || bot.Dash.Active || bot.Pull.Active;
             combatVfx.SetDash(bot.Id, movingByAbility, bot.VisualPreviousPosition,
                               bot.Position, bot.Hero);
+            bool yasuoQActive = bot.YasuoQFlight != null && bot.YasuoQFlight.Active;
+            if (bot.YasuoQFlight != null)
+                combatVfx.SetYasuoQ(bot.Id, yasuoQActive,
+                    bot.YasuoQFlight.Origin, bot.YasuoQFlight.Position,
+                    bot.YasuoQTornadoFlight);
         }
 
         void ResolveHumanBasicContact(float dt)
@@ -773,7 +780,7 @@ namespace HextechSeekers.Native
             }
             else if (bot.Hero == "Yasuo")
             {
-                if (BotYasuoHeroQ(bot, targets, direction)) return;
+                if (BotYasuoHeroQ(bot, direction)) return;
                 if (bot.Loadout.Knows(NativeSkillSlot.W))
                 {
                     // No additional enemy reveal: each AI has already
@@ -790,50 +797,36 @@ namespace HextechSeekers.Native
             }
         }
 
-        bool BotYasuoHeroQ(Bot bot,
-                             IReadOnlyList<NativeSkillTarget> targets,
-                             Vector2 direction)
+        bool BotYasuoHeroQ(Bot bot, Vector2 direction)
         {
             if (bot.YasuoSkill == null || !bot.Loadout.Knows(NativeSkillSlot.Q) ||
                 bot.YasuoSkill.CooldownQ > 0 || !hextech.CanUseHeroSkill(bot.Id) ||
-                direction.sqrMagnitude < 1f)
+                direction.sqrMagnitude < 1f ||
+                (bot.YasuoQFlight != null && bot.YasuoQFlight.Active))
                 return false;
-            bool tornadoReady = bot.YasuoSkill.QStacks >= 2;
-            float reach = tornadoReady ? 660f : NativeYasuoSkillState.QReachProvisional;
-            float width = tornadoReady ? 90f : NativeYasuoSkillState.QHalfWidthProvisional;
-            Vector2 facing = direction.normalized;
-            int hitId = -1;
-            float earliest = float.PositiveInfinity;
-            foreach (var target in targets)
+            if (!bot.YasuoSkill.TryQ(bot.Loadout, rules, hextech, bot.Id,
+                                    false, out bool tornado))
+                return false;
+            float reach = tornado ? 660f : NativeYasuoSkillState.QReachProvisional;
+            float width = tornado ? 90f : NativeYasuoSkillState.QHalfWidthProvisional;
+            var projectile = new NativeDirectionalProjectile();
+            if (!projectile.Begin(bot.Id, bot.Role,
+                    tornado ? "Yasuo Q Tornado" : "Yasuo Q",
+                    bot.Position, direction, reach, 1900f, width,
+                    rift.Navigation))
             {
-                if (target.Eliminated) continue;
-                // AI chose its cast from an actually visible enemy, but the
-                // physical Q footprint may also strike a hidden unit.
-                Vector2 displacement = target.Position - bot.Position;
-                float forward = Vector2.Dot(displacement, facing);
-                if (forward < 0 || forward > reach || forward >= earliest)
-                    continue;
-                float sideways = (displacement - facing * forward).sqrMagnitude;
-                if (sideways > width * width ||
-                    !rift.Navigation.LineClear(bot.Position, target.Position))
-                    continue;
-                hitId = target.Id;
-                earliest = forward;
+                Debug.LogWarning("NATIVE_YASUO_Q_PROJECTILE_REJECTED: actor=" + bot.Id);
+                return true; // the accepted cast still owns its cooldown
             }
-            if (bot.YasuoSkill.TryQ(bot.Loadout, rules, hextech, bot.Id,
-                                    hitId >= 0, out bool tornado))
-            {
-                PlayBotOriginalSkill(bot, NativeSkillSlot.Q, tornado ? 3 : 1);
-                combatVfx?.Pulse(bot.Id, bot.Position,
-                    tornado ? "Yasuo Q Tornado" : "Yasuo Q");
-                if (tornado && hitId >= 0) ApplyChampionControl(hitId, .75f);
-                Debug.Log("NATIVE_YASUO_Q_HERO: actor=" + bot.Id +
-                          " target=" + hitId + " tornado=" + tornado +
-                          " stacks=" + bot.YasuoSkill.QStacks +
-                          " skillCapture=false damage=0");
-                return true;
-            }
-            return false;
+            bot.YasuoQFlight = projectile;
+            bot.YasuoQTornadoFlight = tornado;
+            PlayBotOriginalSkill(bot, NativeSkillSlot.Q, tornado ? 3 : 1);
+            combatVfx?.Pulse(bot.Id, bot.Position,
+                tornado ? "Yasuo Q Tornado" : "Yasuo Q");
+            Debug.Log("NATIVE_YASUO_Q_LAUNCHED: actor=" + bot.Id +
+                      " tornado=" + tornado + " stacks=" + bot.YasuoSkill.QStacks +
+                      " range=" + reach + " speed=1900 damage=0 capture=false");
+            return true;
         }
 
         bool BotYasuoHeroE(Bot bot, IReadOnlyList<NativeSkillTarget> targets)
@@ -959,6 +952,32 @@ namespace HextechSeekers.Native
             if (bot.Combat != null && bot.Combat.HookActive)
                 ApplyBotSkillImpact(bot, bot.Combat.StepBlitzHook(
                     dt, GetSkillTargets(bot.Id), ActiveEnemyWindWall(bot.Id)));
+            if (bot.YasuoQFlight != null && bot.YasuoQFlight.Active)
+            {
+                var qImpact = bot.YasuoQFlight.Step(dt, rift.Navigation,
+                    GetSkillTargets(bot.Id), ActiveEnemyWindWall(bot.Id),
+                    bot.Combat != null ? bot.Combat.Elapsed : hextech.Elapsed);
+                if (qImpact != null)
+                {
+                    if (qImpact.TargetId >= 0)
+                    {
+                        if (bot.YasuoQTornadoFlight)
+                            ApplyChampionControl(qImpact.TargetId, .75f);
+                        else
+                            bot.YasuoSkill.RegisterQHit(false);
+                        combatVfx?.Impact(bot.Id, GetPosition(qImpact.TargetId),
+                            qImpact.Skill, CanSeeVisualCaster(qImpact.TargetId));
+                        Debug.Log("NATIVE_YASUO_Q_CONTACT: actor=" + bot.Id +
+                            " target=" + qImpact.TargetId +
+                            " tornado=" + bot.YasuoQTornadoFlight +
+                            " stacks=" + bot.YasuoSkill.QStacks +
+                            " skillCapture=false damage=0");
+                    }
+                    else if (qImpact.ProjectileBlocked)
+                        Debug.Log("NATIVE_YASUO_Q_BLOCKED: actor=" + bot.Id +
+                                  " by=terrain_or_windwall");
+                }
+            }
             // A landed Blitz hook is an already-authorized forced pull.
             // It continues through the short crowd-control window, unlike
             // voluntary movement/dashes which are cancelled by stun.
