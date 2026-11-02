@@ -29,6 +29,7 @@ namespace HextechSeekers.Native
 
         const int MaxTransientCues = 32;
         readonly Dictionary<int, Cue> hooks = new Dictionary<int, Cue>();
+        readonly Dictionary<int, Cue> yasuoProjectiles = new Dictionary<int, Cue>();
         readonly Dictionary<int, Cue> walls = new Dictionary<int, Cue>();
         readonly Dictionary<int, Cue> dashes = new Dictionary<int, Cue>();
         readonly List<Cue> transients = new List<Cue>();
@@ -119,6 +120,37 @@ namespace HextechSeekers.Native
             }
             cue.Head.SetActive(active);
             if (active) cue.Head.transform.position = World(tip, 70f);
+        }
+
+        public void SetYasuoQ(int actor, bool active, Vector2 origin,
+                              Vector2 tip, bool tornado)
+        {
+            Color color = tornado ? new Color(.35f, .95f, 1f) :
+                                     new Color(.3f, .82f, .95f);
+            SetTrace(yasuoProjectiles, actor, active, origin, tip, color,
+                     tornado ? "YASUO_Q_TORNADO_PROJECTILE" : "YASUO_Q_PROJECTILE");
+            if (!yasuoProjectiles.TryGetValue(actor, out Cue cue)) return;
+            cue.EffectMaterial.SetColor("_BaseColor", color);
+            if (!cue.Head)
+            {
+                cue.Head = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                cue.Head.name = "DEBUG_YASUO_Q_PROJECTILE_HEAD";
+                cue.Head.transform.SetParent(cue.Root.transform, true);
+                var collider = cue.Head.GetComponent<Collider>();
+                if (collider) Destroy(collider);
+                var renderer = cue.Head.GetComponent<Renderer>();
+                renderer.sharedMaterial = cue.EffectMaterial;
+                var trail = cue.Head.AddComponent<TrailRenderer>();
+                trail.time = tornado ? .28f : .16f;
+                trail.startWidth = tornado ? 44f : 28f;
+                trail.endWidth = 2f;
+                trail.sharedMaterial = cue.EffectMaterial;
+                trail.numCapVertices = 4;
+            }
+            float scale = tornado ? 58f : 38f;
+            cue.Head.transform.localScale = Vector3.one * scale;
+            cue.Head.SetActive(active);
+            if (active) cue.Head.transform.position = World(tip, tornado ? 88f : 68f);
         }
 
         public void SetDash(int actor, bool active, Vector2 from, Vector2 to, string hero)
@@ -312,6 +344,12 @@ namespace HextechSeekers.Native
                 if (cue.Line) cue.Line.enabled = visible;
                 if (cue.Head) cue.Head.SetActive(visible);
             }
+            foreach (var cue in yasuoProjectiles.Values)
+            {
+                bool visible = cue.Root.activeSelf && maySeeCaster(cue.OwnerId);
+                if (cue.Line) cue.Line.enabled = visible;
+                if (cue.Head) cue.Head.SetActive(visible);
+            }
             foreach (var cue in walls.Values)
             {
                 bool visible = cue.Root.activeSelf && maySeeCaster(cue.OwnerId);
@@ -328,6 +366,8 @@ namespace HextechSeekers.Native
         {
             foreach (var cue in hooks.Values)
                 if (cue.Root) Destroy(cue.Root);
+            foreach (var cue in yasuoProjectiles.Values)
+                if (cue.Root) Destroy(cue.Root);
             foreach (var cue in walls.Values)
                 if (cue.Root) Destroy(cue.Root);
             foreach (var cue in dashes.Values)
@@ -335,6 +375,7 @@ namespace HextechSeekers.Native
             foreach (var cue in transients)
                 if (cue.Root) Destroy(cue.Root);
             hooks.Clear();
+            yasuoProjectiles.Clear();
             walls.Clear();
             dashes.Clear();
             transients.Clear();
