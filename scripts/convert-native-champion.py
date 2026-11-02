@@ -83,7 +83,7 @@ def convert(source, destination, stem, hero):
     for _ in range(ar.take('I')):
         name, fps, track_count = ar.string(), ar.take('i'), ar.take('I')
         available.append(name)
-        selected = name in ('idle', 'idle1', 'idle2', 'run', 'run1', 'walk', 'attack1', 'spell1', 'spell1a')
+        selected = name in ('idle', 'idle1', 'idle2', 'run', 'run1', 'walk', 'attack1', 'attack2') or name.startswith('spell')
         tracks, duration = [], 0
         for _ in range(track_count):
             frame_count, bone_name, flags = ar.take('I'), ar.string(), ar.take('I')
