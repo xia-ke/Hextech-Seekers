@@ -49,6 +49,7 @@ namespace HextechSeekers.Native
             public NativeHeroLoadout Loadout;
             public readonly NativeDashMotion Dash = new NativeDashMotion();
             public readonly NativeDashMotion Pull = new NativeDashMotion();
+            public Vector2 VisualPreviousPosition;
             public NativeYasuoSkillState YasuoSkill;
             public NativeChampionCombat Combat;
             public NativeAbilityAnimationBindings AnimationBindings;
@@ -66,6 +67,7 @@ namespace HextechSeekers.Native
         NativeAbilityAnimationBindings garenAnimationBindings;
         NativeBasicContactWindow humanContact = new NativeBasicContactWindow();
         NativeDashMotion humanPull = new NativeDashMotion();
+        Vector2 previousHumanVisualPosition;
         NativeHeroLoadout humanLoadout;
         NativeGarenSkills garenSkills;
         NativeHextechDefinition[] offered;
@@ -124,6 +126,7 @@ namespace HextechSeekers.Native
             basicCooldown = 0;
             humanContact = new NativeBasicContactWindow();
             humanPull.Cancel();
+            previousHumanVisualPosition = rift.PlayerPosition;
             loggedFinish = false;
             feedback = "Choose one of your three independent Hextech cards.";
             menu = Menu.Augment;
@@ -340,6 +343,10 @@ namespace HextechSeekers.Native
             foreach (var bot in bots) UpdateBot(bot, dt);
             UpdateMarkers();
             UpdatePrivateFog();
+            combatVfx?.SetDash(HumanId,
+                garenSkills.QActive && rift.PlayerMoving,
+                previousHumanVisualPosition, rift.PlayerPosition, "Garen");
+            previousHumanVisualPosition = rift.PlayerPosition;
             TickCombatPresentation();
         }
 
@@ -360,13 +367,19 @@ namespace HextechSeekers.Native
                 combatVfx.Tick(CanSeeVisualCaster);
         }
 
-        void UpdateBotCombatVfx(Bot bot)
+        void UpdateBotCombatVfx(Bot bot, bool forceDashTrail = false)
         {
-            if (!combatVfx || !combatVfx.Ready || bot.Combat == null) return;
-            combatVfx.SetHook(bot.Id, bot.Combat.HookActive,
-                              bot.Combat.HookLaunchPosition,
-                              bot.Combat.HookTipPosition);
-            combatVfx.SetWindWall(bot.Id, bot.Combat.WindWall);
+            if (!combatVfx || !combatVfx.Ready) return;
+            if (bot.Combat != null)
+            {
+                combatVfx.SetHook(bot.Id, bot.Combat.HookActive,
+                                  bot.Combat.HookLaunchPosition,
+                                  bot.Combat.HookTipPosition);
+                combatVfx.SetWindWall(bot.Id, bot.Combat.WindWall);
+            }
+            bool movingByAbility = forceDashTrail || bot.Dash.Active || bot.Pull.Active;
+            combatVfx.SetDash(bot.Id, movingByAbility, bot.VisualPreviousPosition,
+                              bot.Position, bot.Hero);
         }
 
         void ResolveHumanBasicContact(float dt)
@@ -945,9 +958,10 @@ namespace HextechSeekers.Native
             if (bot.Pull.Active)
             {
                 Vector2 previous = bot.Position;
+                bot.VisualPreviousPosition = previous;
                 bot.Position = bot.Pull.Step(dt);
                 PlaceMarker(bot);
-                UpdateBotCombatVfx(bot);
+                UpdateBotCombatVfx(bot, true);
                 if (bot.RealRig)
                 {
                     Vector2 delta = bot.Position - previous;
@@ -974,10 +988,11 @@ namespace HextechSeekers.Native
             if (bot.Dash.Active)
             {
                 Vector2 previous = bot.Position;
+                bot.VisualPreviousPosition = previous;
                 bot.Position = bot.Dash.Step(dt);
                 PlaceMarker(bot);
                 ResolveBotBasicContact(bot, dt);
-                UpdateBotCombatVfx(bot);
+                UpdateBotCombatVfx(bot, true);
                 if (bot.RealRig)
                 {
                     Vector2 delta = bot.Position - previous;
@@ -1044,6 +1059,16 @@ namespace HextechSeekers.Native
                 }
             }
 
+            // Do not mix ordinary path movement into the same frame as a
+            // newly-authorized ability dash. The timed dash owns the next frame.
+            if (bot.Dash.Active)
+            {
+                bot.VisualPreviousPosition = bot.Position;
+                if (bot.RealRig) bot.RealRig.Tick(dt, false);
+                UpdateBotCombatVfx(bot, true);
+                return;
+            }
+
             Vector2 beforeMove = bot.Position;
             if (bot.Waypoint < bot.Path.Count)
             {
@@ -1070,6 +1095,7 @@ namespace HextechSeekers.Native
                 }
             }
             PlaceMarker(bot);
+            bot.VisualPreviousPosition = beforeMove;
             ResolveBotBasicContact(bot, dt);
             UpdateBotCombatVfx(bot);
             if (bot.RealRig)
