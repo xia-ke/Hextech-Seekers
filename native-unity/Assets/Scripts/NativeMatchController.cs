@@ -48,6 +48,7 @@ namespace HextechSeekers.Native
             public GarenRigRuntime RealRig;
             public NativeHeroLoadout Loadout;
             public readonly NativeDashMotion Dash = new NativeDashMotion();
+            public readonly NativeDashMotion Pull = new NativeDashMotion();
             public NativeYasuoSkillState YasuoSkill;
             public NativeChampionCombat Combat;
             public NativeAbilityAnimationBindings AnimationBindings;
@@ -64,6 +65,7 @@ namespace HextechSeekers.Native
         NativeCombatVfx combatVfx;
         NativeAbilityAnimationBindings garenAnimationBindings;
         NativeBasicContactWindow humanContact = new NativeBasicContactWindow();
+        NativeDashMotion humanPull = new NativeDashMotion();
         NativeHeroLoadout humanLoadout;
         NativeGarenSkills garenSkills;
         NativeHextechDefinition[] offered;
@@ -121,6 +123,7 @@ namespace HextechSeekers.Native
             preferredSpectateId = -1;
             basicCooldown = 0;
             humanContact = new NativeBasicContactWindow();
+            humanPull.Cancel();
             loggedFinish = false;
             feedback = "Choose one of your three independent Hextech cards.";
             menu = Menu.Augment;
@@ -264,11 +267,17 @@ namespace HextechSeekers.Native
             rift.CameraFollowOverride = spectatedId >= 0 ?
                 (Vector2?)GetPosition(spectatedId) : null;
             rift.ExternalMoveEnabled = rules.CanMove(HumanId) &&
-                !hextech.Stunned(HumanId) && !heroControl.Locked(HumanId);
+                !hextech.Stunned(HumanId) && !heroControl.Locked(HumanId) &&
+                !humanPull.Active;
             rift.ExternalMoveMultiplier =
                 (humanRole == MatchRole.Hunter ? HunterSpeed / HiderSpeed : 1f) *
                 hextech.MoveMultiplier(HumanId) * garenSkills.MovementMultiplier;
             if (!rift.ExternalMoveEnabled) rift.StopMovement();
+            if (humanPull.Active)
+            {
+                Vector2 pulled = humanPull.Step(dt);
+                if (!rift.TrySetExternalPosition(pulled)) humanPull.Cancel();
+            }
             if (rules.Phase == MatchPhase.Finished)
             {
                 rift.StopMovement();
@@ -632,18 +641,24 @@ namespace HextechSeekers.Native
                 {
                     if (impact.TargetId == HumanId)
                     {
+                        humanPull.Cancel();
                         rift.StopMovement();
-                        rift.TryTeleportTo(impact.TargetLanding.Value);
+                        if (!humanPull.Begin(rift.Navigation, rift.PlayerPosition,
+                                             impact.TargetLanding.Value))
+                            Debug.LogWarning("NATIVE_HOOK_PULL_REJECTED: player path is not navigable");
                     }
                     else
                     {
                         var target = FindBot(impact.TargetId);
                         if (target != null)
                         {
-                            target.Position = impact.TargetLanding.Value;
+                            target.Dash.Cancel();
+                            target.Pull.Cancel();
                             target.Path.Clear();
                             target.Waypoint = 0;
-                            PlaceMarker(target);
+                            if (!target.Pull.Begin(rift.Navigation, target.Position,
+                                                   impact.TargetLanding.Value))
+                                Debug.LogWarning("NATIVE_HOOK_PULL_REJECTED: AI path is not navigable");
                         }
                     }
                 }
@@ -876,6 +891,26 @@ namespace HextechSeekers.Native
             if (bot.Combat != null && bot.Combat.HookActive)
                 ApplyBotSkillImpact(bot, bot.Combat.StepBlitzHook(
                     dt, GetSkillTargets(bot.Id), ActiveEnemyWindWall(bot.Id)));
+            // A landed Blitz hook is an already-authorized forced pull.
+            // It continues through the short crowd-control window, unlike
+            // voluntary movement/dashes which are cancelled by stun.
+            if (bot.Pull.Active)
+            {
+                Vector2 previous = bot.Position;
+                bot.Position = bot.Pull.Step(dt);
+                PlaceMarker(bot);
+                UpdateBotCombatVfx(bot);
+                if (bot.RealRig)
+                {
+                    Vector2 delta = bot.Position - previous;
+                    if (delta.sqrMagnitude > .0001f)
+                        bot.RealRig.transform.rotation = Quaternion.LookRotation(
+                            new Vector3(delta.x, 0, delta.y), Vector3.up);
+                    bot.RealRig.Tick(dt, true);
+                }
+                return;
+            }
+
             if (!rules.CanMove(bot.Id) || hextech.Stunned(bot.Id) ||
                 heroControl.Locked(bot.Id))
             {
@@ -1145,6 +1180,7 @@ namespace HextechSeekers.Native
             if (privateFog) privateFog.End();
             if (combatVfx) combatVfx.End();
             humanContact.Cancel();
+            humanPull.Cancel();
             CleanupBots();
             menu = Menu.Role;
             rules = null;
@@ -1352,6 +1388,7 @@ namespace HextechSeekers.Native
         {
             if (privateFog) privateFog.End();
             if (combatVfx) combatVfx.End();
+            humanPull.Cancel();
             CleanupBots();
         }
     }
