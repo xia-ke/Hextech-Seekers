@@ -188,6 +188,11 @@ namespace HextechSeekers.Native
                 rules.Advance(dt);
             }
 
+            // A caught hider may observe surviving allied hiders, never
+            // arbitrary hidden enemy positions. No shared vision while alive.
+            int spectatedId = SpectatedAlly();
+            rift.CameraFollowOverride = spectatedId >= 0 ?
+                (Vector2?)GetPosition(spectatedId) : null;
             rift.ExternalMoveEnabled = rules.CanMove(HumanId) &&
                 !hextech.Stunned(HumanId);
             rift.ExternalMoveMultiplier =
@@ -488,13 +493,26 @@ namespace HextechSeekers.Native
                     bot.Position.y);
         }
 
+        int SpectatedAlly()
+        {
+            if (rules == null || !rules.Find(HumanId).Eliminated)
+                return -1;
+            foreach (var bot in bots)
+                if (bot.Role == humanRole && !rules.Find(bot.Id).Eliminated)
+                    return bot.Id;
+            return -1;
+        }
+
         void UpdateMarkers()
         {
+            int observerId = SpectatedAlly();
+            if (observerId < 0) observerId = HumanId;
             foreach (var bot in bots)
                 if (bot.Ring)
                     bot.Ring.enabled = rules != null &&
                         !rules.Find(bot.Id).Eliminated &&
-                        VisibleTo(HumanId, bot.Id);
+                        bot.Id != observerId &&
+                        VisibleTo(observerId, bot.Id);
         }
 
         void CleanupBots()
@@ -518,6 +536,7 @@ namespace HextechSeekers.Native
             rift.ExternalGameplayControl = false;
             rift.ExternalMoveEnabled = true;
             rift.ExternalMoveMultiplier = 1f;
+            rift.CameraFollowOverride = null;
             rift.TryTeleportTo(HiderStart);
         }
 
@@ -575,7 +594,10 @@ namespace HextechSeekers.Native
                     Mathf.CeilToInt(rules.RemainingSeconds) + "s | " + rosterSize + " actors");
                 GUI.Label(new Rect(25, 76, 480, 22),
                     "Captured " + rules.CapturedCount + "/" + rules.HiderCount +
-                    " | Your score " + rules.Find(HumanId).Score);
+                    " | Your score " + rules.Find(HumanId).Score +
+                    (rules.Find(HumanId).Eliminated ?
+                      " | SPECTATING " + (SpectatedAlly() >= 0 ?
+                            rules.Find(SpectatedAlly()).HeroKey : "none") : ""));
                 var selected = hextech.Selected(HumanId);
                 GUI.Label(new Rect(25, 101, 480, 25),
                     "Hextech: " + (selected.HasValue ? NativeHextechPool.Find(selected.Value).Name : "-") +
