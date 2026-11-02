@@ -61,7 +61,7 @@ namespace HextechSeekers.Native.Tests
         }
 
         [Test]
-        public void BlitzHookCannotTargetHiddenEnemyEvenInsideProjectileRadius()
+        public void BlindBlitzHookCanCollideWithConcealedEnemyWithoutAutoCapture()
         {
             var nav = new RiftGrid(RawGrid());
             var m = Started("Blitzcrank", MatchRole.Hunter,
@@ -74,7 +74,10 @@ namespace HextechSeekers.Native.Tests
                                       MatchRole.Hider, false, false)
             };
             Assert.IsTrue(state.TryBlitzHook(nav.Center(200, 200), Vector2.right));
-            Assert.IsNull(state.StepBlitzHook(1f, victim));
+            var impact = state.StepBlitzHook(1f, victim);
+            Assert.IsNotNull(impact, "Skill collision is physical, even in unrevealed grass");
+            Assert.AreEqual(1, impact.TargetId);
+            Assert.AreEqual(0, m.CapturedCount);
             Assert.IsFalse(state.HookActive);
         }
 
