@@ -192,7 +192,10 @@ namespace HextechSeekers.Native
         void OnGUI()
         {
             GUI.color = Color.white;
-            if (ExternalGameplayControl) return;
+            // Do not paint the old debug HUD over the playable role-selection
+            // panel. Keep the debug HUD for the standalone visual-QA mode.
+            var match = GetComponent<NativeMatchController>();
+            if (ExternalGameplayControl || (match && match.enabled)) return;
             GUI.Label(new Rect(18, 16, 1100, 32), "HEXTECH SEEKERS — NATIVE / PHASE 2 · ORIGINAL 3D RIFT");
             if (!ready) { GUI.Label(new Rect(18, 44, Screen.width - 36, 90), "Not ready: " + problem); return; }
             GUI.Label(new Rect(18, 44, 900, 30), $"RMB move | World x={location.x:F0} z={location.y:F0} | Path nodes={route.Length - waypoint}");
