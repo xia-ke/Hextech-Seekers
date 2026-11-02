@@ -557,12 +557,54 @@ namespace HextechSeekers.Native
                     ApplyBotSkillImpact(bot,
                         bot.Combat.TryRivenE(bot.Position, castDirection));
             }
-            else if (bot.Hero == "Yasuo" &&
-                     bot.Loadout.Knows(NativeSkillSlot.W))
+            else if (bot.Hero == "Yasuo")
             {
-                // Skill does not give a free enemy reveal: the tactical AI
-                // has already verified target visibility before casting.
-                bot.Combat.TryYasuoWindWall(bot.Position, direction);
+                BotYasuoHeroQ(bot, targets, direction);
+                if (bot.Loadout.Knows(NativeSkillSlot.W))
+                {
+                    // No additional enemy reveal: each AI has already
+                    // verified personal vision before casting.
+                    bot.Combat.TryYasuoWindWall(bot.Position, direction);
+                }
+            }
+        }
+
+        void BotYasuoHeroQ(Bot bot,
+                             IReadOnlyList<NativeSkillTarget> targets,
+                             Vector2 direction)
+        {
+            if (bot.YasuoSkill == null || !bot.Loadout.Knows(NativeSkillSlot.Q) ||
+                bot.YasuoSkill.CooldownQ > 0 || !hextech.CanUseHeroSkill(bot.Id) ||
+                direction.sqrMagnitude < 1f)
+                return;
+            bool tornadoReady = bot.YasuoSkill.QStacks >= 2;
+            float reach = tornadoReady ? 660f : NativeYasuoSkillState.QReachProvisional;
+            float width = tornadoReady ? 90f : NativeYasuoSkillState.QHalfWidthProvisional;
+            Vector2 facing = direction.normalized;
+            int hitId = -1;
+            float earliest = float.PositiveInfinity;
+            foreach (var target in targets)
+            {
+                if (target.Eliminated || !target.VisibleToCaster) continue;
+                Vector2 displacement = target.Position - bot.Position;
+                float forward = Vector2.Dot(displacement, facing);
+                if (forward < 0 || forward > reach || forward >= earliest)
+                    continue;
+                float sideways = (displacement - facing * forward).sqrMagnitude;
+                if (sideways > width * width ||
+                    !rift.Navigation.LineClear(bot.Position, target.Position))
+                    continue;
+                hitId = target.Id;
+                earliest = forward;
+            }
+            if (bot.YasuoSkill.TryQ(bot.Loadout, rules, hextech, bot.Id,
+                                    hitId >= 0, out bool tornado))
+            {
+                if (tornado && hitId >= 0) heroControl.Apply(hitId, .75f);
+                Debug.Log("NATIVE_YASUO_Q_HERO: actor=" + bot.Id +
+                          " target=" + hitId + " tornado=" + tornado +
+                          " stacks=" + bot.YasuoSkill.QStacks +
+                          " skillCapture=false damage=0");
             }
         }
 
@@ -683,10 +725,12 @@ namespace HextechSeekers.Native
                 // Yasuo Q may legitimately hit a neutral monster to build
                 // tornado stacks, without damage, killing or capturing.
                 // This is mechanics-only; Yasuo's rig/VFX are not imported.
-                BotYasuoNeutralQ(bot);
                 if (bot.Role == MatchRole.Hider && enemyId >= 0)
                     BotYasuoNeutralEscape(bot, enemyId);
                 BotCastChampionSkill(bot, enemyId);
+                // Champion contact is preferred when visible. Otherwise
+                // neutral monsters may legitimately build Q stacks.
+                BotYasuoNeutralQ(bot);
 
                 // AI can use control augments on enemies within its own
                 // perception. Its hextech selection/cooldown is independent.
