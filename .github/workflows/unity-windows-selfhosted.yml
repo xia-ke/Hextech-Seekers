@@ -2,7 +2,7 @@ name: Unity Editor on Windows self-hosted (Personal)
 on:
   workflow_dispatch:
   push:
-    branches: [main, 'fix/**']
+    branches: [main, 'fix/**', 'feat/native-champion-asset-staging']
     paths:
       - '.github/workflows/unity-windows-selfhosted.yml'
       - 'native-unity/**'
