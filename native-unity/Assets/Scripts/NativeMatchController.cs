@@ -1798,6 +1798,7 @@ namespace HextechSeekers.Native
             public bool hiderWinsBySurviving;
             public int numberOfActors;
             public int optionalOriginalSources, optionalOriginalRigs;
+            public int selectableHeroRostersValidated, missingHumanOriginalArt;
         }
 
         IEnumerator VerifyGameplay()
@@ -1851,7 +1852,43 @@ namespace HextechSeekers.Native
                 }
                 if (result.optionalOriginalRigs != result.optionalOriginalSources)
                     throw new InvalidOperationException("Optional original hero rig count mismatch");
+
+                // Real Windows Player acceptance for the selected human identity,
+                // no duplicate hero slots, and honest marker-vs-original source.
+                foreach (string candidate in NativePlayerRoster.Heroes)
+                {
+                    ReturnToRoleSelection();
+                    selectedHero = candidate;
+                    if (!rift.SelectPlayerChampion(candidate))
+                        throw new InvalidOperationException("Player could not select " + candidate);
+                    Configure(MatchRole.Hunter);
+                    if (rules.Players.Count != 4 ||
+                        rules.Find(HumanId).HeroKey != candidate ||
+                        humanLoadout.Hero != candidate)
+                        throw new InvalidOperationException(
+                            "Human champion identity was replaced: " + candidate);
+                    var seenHeroes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var participant in rules.Players)
+                        if (!seenHeroes.Add(participant.HeroKey))
+                            throw new InvalidOperationException(
+                                "Duplicate champion in player roster: " + candidate);
+                    string heroFolder = Path.Combine(Application.streamingAssetsPath,
+                                                     "Champions", candidate);
+                    bool sourceAvailable = candidate == "Garen" ||
+                        GarenRigRuntime.SourceFilesPresent(heroFolder, candidate);
+                    if (sourceAvailable != rift.PlayerHasOriginalRig ||
+                        rift.PlayerHeroName != candidate)
+                        throw new InvalidOperationException(
+                            "Human original art/missing-art marker mismatch: " + candidate);
+                    if (!sourceAvailable) result.missingHumanOriginalArt++;
+                    result.selectableHeroRostersValidated++;
+                    Debug.Log("MATCH_HUMAN_HERO_SELECTION_PASS: " + candidate +
+                              " originalArt=" + sourceAvailable);
+                }
                 ReturnToRoleSelection();
+                selectedHero = "Garen";
+                if (!rift.SelectPlayerChampion(selectedHero))
+                    throw new InvalidOperationException("Cannot restore original Garen");
                 // Unity defers Destroy until frame end; the removed optional
                 // actors no longer participate in the authoritative rules.
                 // Do not yield inside this try/catch (C# CS1626).
@@ -1887,7 +1924,8 @@ namespace HextechSeekers.Native
                     !result.hunterCapturedUsingBasicAttack ||
                     !result.caughtHiderEliminated || !result.hunterEarlyBonusApplied ||
                     !result.hiderCanMoveDuringPreparation || !result.hiderWinsBySurviving ||
-                    result.numberOfActors != 2)
+                    result.numberOfActors != 2 ||
+                    result.selectableHeroRostersValidated != 4)
                     throw new InvalidOperationException("Gameplay smoke assertions failed");
                 result.status = "PASS";
             }
