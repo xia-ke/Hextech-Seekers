@@ -1,11 +1,6 @@
 name: Unity Editor compile and tests (license required)
 on:
   workflow_dispatch:
-  push:
-    branches: [main, 'fix/**']
-    paths:
-      - 'native-unity/**'
-      - '.github/workflows/unity-editor-validation.yml'
 permissions:
   contents: read
 jobs:
