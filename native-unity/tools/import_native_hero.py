@@ -72,8 +72,8 @@ def import_source(hero: str, source: Path, stem: str, destination: Path,
         if binary != hero.lower() + ".bin":
             raise ValueError("Incorrect champion buffer name")
         clips = [item.get("name") for item in manifest.get("clips", [])]
-        if not any(x in clips for x in ("idle", "idle1")) or "run" not in clips:
-            raise ValueError("Original idle and run clips are required")
+        if not any(x in clips for x in ("idle", "idle1")) or "run" not in clips or "attack1" not in clips:
+            raise ValueError("Original idle, run and attack1 clips are required")
         source_provenance = manifest.get("provenance", {})
         if source_provenance.get("meshSHA256") != sha256(mesh):
             raise ValueError("Source mesh SHA256 mismatch after conversion")
@@ -108,12 +108,17 @@ def import_source(hero: str, source: Path, stem: str, destination: Path,
             if sha256(staged / name) != sha256(destination / name):
                 raise IOError("Copied Unity source failed SHA256 verification: " + name)
 
+        binding_target = destination / "animation-bindings.json"
         if animation_binding is not None:
-            binding_target = destination / "animation-bindings.json"
             binding_target.write_text(
                 json.dumps(animation_binding, indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",
             )
+            files.append(binding_target.name)
+        elif binding_target.exists():
+            # A previous import's verified binding may no longer match the new
+            # clips. Never retain stale skill mappings after a model replacement.
+            binding_target.unlink()
 
         report = {
             "hero": hero,
@@ -121,6 +126,7 @@ def import_source(hero: str, source: Path, stem: str, destination: Path,
             "sourceAnimationSha256": source_provenance["animationSHA256"],
             "clips": clips,
             "verifiedAbilityBindings": animation_binding is not None,
+            "bundleSha256": {name: sha256(destination / name) for name in files},
             "source": str(source),
             "status": "SOURCE_PREPARED_NOT_VISUALLY_VALIDATED",
         }
