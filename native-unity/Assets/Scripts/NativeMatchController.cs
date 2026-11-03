@@ -1443,6 +1443,8 @@ namespace HextechSeekers.Native
             public bool hunterLockedDuringPreparation;
             public bool hunterReleasedAfterPreparation;
             public bool hunterCapturedUsingBasicAttack;
+            public bool preferredTargetAcquiredOnRealRift;
+            public bool eliminatedTargetRejectedOnRealRift;
             public bool caughtHiderEliminated;
             public bool hunterEarlyBonusApplied;
             public bool hiderCanMoveDuringPreparation;
@@ -1517,11 +1519,16 @@ namespace HextechSeekers.Native
                 result.hunterReleasedAfterPreparation = rules.CanMove(HumanId);
                 rift.TryTeleportTo(bots[0].Position);
                 bool visible = VisibleTo(HumanId, 2);
+                preferredTargetId = 2;
+                result.preferredTargetAcquiredOnRealRift =
+                    visible && ChooseHumanBasicTarget() == 2;
                 rift.PerformBasicAttack();
                 result.hunterCapturedUsingBasicAttack = rules.TryCapture(HumanId, 2,
                     true, visible, Vector2.Distance(rift.PlayerPosition, bots[0].Position));
                 result.caughtHiderEliminated = rules.Find(2).Eliminated &&
                                                rules.Phase == MatchPhase.Finished;
+                result.eliminatedTargetRejectedOnRealRift =
+                    ChooseHumanBasicTarget() == -1;
                 result.hunterEarlyBonusApplied = rules.Find(HumanId).Score == 2;
 
                 ReturnToRoleSelection();
@@ -1536,6 +1543,8 @@ namespace HextechSeekers.Native
                 if (!result.loadedRift || !result.hunterLockedDuringPreparation ||
                     !result.hunterReleasedAfterPreparation ||
                     !result.hunterCapturedUsingBasicAttack ||
+                    !result.preferredTargetAcquiredOnRealRift ||
+                    !result.eliminatedTargetRejectedOnRealRift ||
                     !result.caughtHiderEliminated || !result.hunterEarlyBonusApplied ||
                     !result.hiderCanMoveDuringPreparation || !result.hiderWinsBySurviving ||
                     result.numberOfActors != 2)
