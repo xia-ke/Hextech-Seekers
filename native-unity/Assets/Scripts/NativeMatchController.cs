@@ -511,6 +511,277 @@ namespace HextechSeekers.Native
             privateFog.UpdateView(rules, viewerId, GetPosition);
         }
 
+        Vector2 HumanAimDirection()
+        {
+            Vector2 origin = rift.PlayerPosition;
+            if (!HoveringHud(Input.mousePosition) &&
+                rift.TryGetWorldPointFromScreen(Input.mousePosition, out var hit))
+            {
+                Vector2 aim = hit - origin;
+                if (aim.sqrMagnitude >= 4f)
+                    humanFacing = aim.normalized;
+            }
+            return humanFacing;
+        }
+
+        void PlayHumanOriginalSkill(NativeSkillSlot slot, int stage = 1)
+        {
+            if (!rift.HeroRig || humanAnimationBindings == null) return;
+            string clip = humanAnimationBindings.Resolve(slot, stage);
+            if (!string.IsNullOrEmpty(clip))
+                rift.HeroRig.TryPlayOriginalSkillClip(clip);
+        }
+
+        void ApplyHumanSkillImpact(NativeSkillImpact impact)
+        {
+            if (impact == null) return;
+            if (impact.CasterLanding.HasValue)
+            {
+                if (!humanDash.Begin(rift.Navigation, rift.PlayerPosition,
+                                    impact.CasterLanding.Value))
+                    Debug.LogWarning("NATIVE_HUMAN_DASH_REJECTED: invalid swept path");
+                else
+                {
+                    rift.StopMovement();
+                    humanContact.Cancel();
+                }
+            }
+            if (impact.TargetId >= 0)
+            {
+                var target = FindBot(impact.TargetId);
+                if (target != null && !rules.Find(target.Id).Eliminated)
+                {
+                    if (impact.TargetLanding.HasValue)
+                    {
+                        target.Dash.Cancel();
+                        target.Pull.Cancel();
+                        target.Path.Clear();
+                        target.Waypoint = 0;
+                        target.BasicContact.Cancel();
+                        if (!target.Pull.Begin(rift.Navigation, target.Position,
+                                               impact.TargetLanding.Value))
+                            Debug.LogWarning("NATIVE_HUMAN_HOOK_PULL_REJECTED: unsafe path");
+                    }
+                    if (impact.LockSeconds > 0f)
+                        ApplyChampionControl(target.Id, impact.LockSeconds);
+                    if (VisibleTo(HumanId, target.Id))
+                        combatVfx?.Impact(HumanId, target.Position, impact.Skill, true);
+                }
+            }
+            foreach (int id in impact.AdditionalHitTargets)
+            {
+                var target = FindBot(id);
+                if (target == null || rules.Find(id).Eliminated) continue;
+                if (impact.LockSeconds > 0f)
+                    ApplyChampionControl(id, impact.LockSeconds);
+                if (VisibleTo(HumanId, id))
+                    combatVfx?.Impact(HumanId, target.Position, impact.Skill, true);
+            }
+            int stage = impact.Skill.EndsWith("Q3", StringComparison.Ordinal) ? 3 :
+                        impact.Skill.EndsWith("Q2", StringComparison.Ordinal) ? 2 : 1;
+            if (impact.Skill.StartsWith("Riven Q", StringComparison.Ordinal))
+                PlayHumanOriginalSkill(NativeSkillSlot.Q, stage);
+            else if (impact.Skill == "Riven W")
+                PlayHumanOriginalSkill(NativeSkillSlot.W);
+            else if (impact.Skill == "Riven E")
+                PlayHumanOriginalSkill(NativeSkillSlot.E);
+            combatVfx?.Pulse(HumanId, rift.PlayerPosition, impact.Skill);
+            feedback = impact.Skill + " applied (no skill capture or damage)";
+            Debug.Log("NATIVE_HUMAN_SKILL: " + impact.Skill +
+                      " target=" + impact.TargetId + " capture=false");
+        }
+
+        bool TryHumanYasuoQ(Vector2 origin, Vector2 direction)
+        {
+            if (humanYasuo == null ||
+                humanYasuoQFlight != null && humanYasuoQFlight.Active)
+                return false;
+            if (!humanYasuo.TryQ(humanLoadout, rules, hextech, HumanId,
+                                 false, out bool tornado))
+                return false;
+            float reach = tornado ? 660f : NativeYasuoSkillState.QReachProvisional;
+            float width = tornado ? 90f : NativeYasuoSkillState.QHalfWidthProvisional;
+            var shot = new NativeDirectionalProjectile();
+            if (!shot.Begin(HumanId, humanRole,
+                            tornado ? "Yasuo Q Tornado" : "Yasuo Q",
+                            origin, direction, reach, 1900f, width,
+                            rift.Navigation))
+            {
+                Debug.LogWarning("NATIVE_HUMAN_YASUO_Q_PROJECTILE_REJECTED");
+                return false;
+            }
+            humanYasuoQFlight = shot;
+            humanYasuoQTornadoFlight = tornado;
+            // Real neutral monsters can grant normal Yasuo Q stacks without
+            // receiving damage. This uses the verified nav/neutral contact.
+            if (!tornado && rift.NeutralMonsters != null &&
+                rift.NeutralMonsters.HasVerifiedCamps)
+            {
+                var monster = rift.NeutralMonsters.FirstLineContact(
+                    origin, direction, reach, width);
+                if (monster != null)
+                {
+                    humanYasuo.RegisterQHit(false);
+                    Debug.Log("NATIVE_HUMAN_YASUO_Q_NEUTRAL: " + monster.CampName);
+                }
+            }
+            PlayHumanOriginalSkill(NativeSkillSlot.Q, tornado ? 3 : 1);
+            combatVfx?.Pulse(HumanId, origin,
+                            tornado ? "Yasuo Q Tornado" : "Yasuo Q");
+            feedback = tornado ? "Yasuo tornado launched" : "Yasuo Q launched";
+            return true;
+        }
+
+        bool TryHumanYasuoE(Vector2 origin)
+        {
+            if (humanYasuo == null) return false;
+            NativeSkillTarget chosen = default;
+            bool found = false;
+            float nearest = float.PositiveInfinity;
+            foreach (var target in GetSkillTargets(HumanId))
+            {
+                if (target.Eliminated || !target.VisibleToCaster) continue;
+                float d = (target.Position - origin).sqrMagnitude;
+                if (d < nearest)
+                {
+                    chosen = target;
+                    nearest = d;
+                    found = true;
+                }
+            }
+            Vector2 destination;
+            if (found && humanYasuo.TryEDashThroughHero(
+                    humanLoadout, rules, hextech, HumanId, origin, chosen,
+                    rift.Navigation, out destination))
+            {
+                if (!humanDash.Begin(rift.Navigation, origin, destination))
+                    return false;
+                rift.StopMovement();
+                humanContact.Cancel();
+                PlayHumanOriginalSkill(NativeSkillSlot.E);
+                combatVfx?.Pulse(HumanId, origin, "Yasuo E Hero");
+                feedback = "Yasuo E through visible enemy; no capture";
+                return true;
+            }
+            if (rift.NeutralMonsters == null ||
+                !rift.NeutralMonsters.HasVerifiedCamps) return false;
+            foreach (var monster in rift.NeutralMonsters.Monsters)
+            {
+                if ((monster.WalkableAnchor - origin).sqrMagnitude >
+                    NativeYasuoSkillState.EDashRangeProvisional *
+                    NativeYasuoSkillState.EDashRangeProvisional) continue;
+                if (!humanYasuo.TryEDashToMonster(
+                        humanLoadout, rules, hextech, HumanId, origin,
+                        monster.Id, rift.NeutralMonsters, out destination))
+                    continue;
+                if (!humanDash.Begin(rift.Navigation, origin, destination))
+                    return false;
+                rift.StopMovement();
+                humanContact.Cancel();
+                PlayHumanOriginalSkill(NativeSkillSlot.E);
+                combatVfx?.Pulse(HumanId, origin, "Yasuo E Neutral");
+                feedback = "Yasuo E through neutral; monster remains alive";
+                return true;
+            }
+            return false;
+        }
+
+        void TryHumanSkill(NativeSkillSlot slot)
+        {
+            if (humanLoadout == null || !humanLoadout.Knows(slot) ||
+                !rules.CanMove(HumanId) || !hextech.CanUseHeroSkill(HumanId) ||
+                heroControl.Locked(HumanId) || humanDash.Active ||
+                humanPull.Active)
+            {
+                feedback = "Skill unavailable: unlearned, silenced, stunned or moving";
+                return;
+            }
+            if (selectedHero == "Garen")
+            {
+                TryGarenSkill(slot);
+                return;
+            }
+            Vector2 origin = rift.PlayerPosition;
+            Vector2 direction = HumanAimDirection();
+            bool cast = false;
+            if (selectedHero == "Blitzcrank")
+            {
+                switch (slot)
+                {
+                    case NativeSkillSlot.Q:
+                        cast = humanCombat.TryBlitzHook(origin, direction);
+                        break;
+                    case NativeSkillSlot.W:
+                        cast = humanCombat.TryBlitzW();
+                        break;
+                    case NativeSkillSlot.E:
+                        cast = humanCombat.TryBlitzE();
+                        break;
+                }
+                if (cast)
+                {
+                    PlayHumanOriginalSkill(slot);
+                    combatVfx?.Pulse(HumanId, origin, "Blitzcrank " + slot);
+                    feedback = "Blitzcrank " + slot + " cast; no skill capture";
+                }
+            }
+            else if (selectedHero == "Riven")
+            {
+                NativeSkillImpact impact = slot == NativeSkillSlot.Q ?
+                    humanCombat.TryRivenQ(origin, direction, GetSkillTargets(HumanId)) :
+                    slot == NativeSkillSlot.W ?
+                    humanCombat.TryRivenW(origin, GetSkillTargets(HumanId)) :
+                    humanCombat.TryRivenE(origin, direction);
+                cast = impact != null;
+                if (cast) ApplyHumanSkillImpact(impact);
+            }
+            else if (selectedHero == "Yasuo")
+            {
+                if (slot == NativeSkillSlot.Q)
+                    cast = TryHumanYasuoQ(origin, direction);
+                else if (slot == NativeSkillSlot.W)
+                {
+                    cast = humanCombat.TryYasuoWindWall(origin, direction);
+                    if (cast)
+                    {
+                        PlayHumanOriginalSkill(slot);
+                        combatVfx?.Pulse(HumanId, origin, "Yasuo W");
+                    }
+                }
+                else if (slot == NativeSkillSlot.E)
+                    cast = TryHumanYasuoE(origin);
+            }
+            if (!cast) feedback = selectedHero + " " + slot +
+                " unavailable (cooldown, range, obstacle or no valid target)";
+        }
+
+        void TickHumanProjectiles(float dt)
+        {
+            if (rules.Phase == MatchPhase.Finished) return;
+            if (humanCombat != null && humanCombat.HookActive)
+                ApplyHumanSkillImpact(humanCombat.StepBlitzHook(
+                    dt, GetSkillTargets(HumanId), ActiveEnemyWindWall(HumanId)));
+            if (humanYasuoQFlight == null || !humanYasuoQFlight.Active) return;
+            var impact = humanYasuoQFlight.Step(dt, rift.Navigation,
+                GetSkillTargets(HumanId), ActiveEnemyWindWall(HumanId),
+                humanCombat != null ? humanCombat.Elapsed : hextech.Elapsed);
+            if (impact == null) return;
+            if (impact.TargetId >= 0 && !rules.Find(impact.TargetId).Eliminated)
+            {
+                if (humanYasuoQTornadoFlight)
+                    ApplyChampionControl(impact.TargetId, .75f);
+                else
+                    humanYasuo?.RegisterQHit(false);
+                if (VisibleTo(HumanId, impact.TargetId))
+                    combatVfx?.Impact(HumanId, GetPosition(impact.TargetId),
+                                      impact.Skill, true);
+            }
+            Debug.Log("NATIVE_HUMAN_Q_CONTACT: " + impact.Skill +
+                      " target=" + impact.TargetId +
+                      " blocked=" + impact.ProjectileBlocked +
+                      " capture=false");
+        }
+
         void TryGarenSkill(NativeSkillSlot slot)
         {
             if (garenSkills.TryCast(slot, humanLoadout, rules, hextech, HumanId, false))
