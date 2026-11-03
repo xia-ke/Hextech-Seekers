@@ -287,6 +287,8 @@ namespace HextechSeekers.Native
             {
                 hextech.Advance(dt);
                 garenSkills.Advance(dt);
+                humanCombat?.Advance(dt);
+                humanYasuo?.Advance(dt);
                 heroControl.Advance(dt);
                 rules.Advance(dt);
             }
@@ -300,16 +302,30 @@ namespace HextechSeekers.Native
                 (Vector2?)GetPosition(spectatedId) : null;
             rift.ExternalMoveEnabled = rules.CanMove(HumanId) &&
                 !hextech.Stunned(HumanId) && !heroControl.Locked(HumanId) &&
-                !humanPull.Active;
+                !humanPull.Active && !humanDash.Active;
             rift.ExternalMoveMultiplier =
                 (humanRole == MatchRole.Hunter ? HunterSpeed / HiderSpeed : 1f) *
-                hextech.MoveMultiplier(HumanId) * garenSkills.MovementMultiplier;
+                hextech.MoveMultiplier(HumanId) *
+                (selectedHero == "Garen" ? garenSkills.MovementMultiplier : 1f) *
+                (humanCombat != null ? humanCombat.MoveMultiplier : 1f);
             if (!rift.ExternalMoveEnabled) rift.StopMovement();
             if (humanPull.Active)
             {
+                humanDash.Cancel();
                 Vector2 pulled = humanPull.Step(dt);
                 if (!rift.TrySetExternalPosition(pulled)) humanPull.Cancel();
             }
+            if (humanDash.Active)
+            {
+                if (hextech.Stunned(HumanId) || heroControl.Locked(HumanId) ||
+                    !rules.CanMove(HumanId))
+                    humanDash.Cancel();
+                else if (!rift.TrySetExternalPosition(humanDash.Step(dt)))
+                    humanDash.Cancel();
+            }
+            // Already fired projectiles continue after their caster is stunned.
+            // None of these skills can directly capture a hider.
+            TickHumanProjectiles(dt);
             if (rules.Phase == MatchPhase.Finished)
             {
                 rift.StopMovement();
@@ -335,8 +351,9 @@ namespace HextechSeekers.Native
                 if (Input.GetKeyDown(KeyCode.S)) rift.StopMovement();
                 if (Input.GetMouseButtonDown(1) && !HoveringHud(Input.mousePosition))
                     rift.TryNavigateFromScreen(Input.mousePosition);
-                if (Input.GetKeyDown(KeyCode.Q)) TryGarenSkill(NativeSkillSlot.Q);
-                if (Input.GetKeyDown(KeyCode.W)) TryGarenSkill(NativeSkillSlot.W);
+                if (Input.GetKeyDown(KeyCode.Q)) TryHumanSkill(NativeSkillSlot.Q);
+                if (Input.GetKeyDown(KeyCode.W)) TryHumanSkill(NativeSkillSlot.W);
+                if (Input.GetKeyDown(KeyCode.E)) TryHumanSkill(NativeSkillSlot.E);
             }
             basicCooldown = Mathf.Max(0f, basicCooldown - dt);
             if (!rules.Find(HumanId).Eliminated && Input.GetKeyDown(KeyCode.Tab))
@@ -352,7 +369,7 @@ namespace HextechSeekers.Native
                 var target = NearestVisibleEnemy(HumanId);
                 if (target != null)
                     humanContact.Begin(target.Id);
-                combatVfx?.Pulse(HumanId, rift.PlayerPosition, "Garen Basic");
+                combatVfx?.Pulse(HumanId, rift.PlayerPosition, selectedHero + " Basic");
                 feedback = "Attack animation started; target hit checked at contact frame.";
             }
 
@@ -360,9 +377,20 @@ namespace HextechSeekers.Native
             foreach (var bot in bots) UpdateBot(bot, dt);
             UpdateMarkers();
             UpdatePrivateFog();
-            combatVfx?.SetDash(HumanId,
-                garenSkills.QActive && rift.PlayerMoving,
-                previousHumanVisualPosition, rift.PlayerPosition, "Garen");
+            bool abilityDash = humanDash.Active ||
+                selectedHero == "Garen" && garenSkills.QActive && rift.PlayerMoving;
+            combatVfx?.SetDash(HumanId, abilityDash,
+                previousHumanVisualPosition, rift.PlayerPosition, selectedHero);
+            if (humanCombat != null)
+            {
+                combatVfx?.SetHook(HumanId, humanCombat.HookActive,
+                    humanCombat.HookLaunchPosition, humanCombat.HookTipPosition);
+                combatVfx?.SetWindWall(HumanId, humanCombat.WindWall);
+            }
+            if (humanYasuoQFlight != null)
+                combatVfx?.SetYasuoQ(HumanId, humanYasuoQFlight.Active,
+                    humanYasuoQFlight.Origin, humanYasuoQFlight.Position,
+                    humanYasuoQTornadoFlight);
             previousHumanVisualPosition = rift.PlayerPosition;
             TickCombatPresentation();
         }
@@ -412,6 +440,14 @@ namespace HextechSeekers.Native
                 hextech.Stunned(HumanId) || heroControl.Locked(HumanId)) return;
             bool seen = VisibleTo(HumanId, targetId);
             float distance = Vector2.Distance(rift.PlayerPosition, GetPosition(targetId));
+            if (!rules.IsValidCaptureHit(HumanId, targetId, true, seen, distance))
+            {
+                feedback = "Contact missed or target moved out of range.";
+                return;
+            }
+            if (humanCombat != null &&
+                humanCombat.ConsumeEmpoweredBasicAttack(out float airborne))
+                ApplyChampionControl(targetId, airborne);
             bool caught = hextech.TryBasicAttackCapture(
                 HumanId, targetId, true, seen, distance);
             feedback = caught ? "Contact: captured " + target.HeroKey :
@@ -479,9 +515,7 @@ namespace HextechSeekers.Native
         {
             if (garenSkills.TryCast(slot, humanLoadout, rules, hextech, HumanId, false))
             {
-                if (rift.HeroRig && garenAnimationBindings != null)
-                    rift.HeroRig.TryPlayOriginalSkillClip(
-                        garenAnimationBindings.Resolve(slot));
+                PlayHumanOriginalSkill(slot);
                 combatVfx?.Pulse(HumanId, rift.PlayerPosition, "Garen " + slot);
                 feedback = slot == NativeSkillSlot.Q ?
                     "Garen Q: slow cleanse + brief movement speed (tuning pending)" :
@@ -649,6 +683,9 @@ namespace HextechSeekers.Native
         NativeWindWall ActiveEnemyWindWall(int actorId)
         {
             var actor = rules.Find(actorId);
+            if (actorId != HumanId && humanCombat != null &&
+                humanRole != actor.Role && humanCombat.WindWall != null)
+                return humanCombat.WindWall;
             foreach (var bot in bots)
                 if (bot.Id != actorId && bot.Role != actor.Role &&
                     bot.Combat != null && bot.Combat.WindWall != null)
