@@ -83,6 +83,8 @@ def validate_bundle(folder: Path, hero: str) -> dict:
     if not isinstance(manifest.get("geometry"), dict) or not manifest["geometry"]:
         raise ValueError("Original geometry missing: " + hero)
 
+    # Reject path traversal before comparing SHA256 inventories.
+    regular_file(folder, texture)
     files = [name + ".json", binary, texture]
     bindings_file = folder / "animation-bindings.json"
     has_bindings = bindings_file.is_file()
@@ -106,8 +108,9 @@ def validate_bundle(folder: Path, hero: str) -> dict:
         file = regular_file(folder, name)
         if not isinstance(hashes[name], str) or not HASH_RE.fullmatch(hashes[name]) or digest(file) != hashes[name]:
             raise ValueError("Imported Unity source SHA256 mismatch: " + hero + "/" + name)
-    if regular_file(folder, texture).open("rb").read(8) != b"\x89PNG\r\n\x1a\n":
-        raise ValueError("Original source texture does not contain PNG bytes: " + hero)
+    with regular_file(folder, texture).open("rb") as image:
+        if image.read(8) != b"\x89PNG\r\n\x1a\n":
+            raise ValueError("Original source texture does not contain PNG bytes: " + hero)
 
     return {"hero": hero, "clips": clip_names, "files": files,
             "verifiedAbilityBindings": has_bindings}
@@ -124,8 +127,13 @@ def install_one(source_folder: Path, target_root: Path, hero: str) -> dict:
         staged.mkdir()
         for name in report["files"]:
             shutil.copyfile(source_folder / name, staged / name)
-        shutil.copyfile(source_folder / "local-import-provenance.json",
-                        staged / "local-import-provenance.json")
+        # Keep absolute workstation paths out of the packaged Windows Player.
+        receipt = json.loads(
+            (source_folder / "local-import-provenance.json").read_text(encoding="utf-8"))
+        receipt.pop("source", None)
+        (staged / "local-import-provenance.json").write_text(
+            json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
         copied = validate_bundle(staged, hero)
         destination = target_root / hero
         backup = Path(staging_dir) / "previous"
