@@ -114,6 +114,39 @@ def verify(directory):
     for key in expected_true:
         if player.get(key) is not True:
             raise ValueError(f"Player report {key} is not true")
+
+    # Trial-license watermarks are NOT removed from images and are tracked
+    # explicitly as warnings. They do not block technical GPU acceptance.
+    # Development/debug overlays, by contrast, must stay disabled in QA.
+    if not isinstance(player.get("unityWatermarkVisible"), bool):
+        raise ValueError("Player did not report a boolean unityWatermarkVisible")
+    if player.get("trialWatermarkIgnoredForTechnicalQa") is not player["unityWatermarkVisible"]:
+        raise ValueError("Trial watermark warning status does not match Unity's visibility report")
+    for key in ("developmentWatermarkEnabled", "debugHudEnabled"):
+        if player.get(key) is not False:
+            raise ValueError(f"Player report {key} must be false; got {player.get(key)!r}")
+
+    conversion_path = directory / "map-conversion.json"
+    if not conversion_path.is_file():
+        raise ValueError("Missing map-conversion.json; alpha-channel/material audit was not attached")
+    conversion = json.loads(conversion_path.read_text(encoding="utf-8-sig"))
+    alpha_audit = conversion.get("alphaAudit")
+    if not isinstance(alpha_audit, dict):
+        raise ValueError("map-conversion.json has no alphaAudit report")
+    suspicious_foliage = [
+        item for item in alpha_audit.get("materials", [])
+        if item.get("alphaMode") == "OPAQUE"
+        and any(token in str(item.get("name", "")).lower()
+                for token in ("leaf", "leaves", "foliage", "grass", "tree", "bush", "plant", "shrub"))
+    ]
+    if suspicious_foliage:
+        names = ", ".join(str(item.get("name") or item.get("materialIndex"))
+                          for item in suspicious_foliage[:12])
+        raise ValueError(
+            "Vegetation base-color textures contain transparency but their glTF materials use OPAQUE alphaMode: " +
+            names
+        )
+
     if player.get("mapRendererCount", 0) < 1:
         raise ValueError("No 3D map renderers were instantiated")
     if player.get("frames", 0) < 100:
@@ -138,6 +171,15 @@ def verify(directory):
         "mapRendererCount": player.get("mapRendererCount"),
         "fpsAverage": player.get("fpsAverage"),
         "worstFrameMilliseconds": player.get("worstFrameMilliseconds"),
+        "unityWatermarkVisible": player.get("unityWatermarkVisible"),
+        "trialWatermarkIgnoredForTechnicalQa": player.get("trialWatermarkIgnoredForTechnicalQa"),
+        "technicalWarning": (
+            "Unity Trial watermark remains visible in evidence; ignored for technical smoke QA"
+            if player["unityWatermarkVisible"] else None
+        ),
+        "developmentWatermarkEnabled": player.get("developmentWatermarkEnabled"),
+        "debugHudEnabled": player.get("debugHudEnabled"),
+        "alphaAudit": alpha_audit,
         "screenshots": images,
         "remainingVisualChecks": [
             "Confirm original 3D map geometry, materials and lighting are legible",
@@ -167,6 +209,7 @@ def main():
             "Unity: " + str(result["editorVersion"]),
             "Map renderers: " + str(result["mapRendererCount"]),
             "Average FPS: " + str(result["fpsAverage"]),
+            "Trial watermark visible (non-blocking): " + str(result["unityWatermarkVisible"]),
             "",
             "Inspect native-idle.png, native-run.png, native-attack.png side-by-side.",
             "Do not claim scene/animation fidelity accepted until manual visual inspection.",

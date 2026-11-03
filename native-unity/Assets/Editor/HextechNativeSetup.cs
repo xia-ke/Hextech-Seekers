@@ -22,43 +22,164 @@ namespace HextechSeekers.Native.Editor
             "Shader Graphs/glTF-pbrMetallicRoughness"
         };
 
+        static Material EnsureRetainedMaterial(string assetPath, Shader shader, Action<Material> configure)
+        {
+            var material = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
+            if (!material)
+            {
+                material = new Material(shader) {
+                    name = Path.GetFileNameWithoutExtension(assetPath)
+                };
+                AssetDatabase.CreateAsset(material, assetPath);
+            }
+            else if (material.shader != shader)
+            {
+                material.shader = shader;
+            }
+
+            configure?.Invoke(material);
+            EditorUtility.SetDirty(material);
+            return material;
+        }
+
         static void EnsureGltfShaderResources()
         {
             const string folder = "Assets/Resources/Native/GLTFast";
+            if (!AssetDatabase.IsValidFolder("Assets/Resources"))
+                AssetDatabase.CreateFolder("Assets", "Resources");
+            if (!AssetDatabase.IsValidFolder("Assets/Resources/Native"))
+                AssetDatabase.CreateFolder("Assets/Resources", "Native");
             if (!AssetDatabase.IsValidFolder(folder))
                 AssetDatabase.CreateFolder("Assets/Resources/Native", "GLTFast");
-            foreach (string shaderName in GltfShaderNames)
-            {
-                var shader = Shader.Find(shaderName);
-                if (!shader)
-                    throw new InvalidDataException("Required glTFast shader not found in Editor: " + shaderName);
-                string file = shaderName.EndsWith("glTF-unlit", StringComparison.Ordinal)
-                    ? "GltfUnlit.mat" : "GltfPbrMetallicRoughness.mat";
-                string assetPath = folder + "/" + file;
-                var material = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
-                if (!material)
+
+            var unlitShader = Shader.Find("Shader Graphs/glTF-unlit");
+            var pbrShader = Shader.Find("Shader Graphs/glTF-pbrMetallicRoughness");
+            if (!unlitShader)
+                throw new InvalidDataException("Required glTFast shader not found in Editor: Shader Graphs/glTF-unlit");
+            if (!pbrShader)
+                throw new InvalidDataException("Required glTFast shader not found in Editor: Shader Graphs/glTF-pbrMetallicRoughness");
+
+            EnsureRetainedMaterial(folder + "/GltfUnlit.mat", unlitShader, null);
+            EnsureRetainedMaterial(folder + "/GltfPbrMetallicRoughness.mat", pbrShader, null);
+
+            // glTFast enables _ALPHATEST_ON and _AlphaClip for glTF MASK
+            // materials at runtime. Keep that exact Shader Graph variant in a
+            // Resources material so Unity's Player build cannot strip it.
+            var alphaMask = EnsureRetainedMaterial(
+                folder + "/GltfPbrMetallicRoughnessAlphaMask.mat",
+                pbrShader,
+                material =>
                 {
-                    material = new Material(shader) { name = Path.GetFileNameWithoutExtension(file) };
-                    AssetDatabase.CreateAsset(material, assetPath);
-                }
-                else if (material.shader != shader)
+                    if (!material.HasProperty("alphaCutoff") ||
+                        !material.HasProperty("_AlphaClip") ||
+                        !material.HasProperty("_Cull"))
+                        throw new InvalidDataException("glTFast PBR Shader Graph lacks alpha-mask properties.");
+
+                    material.SetFloat("alphaCutoff", 0.5f);
+                    material.SetFloat("_AlphaClip", 1f);
+                    // Foliage cards are commonly authored double-sided. The
+                    // runtime importer still applies each glTF material's
+                    // doubleSided flag; this retained variant only preserves
+                    // the alpha-test shader variant.
+                    material.SetFloat("_Cull", 0f);
+                    material.EnableKeyword("_ALPHATEST_ON");
+                    material.SetOverrideTag("RenderType", "TransparentCutout");
+                    material.renderQueue = (int)RenderQueue.AlphaTest;
+                });
+
+            // Preserve the separate BLEND variant as well. It is not a
+            // substitute for MASK; it prevents alpha-blended glTF materials
+            // from silently falling back to an opaque Player variant.
+            var alphaBlend = EnsureRetainedMaterial(
+                folder + "/GltfPbrMetallicRoughnessAlphaBlend.mat",
+                pbrShader,
+                material =>
                 {
-                    material.shader = shader;
-                    EditorUtility.SetDirty(material);
-                }
-                Debug.Log("NATIVE_GLTF_SHADER_PINNED: " + shaderName + " -> " + assetPath);
-            }
+                    if (!material.HasProperty("_Surface"))
+                        throw new InvalidDataException("glTFast PBR Shader Graph lacks _Surface property.");
+
+                    material.SetFloat("_Surface", 1f);
+                    material.SetFloat("_SrcBlend", (int)BlendMode.SrcAlpha);
+                    material.SetFloat("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
+                    material.SetFloat("_AlphaDstBlend", (int)BlendMode.OneMinusSrcAlpha);
+                    material.SetFloat("_ZWrite", 0f);
+                    material.SetFloat("_Cull", 0f);
+                    material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                    material.EnableKeyword("_DISABLE_SSR_TRANSPARENT");
+                    material.EnableKeyword("_ENABLE_FOG_ON_TRANSPARENT");
+                    material.SetOverrideTag("RenderType", "Transparent");
+                    material.renderQueue = (int)RenderQueue.Transparent;
+                });
+
+            var unlitAlphaMask = EnsureRetainedMaterial(
+                folder + "/GltfUnlitAlphaMask.mat",
+                unlitShader,
+                material =>
+                {
+                    if (!material.HasProperty("alphaCutoff") ||
+                        !material.HasProperty("_AlphaClip") ||
+                        !material.HasProperty("_Cull"))
+                        throw new InvalidDataException("glTFast Unlit Shader Graph lacks alpha-mask properties.");
+                    material.SetFloat("alphaCutoff", 0.5f);
+                    material.SetFloat("_AlphaClip", 1f);
+                    material.SetFloat("_Cull", 0f);
+                    material.EnableKeyword("_ALPHATEST_ON");
+                    material.SetOverrideTag("RenderType", "TransparentCutout");
+                    material.renderQueue = (int)RenderQueue.AlphaTest;
+                });
+
+            var unlitAlphaBlend = EnsureRetainedMaterial(
+                folder + "/GltfUnlitAlphaBlend.mat",
+                unlitShader,
+                material =>
+                {
+                    if (!material.HasProperty("_Surface"))
+                        throw new InvalidDataException("glTFast Unlit Shader Graph lacks _Surface property.");
+                    material.SetFloat("_Surface", 1f);
+                    material.SetFloat("_SrcBlend", (int)BlendMode.SrcAlpha);
+                    material.SetFloat("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
+                    material.SetFloat("_AlphaDstBlend", (int)BlendMode.OneMinusSrcAlpha);
+                    material.SetFloat("_ZWrite", 0f);
+                    material.SetFloat("_Cull", 0f);
+                    material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                    material.EnableKeyword("_DISABLE_SSR_TRANSPARENT");
+                    material.EnableKeyword("_ENABLE_FOG_ON_TRANSPARENT");
+                    material.SetOverrideTag("RenderType", "Transparent");
+                    material.renderQueue = (int)RenderQueue.Transparent;
+                });
+
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
+
             var retained = Resources.LoadAll<Material>("Native/GLTFast");
             foreach (string shaderName in GltfShaderNames)
             {
                 bool found = false;
                 foreach (var material in retained)
-                    if (material && material.shader && material.shader.name == shaderName) found = true;
-                if (!found) throw new InvalidDataException("glTFast shader not retained in Resources: " + shaderName);
+                    if (material && material.shader && material.shader.name == shaderName)
+                        found = true;
+                if (!found)
+                    throw new InvalidDataException("glTFast shader not retained in Resources: " + shaderName);
             }
+
+            if (!alphaMask || !alphaMask.IsKeywordEnabled("_ALPHATEST_ON") ||
+                alphaMask.GetFloat("_AlphaClip") < 0.5f ||
+                alphaMask.renderQueue != (int)RenderQueue.AlphaTest)
+                throw new InvalidDataException("glTFast MASK shader variant was not retained correctly.");
+            if (!alphaBlend || !alphaBlend.IsKeywordEnabled("_SURFACE_TYPE_TRANSPARENT") ||
+                alphaBlend.renderQueue != (int)RenderQueue.Transparent)
+                throw new InvalidDataException("glTFast PBR BLEND shader variant was not retained correctly.");
+            if (!unlitAlphaMask || !unlitAlphaMask.IsKeywordEnabled("_ALPHATEST_ON") ||
+                unlitAlphaMask.GetFloat("_AlphaClip") < 0.5f ||
+                unlitAlphaMask.renderQueue != (int)RenderQueue.AlphaTest)
+                throw new InvalidDataException("glTFast Unlit MASK shader variant was not retained correctly.");
+            if (!unlitAlphaBlend || !unlitAlphaBlend.IsKeywordEnabled("_SURFACE_TYPE_TRANSPARENT") ||
+                unlitAlphaBlend.renderQueue != (int)RenderQueue.Transparent)
+                throw new InvalidDataException("glTFast Unlit BLEND shader variant was not retained correctly.");
+
             Debug.Log("NATIVE_GLTF_SHADER_RESOURCES_READY: " + retained.Length);
+            Debug.Log("NATIVE_GLTF_ALPHA_VARIANTS_READY: mask=true blend=true");
+            Debug.Log("NATIVE_GLTF_ALPHA_VARIANTS_DETAIL: pbrMask=true pbrBlend=true unlitMask=true unlitBlend=true");
         }
 
         static void EnsureGarenRuntimeMaterial()

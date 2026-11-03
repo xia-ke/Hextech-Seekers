@@ -70,32 +70,95 @@ namespace HextechSeekers.Native
                 if (!found)
                     throw new InvalidDataException("Required glTFast Player shader is not retained/supported: " + shaderName);
             }
+
+            bool pbrAlphaMask = false, pbrAlphaBlend = false;
+            bool unlitAlphaMask = false, unlitAlphaBlend = false;
+            foreach (var material in retainedGltfFastMaterials)
+            {
+                if (!material || !material.shader || !material.shader.isSupported) continue;
+                bool mask = material.IsKeywordEnabled("_ALPHATEST_ON") &&
+                    material.HasProperty("_AlphaClip") && material.GetFloat("_AlphaClip") >= 0.5f;
+                bool blend = material.IsKeywordEnabled("_SURFACE_TYPE_TRANSPARENT");
+                string shaderName = material.shader.name;
+                if (shaderName == "Shader Graphs/glTF-pbrMetallicRoughness")
+                {
+                    pbrAlphaMask |= mask;
+                    pbrAlphaBlend |= blend;
+                }
+                else if (shaderName == "Shader Graphs/glTF-unlit")
+                {
+                    unlitAlphaMask |= mask;
+                    unlitAlphaBlend |= blend;
+                }
+            }
+            if (!pbrAlphaMask || !pbrAlphaBlend || !unlitAlphaMask || !unlitAlphaBlend)
+                throw new InvalidDataException(
+                    "Required glTFast alpha variants are not retained in the Player: " +
+                    "pbrMask=" + pbrAlphaMask + " pbrBlend=" + pbrAlphaBlend +
+                    " unlitMask=" + unlitAlphaMask + " unlitBlend=" + unlitAlphaBlend);
+
             Debug.Log("NATIVE_GLTF_SHADERS_PRELOADED: materials=" + retainedGltfFastMaterials.Length);
+            Debug.Log("NATIVE_GLTF_ALPHA_VARIANTS_PRELOADED: pbrMask=true pbrBlend=true unlitMask=true unlitBlend=true");
         }
 
         static int ValidateMapMaterials(GameObject map)
         {
             int rendererCount = 0;
             int materialCount = 0;
+            int alphaMaskCount = 0;
+            int alphaBlendCount = 0;
+            int doubleSidedCount = 0;
+
             foreach (var renderer in map.GetComponentsInChildren<Renderer>(true))
             {
                 var filter = renderer.GetComponent<MeshFilter>();
                 var skinned = renderer as SkinnedMeshRenderer;
                 if ((!filter || !filter.sharedMesh) && (!skinned || !skinned.sharedMesh)) continue;
                 rendererCount++;
+
                 var materials = renderer.sharedMaterials;
                 if (materials == null || materials.Length == 0)
                     throw new InvalidDataException("Rift mesh has no material after glTFast import: " + renderer.name);
+
                 foreach (var material in materials)
                 {
                     if (!material || !material.shader || !material.shader.isSupported ||
                         material.shader.name == "Hidden/InternalErrorShader")
                         throw new InvalidDataException("Rift mesh has a missing/unsupported shader: " + renderer.name);
+
+                    bool alphaMask = material.IsKeywordEnabled("_ALPHATEST_ON");
+                    bool alphaBlend = material.IsKeywordEnabled("_SURFACE_TYPE_TRANSPARENT");
+                    if (alphaMask)
+                    {
+                        alphaMaskCount++;
+                        if (!material.HasProperty("_AlphaClip") ||
+                            material.GetFloat("_AlphaClip") < 0.5f ||
+                            !material.HasProperty("alphaCutoff"))
+                            throw new InvalidDataException(
+                                "Rift MASK material is missing its Alpha Clip/Cutoff state: " +
+                                renderer.name + "/" + material.name);
+                    }
+                    if (alphaBlend)
+                    {
+                        alphaBlendCount++;
+                        if (material.renderQueue < (int)UnityEngine.Rendering.RenderQueue.Transparent)
+                            throw new InvalidDataException(
+                                "Rift BLEND material is not in the transparent render queue: " +
+                                renderer.name + "/" + material.name);
+                    }
+                    if (material.HasProperty("_Cull") &&
+                        Mathf.RoundToInt(material.GetFloat("_Cull")) == 0)
+                        doubleSidedCount++;
+
                     materialCount++;
                 }
             }
+
             if (rendererCount == 0 || materialCount == 0)
                 throw new InvalidDataException("Rift GLB instantiated without renderable mesh materials");
+
+            Debug.Log("NATIVE_MAP_ALPHA_MATERIAL_AUDIT: mask=" + alphaMaskCount +
+                      " blend=" + alphaBlendCount + " doubleSided=" + doubleSidedCount);
             Debug.Log("NATIVE_MAP_MATERIAL_AUDIT_PASS: renderers=" + rendererCount +
                       " materials=" + materialCount);
             return rendererCount;
@@ -307,11 +370,18 @@ namespace HextechSeekers.Native
         {
             TryNavigateFromScreen(Input.mousePosition);
         }
+        static bool DebugHudRequested()
+        {
+            return Array.IndexOf(Environment.GetCommandLineArgs(), "-hextechDebugHud") >= 0;
+        }
+
         void OnGUI()
         {
+            // Release Player and automated visual captures are clean by default.
+            // The diagnostic overlay is available only through an explicit flag.
+            if (!DebugHudRequested()) return;
+
             GUI.color = Color.white;
-            // Do not paint the old debug HUD over the playable role-selection
-            // panel. Keep the debug HUD for the standalone visual-QA mode.
             var match = GetComponent<NativeMatchController>();
             if (ExternalGameplayControl || (match && match.enabled)) return;
             GUI.Label(new Rect(18, 16, 1100, 32), "HEXTECH SEEKERS — NATIVE / PHASE 2 · ORIGINAL 3D RIFT");

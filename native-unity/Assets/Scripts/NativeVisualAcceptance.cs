@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace HextechSeekers.Native
 {
@@ -23,6 +24,8 @@ namespace HextechSeekers.Native
             public float fpsAverage, worstFrameMilliseconds;
             public bool originalSceneLoaded, skinnedModelExists, cameraSeesHero, hardwareGraphics;
             public bool hasIdle, hasRun, hasAttack;
+            public bool unityWatermarkVisible, developmentWatermarkEnabled, debugHudEnabled;
+            public bool trialWatermarkIgnoredForTechnicalQa;
         }
 
         static bool VisualQaRequested()
@@ -45,6 +48,10 @@ namespace HextechSeekers.Native
 
             Application.runInBackground = true;
             QualitySettings.vSyncCount = 0;
+            // BuildOptions.None already excludes Development Build. Explicitly
+            // suppress only Unity's developer watermark. Trial-license watermarks
+            // remain visible and recorded, but do not block technical smoke QA.
+            Watermark.showDeveloperWatermark = false;
 
             var driver = FindObjectOfType<NativeVisualAcceptance>();
             if (driver)
@@ -145,6 +152,10 @@ namespace HextechSeekers.Native
         {
             string evidence = EvidenceDirectory();
             Directory.CreateDirectory(evidence);
+            Watermark.showDeveloperWatermark = false;
+            bool unityWatermarkVisible = Watermark.IsVisible();
+            bool debugHudEnabled =
+                Array.IndexOf(Environment.GetCommandLineArgs(), "-hextechDebugHud") >= 0;
             File.WriteAllText(Path.Combine(evidence, "player-started.txt"),
                 "Unity=" + Application.unityVersion + Environment.NewLine + "Scene=" +
                 UnityEngine.SceneManagement.SceneManager.GetActiveScene().name +
@@ -161,8 +172,20 @@ namespace HextechSeekers.Native
                 hero = "Garen",
                 width = Screen.width,
                 height = Screen.height,
-                screenshots = Array.Empty<string>()
+                screenshots = Array.Empty<string>(),
+                unityWatermarkVisible = unityWatermarkVisible,
+                developmentWatermarkEnabled = Watermark.showDeveloperWatermark,
+                debugHudEnabled = debugHudEnabled,
+                trialWatermarkIgnoredForTechnicalQa = unityWatermarkVisible
             };
+            Debug.Log("NATIVE_UNITY_WATERMARK_AUDIT: visible=" +
+                      report.unityWatermarkVisible +
+                      " development=" + report.developmentWatermarkEnabled +
+                      " debugHud=" + report.debugHudEnabled);
+            // Do not crop, cover, or disable Unity's trial watermark. Technical
+            // acceptance records its visibility and continues scene validation.
+            // Artistic and distribution/license reviews are separate.
+
             string renderer = report.device == null ? "" : report.device.ToLowerInvariant();
             report.hardwareGraphics =
                 report.graphicsApi != "Null" &&
@@ -273,8 +296,15 @@ namespace HextechSeekers.Native
             }
             bool passed = ready && report.hasIdle && report.hasRun && report.hasAttack &&
                 report.frames >= 100 && report.fpsAverage > 0;
-            Finish(report, evidence, passed ? "CAPTURED_REQUIRES_VISUAL_REVIEW" : "FAIL_EVIDENCE",
-                passed ? "" : "Screenshot, movement, animation or frame validation failed");
+            if (report.unityWatermarkVisible)
+                Debug.LogWarning("NATIVE_UNITY_TRIAL_WATERMARK_WARNING: visible=true; " +
+                                 "retained in screenshots and excluded from technical pass/fail.");
+            if (report.developmentWatermarkEnabled || report.debugHudEnabled)
+                Finish(report, evidence, "FAIL_DEBUG_WATERMARK",
+                    "Development watermark or diagnostic HUD was enabled. Screenshots are diagnostic only.");
+            else
+                Finish(report, evidence, passed ? "CAPTURED_REQUIRES_VISUAL_REVIEW" : "FAIL_EVIDENCE",
+                    passed ? "" : "Screenshot, movement, animation or frame validation failed");
         }
     }
 }

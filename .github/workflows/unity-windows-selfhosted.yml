@@ -2,7 +2,7 @@ name: Unity Editor on Windows self-hosted (Personal)
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'fix/**']
     paths:
       - '.github/workflows/unity-windows-selfhosted.yml'
       - 'native-unity/**'
@@ -22,7 +22,32 @@ jobs:
     steps:
       - name: Enable Git long paths for Unity package cache
         run: git config --global core.longpaths true
-      - uses: actions/checkout@v4
+      - name: Fetch exact source commit with Git (no codeload Actions)
+        run: |
+          $workspace = $env:GITHUB_WORKSPACE
+          New-Item -ItemType Directory -Force -Path $workspace | Out-Null
+          if (-not (Test-Path -LiteralPath (Join-Path $workspace '.git'))) {
+            & git -C $workspace init
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot initialize repository in runner workspace' }
+          }
+          & git -C $workspace remote remove origin 2>$null
+          & git -C $workspace remote add origin "https://github.com/$env:GITHUB_REPOSITORY.git"
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot configure Git source remote' }
+          $fetched = $false
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            & git -C $workspace -c core.longpaths=true fetch --no-tags --depth=1 origin $env:GITHUB_SHA
+            if ($LASTEXITCODE -eq 0) { $fetched = $true; break }
+            Write-Warning "Git fetch attempt $attempt failed"
+            Start-Sleep -Seconds (5 * $attempt)
+          }
+          if (-not $fetched) { throw "Cannot fetch $env:GITHUB_SHA from repository" }
+          & git -C $workspace -c core.longpaths=true reset --hard $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot reset workspace to exact requested commit' }
+          & git -C $workspace -c core.longpaths=true clean -ffdx
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot clean previous Unity files in workspace' }
+          $actual = (& git -C $workspace rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) { throw "Wrong checkout revision: $actual" }
+          Write-Host "Exact project commit checked out: $actual"
       - name: Find local Unity Editor (no cloud license import)
         id: unity
         run: |
@@ -84,10 +109,17 @@ jobs:
           Write-Host "EditMode total=$($root.total) passed=$($root.passed) failed=$($root.failed)"
           if ([int]$root.total -lt 1) { throw "EditMode run reported zero tests; refuse false success" }
           if ([int]$root.failed -gt 0 -or [int]$root.errors -gt 0) { throw "EditMode tests failed; inspect editmode-results.xml" }
-      - name: Upload Editor logs and tests
+      - name: Preserve Editor logs and tests on the Windows runner
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: unity-windows-editor-evidence
-          path: ${{ runner.temp }}/hextech-unity-evidence/
-          if-no-files-found: warn
+        run: |
+          $source = Join-Path $env:RUNNER_TEMP 'hextech-unity-evidence'
+          if (-not (Test-Path -LiteralPath $source -PathType Container)) {
+            Write-Warning 'No Unity Editor evidence directory was created.'
+            exit 0
+          }
+          $target = Join-Path 'F:\actions-runner\HextechEditorEvidence' $env:GITHUB_RUN_ID
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
+          Write-Host "UNITY_EDITOR_EVIDENCE_DIR=$target"
+          Get-ChildItem -LiteralPath $target -File -Recurse |
+            ForEach-Object { Write-Host ("UNITY_EDITOR_EVIDENCE_FILE=" + $_.FullName + " bytes=" + $_.Length) }

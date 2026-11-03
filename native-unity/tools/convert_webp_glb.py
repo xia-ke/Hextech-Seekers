@@ -90,6 +90,7 @@ def convert(source_bytes, expected_sha=None):
         raise RuntimeError('Pillow is required: python -m pip install pillow') from exc
     binary = bytearray(original_binary)
     views = document.setdefault('bufferViews', [])
+    image_alpha_audit = {}
     for index in sorted(webp_indices):
         if index < 0 or index >= len(images):
             raise ValueError(f'Invalid WebP image index: {index}')
@@ -107,13 +108,42 @@ def convert(source_bytes, expected_sha=None):
             image_bytes = base64.b64decode(img['uri'].split(',', 1)[1], validate=True)
         else:
             raise ValueError(f'WebP image {index} is external; expected self-contained GLB')
-        with Image.open(io.BytesIO(image_bytes)) as im:
-            if im.format != 'WEBP':
-                raise ValueError(f'Image {index} marked WebP but is {im.format}')
-            im = im.convert('RGBA' if 'A' in im.getbands() else 'RGB')
+        with Image.open(io.BytesIO(image_bytes)) as source_image:
+            if source_image.format != 'WEBP':
+                raise ValueError(f'Image {index} marked WebP but is {source_image.format}')
+            has_alpha = 'A' in source_image.getbands()
+            converted = source_image.convert('RGBA' if has_alpha else 'RGB')
+            alpha_stats = None
+            if has_alpha:
+                histogram = converted.getchannel('A').histogram()
+                alpha_stats = {
+                    'min': converted.getchannel('A').getextrema()[0],
+                    'max': converted.getchannel('A').getextrema()[1],
+                    'transparentPixels': histogram[0],
+                    'semiTransparentPixels': sum(histogram[1:255]),
+                    'opaquePixels': histogram[255],
+                }
             png = io.BytesIO()
-            im.save(png, format='PNG')
+            converted.save(png, format='PNG')
             png_bytes = png.getvalue()
+
+        # Verify the PNG round-trip retained the exact alpha histogram. A
+        # foliage texture must not silently become opaque during conversion.
+        if has_alpha:
+            with Image.open(io.BytesIO(png_bytes)) as roundtrip:
+                roundtrip_histogram = roundtrip.convert('RGBA').getchannel('A').histogram()
+            if roundtrip_histogram != histogram:
+                raise ValueError(f'Image {index} alpha channel changed during WebP-to-PNG conversion')
+        image_alpha_audit[index] = {
+            'width': converted.width,
+            'height': converted.height,
+            'hasAlpha': has_alpha,
+            'hasTransparency': bool(alpha_stats and (
+                alpha_stats['transparentPixels'] or alpha_stats['semiTransparentPixels']
+            )),
+            'alpha': alpha_stats,
+        }
+
         while len(binary) % 4:
             binary.append(0)
         views.append({'buffer': 0, 'byteOffset': len(binary), 'byteLength': len(png_bytes)})
@@ -134,6 +164,38 @@ def convert(source_bytes, expected_sha=None):
             document[key] = [x for x in document[key] if x != WEBP_EXTENSION]
             if not document[key]:
                 del document[key]
+    # Audit base-color alpha semantics before handing the GLB to Unity.
+    # glTF defaults alphaMode to OPAQUE; a transparent base-color texture on
+    # an OPAQUE material is therefore suspicious for foliage/cutout assets.
+    material_alpha_audit = []
+    for material_index, material in enumerate(document.get('materials', [])):
+        pbr = material.get('pbrMetallicRoughness') or {}
+        base_color = pbr.get('baseColorTexture') or {}
+        texture_index = base_color.get('index')
+        if not isinstance(texture_index, int) or texture_index < 0 or texture_index >= len(textures):
+            continue
+        image_index = textures[texture_index].get('source')
+        stats = image_alpha_audit.get(image_index)
+        if not stats or not stats.get('hasTransparency'):
+            continue
+        alpha_mode = material.get('alphaMode', 'OPAQUE')
+        material_alpha_audit.append({
+            'materialIndex': material_index,
+            'name': material.get('name', ''),
+            'alphaMode': alpha_mode,
+            'alphaCutoff': material.get('alphaCutoff', 0.5),
+            'doubleSided': bool(material.get('doubleSided', False)),
+            'textureIndex': texture_index,
+            'imageIndex': image_index,
+            'transparentPixels': stats['alpha']['transparentPixels'],
+            'semiTransparentPixels': stats['alpha']['semiTransparentPixels'],
+        })
+
+    alpha_mode_counts = {}
+    for entry in material_alpha_audit:
+        mode = entry['alphaMode']
+        alpha_mode_counts[mode] = alpha_mode_counts.get(mode, 0) + 1
+
     document['buffers'][0]['byteLength'] = len(binary)
     output = create_glb(document, binary)
     verified, _ = parse_glb(output)
@@ -148,6 +210,16 @@ def convert(source_bytes, expected_sha=None):
         'sourceBytes': len(source_bytes),
         'outputBytes': len(output),
         'retainsOriginalGeometry': True,
+        'alphaAudit': {
+            'imagesWithAlpha': sum(1 for item in image_alpha_audit.values() if item['hasAlpha']),
+            'imagesWithTransparency': sum(1 for item in image_alpha_audit.values() if item['hasTransparency']),
+            'baseColorMaterialsUsingTransparentImages': len(material_alpha_audit),
+            'alphaModeCounts': alpha_mode_counts,
+            'opaqueModeWithTransparentBaseColor': sum(
+                1 for item in material_alpha_audit if item['alphaMode'] == 'OPAQUE'
+            ),
+            'materials': material_alpha_audit,
+        },
     }
 
 

@@ -3,7 +3,7 @@ name: Unity Windows Player real GPU visual acceptance
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'fix/**']
     paths:
       - '.github/workflows/unity-windows-visual.yml'
       - 'native-unity/**'
@@ -66,6 +66,70 @@ jobs:
           [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "exe=$unity" + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
           Write-Host "Using Unity: $unity; Runner desktop user: $env:USERNAME"
 
+      - name: Select Unity license activation method
+        run: |
+          Write-Host 'Default: reuse the Windows Runner account Unity Hub license.'
+          Write-Host 'For Unity Personal, sign in to Unity Hub as the same Windows account that runs this Runner.'
+          Write-Host 'Manual ULF activation is only for eligible paid or legacy licenses and is opt-in through UNITY_ACTIVATE_FROM_SECRET=true.'
+      - name: Activate supported paid or legacy ULF license (opt-in only)
+        if: ${{ vars.UNITY_ACTIVATE_FROM_SECRET == 'true' }}
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:UNITY_LICENSE)) {
+            throw 'UNITY_LICENSE secret is empty. Refresh the Unity license secret before building a Windows Player.'
+          }
+          $licenseText = $env:UNITY_LICENSE.Trim()
+          if (-not $licenseText.StartsWith('<?xml') -and -not $licenseText.StartsWith('<root')) {
+            try {
+              $compact = $licenseText -replace '\s', ''
+              $decoded = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($compact))
+              if ($decoded.Contains('<License') -or $decoded.Contains('<root')) {
+                $licenseText = $decoded
+              }
+            } catch {
+              throw 'UNITY_LICENSE is neither raw ULF XML nor valid base64-encoded ULF XML.'
+            }
+          }
+          if (-not ($licenseText.Contains('<License') -or $licenseText.Contains('<root'))) {
+            throw 'UNITY_LICENSE does not contain a Unity ULF license document.'
+          }
+
+          $licenseFile = Join-Path $env:RUNNER_TEMP 'Hextech_Unity_lic.ulf'
+          $licenseLog = Join-Path $env:RUNNER_TEMP 'Hextech_Unity_license_activation.log'
+          [System.IO.File]::WriteAllText(
+            $licenseFile,
+            $licenseText,
+            (New-Object System.Text.UTF8Encoding($false))
+          )
+          try {
+            $unity = '${{ steps.unity.outputs.exe }}'
+            $arguments = @(
+              '-batchmode',
+              '-quit',
+              '-manualLicenseFile',
+              ('"{0}"' -f $licenseFile),
+              '-logFile',
+              ('"{0}"' -f $licenseLog)
+            )
+            $proc = Start-Process -FilePath $unity -ArgumentList $arguments -Wait -PassThru
+            Write-Host "Unity manual license activation exit=$($proc.ExitCode)"
+            if (Test-Path -LiteralPath $licenseLog -PathType Leaf) {
+              Get-Content -LiteralPath $licenseLog -Tail 80 | ForEach-Object { Write-Host $_ }
+              $licenseLogText = Get-Content -LiteralPath $licenseLog -Raw
+              if ($licenseLogText -match 'TimeStamp validation failed|No ULF license found|License activation failed|Unable to update licenses') {
+                throw 'Unity rejected UNITY_LICENSE. Refresh the ULF from Unity Hub on this Windows GPU runner and replace the GitHub Actions secret.'
+              }
+            }
+            if ($proc.ExitCode -ne 0) {
+              throw "Unity license activation failed (exit $($proc.ExitCode)); see $licenseLog"
+            }
+          } finally {
+            if (Test-Path -LiteralPath $licenseFile) {
+              Remove-Item -LiteralPath $licenseFile -Force
+            }
+          }
+
       - name: Prepare and verify original Rift and Garen assets
         run: |
           if (Get-Command py -ErrorAction SilentlyContinue) {
@@ -122,6 +186,15 @@ jobs:
           $meta = Join-Path $rift 'map-unity.conversion.json'
           if (-not (Test-Path -LiteralPath $meta -PathType Leaf)) { throw 'Converted GLB exists but conversion metadata missing' }
           Copy-Item -LiteralPath $meta -Destination (Join-Path $root 'map-conversion.json')
+          $conversion = Get-Content -LiteralPath $meta -Raw | ConvertFrom-Json
+          if (-not $conversion.alphaAudit) { throw 'Alpha audit missing from GLB conversion metadata' }
+          $audit = $conversion.alphaAudit
+          Write-Host ("NATIVE_GLB_ALPHA_AUDIT: imagesWithTransparency={0} materialsWithAlpha={1} opaqueWithAlpha={2}" -f $audit.imagesWithTransparency, $audit.baseColorMaterialsUsingTransparentImages, $audit.opaqueModeWithTransparentBaseColor)
+          foreach ($material in @($audit.materials)) {
+            if ($material.alphaMode -eq 'OPAQUE' -and $material.name -match '(?i)leaf|leaves|foliage|grass|tree|bush|plant|shrub') {
+              Write-Warning ("OPAQUE_FOLIAGE_ALPHA: index={0} name={1} transparentPixels={2}" -f $material.materialIndex, $material.name, $material.transparentPixels)
+            }
+          }
           Write-Host "Converted Unity-compatible GLB size: $((Get-Item $output).Length) bytes"
 
       - name: Build real Windows x64 Player
@@ -150,8 +223,9 @@ jobs:
           } else { Write-Warning 'Unity Build.log missing' }
           if ($proc.ExitCode -ne 0) { throw "Windows Player build failed (exit $($proc.ExitCode))" }
           if (-not (Test-Path -LiteralPath $log -PathType Leaf) -or
-              -not (Select-String -LiteralPath $log -SimpleMatch 'NATIVE_GLTF_SHADER_RESOURCES_READY' -Quiet)) {
-            throw 'Build did not prove glTFast shader materials were pinned into Resources'
+              -not (Select-String -LiteralPath $log -SimpleMatch 'NATIVE_GLTF_SHADER_RESOURCES_READY' -Quiet) -or
+              -not (Select-String -LiteralPath $log -SimpleMatch 'NATIVE_GLTF_ALPHA_VARIANTS_READY: mask=true blend=true' -Quiet)) {
+            throw 'Build did not prove glTFast base, MASK and BLEND shader variants were pinned into Resources'
           }
           $exe = Join-Path $project 'Build\Windows\HextechSeekers.exe'
           $data = Join-Path $project 'Build\Windows\HextechSeekers_Data'
@@ -201,9 +275,22 @@ jobs:
             Write-Host '=== Player.log last 120 lines ==='
             Get-Content -LiteralPath $log -Tail 120
           } else { Write-Warning 'Unity Player.log missing' }
-          if ($proc.ExitCode -ne 0) { throw "GPU Player exited with code $($proc.ExitCode); inspect Player.log and result.json" }
+          $qaResult = Join-Path $evidence 'result.json'
+          if (Test-Path -LiteralPath $qaResult -PathType Leaf) {
+            Write-Host '=== Player result.json ==='
+            Get-Content -LiteralPath $qaResult | ForEach-Object { Write-Host $_ }
+          } else {
+            Write-Warning 'Player did not write result.json; inspect NATIVE_QA_* markers in Player.log'
+          }
+          if ($proc.ExitCode -ne 0) { throw "GPU Player exited with code $($proc.ExitCode); inspect Player.log, result.json, and archived evidence" }
           $playerLogText = if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Raw } else { '' }
-          foreach ($marker in @('NATIVE_GLTF_SHADERS_PRELOADED', 'NATIVE_MAP_MATERIAL_AUDIT_PASS')) {
+          foreach ($marker in @(
+            'NATIVE_GLTF_SHADERS_PRELOADED',
+            'NATIVE_GLTF_ALPHA_VARIANTS_PRELOADED',
+            'NATIVE_MAP_ALPHA_MATERIAL_AUDIT',
+            'NATIVE_MAP_MATERIAL_AUDIT_PASS',
+            'NATIVE_UNITY_WATERMARK_AUDIT'
+          )) {
             if (-not $playerLogText.Contains($marker)) {
               throw "Player did not confirm required 3D material check: $marker"
             }
@@ -211,18 +298,19 @@ jobs:
           if ($playerLogText -match "Shader 'Shader Graphs/glTF-(unlit|pbrMetallicRoughness)' is missing") {
             throw 'Player still reports a missing glTFast shader graph'
           }
-          $qaResult = Join-Path $evidence 'result.json'
           if (-not (Test-Path -LiteralPath $qaResult -PathType Leaf)) {
-            Write-Error 'Player exited without result.json. Runtime QA bootstrap did not finish; inspect NATIVE_QA_* markers in Player.log.'
-          } else {
-            Write-Host '=== Player result.json ==='
-            Get-Content -LiteralPath $qaResult
+            throw 'Player exited without result.json after a zero exit code.'
           }
 
       - name: Verify real GPU PNGs and evidence without extra dependencies
         run: |
           $root = Join-Path $env:RUNNER_TEMP "hextech-native-gpu-$env:GITHUB_RUN_ID"
           $evidence = Join-Path $root 'evidence'
+          $conversion = Join-Path $root 'map-conversion.json'
+          if (-not (Test-Path -LiteralPath $conversion -PathType Leaf)) {
+            throw 'map-conversion.json missing; cannot audit WebP alpha preservation and glTF material alphaMode'
+          }
+          Copy-Item -LiteralPath $conversion -Destination (Join-Path $evidence 'map-conversion.json') -Force
           if (Get-Command py -ErrorAction SilentlyContinue) {
             & py -3 native-unity/tools/verify_visual_qa.py $evidence
           } else {
