@@ -52,6 +52,7 @@ namespace HextechSeekers.Native
             public NativeDirectionalProjectile YasuoQFlight;
             public bool YasuoQTornadoFlight;
             public NativeChampionCombat Combat;
+            public NativeGarenSkills GarenSkills;
             public NativeAbilityAnimationBindings AnimationBindings;
             public readonly NativeBasicContactWindow BasicContact = new NativeBasicContactWindow();
         }
@@ -162,6 +163,8 @@ namespace HextechSeekers.Native
                     bot.YasuoSkill = new NativeYasuoSkillState();
                 bot.Combat = new NativeChampionCombat(bot.Id, bot.Hero,
                     bot.Loadout, rules, hextech, rift.Navigation);
+                if (bot.Hero == "Garen")
+                    bot.GarenSkills = new NativeGarenSkills();
                 var offeredBot = NativeHextechPool.Deal(p.Role, random);
                 // Each AI rolls and selects independently; duplicate choices
                 // across different characters are intentionally legal.
@@ -968,8 +971,10 @@ namespace HextechSeekers.Native
         {
             // Garen W's active tenacity also reduces champion-control windows,
             // not just Hextech crowd control.
-            float durationFactor = targetId == HumanId && garenSkills != null ?
-                garenSkills.CrowdControlDurationFactor : 1f;
+            float durationFactor = targetId == HumanId && selectedHero == "Garen" ?
+                garenSkills.CrowdControlDurationFactor :
+                FindBot(targetId)?.GarenSkills != null ?
+                FindBot(targetId).GarenSkills.CrowdControlDurationFactor : 1f;
             heroControl.Apply(targetId, duration * durationFactor);
         }
 
@@ -1053,7 +1058,23 @@ namespace HextechSeekers.Native
             Vector2 direction = GetPosition(enemyId) - bot.Position;
             if (direction.sqrMagnitude < 1f) return;
             var targets = GetSkillTargets(bot.Id);
-            if (bot.Hero == "Blitzcrank")
+            if (bot.Hero == "Garen")
+            {
+                if (bot.GarenSkills.TryCast(NativeSkillSlot.Q, bot.Loadout,
+                    rules, hextech, bot.Id, false))
+                {
+                    PlayBotOriginalSkill(bot, NativeSkillSlot.Q);
+                    combatVfx?.Pulse(bot.Id, bot.Position, "Garen Q");
+                    return;
+                }
+                if (bot.GarenSkills.TryCast(NativeSkillSlot.W, bot.Loadout,
+                    rules, hextech, bot.Id, false))
+                {
+                    PlayBotOriginalSkill(bot, NativeSkillSlot.W);
+                    combatVfx?.Pulse(bot.Id, bot.Position, "Garen W");
+                }
+            }
+            else if (bot.Hero == "Blitzcrank")
             {
                 // A fleeing hider does not automatically pull the hunter onto
                 // themselves. Q is legal, but this AI tactic reserves it for
@@ -1268,6 +1289,7 @@ namespace HextechSeekers.Native
         {
             if (bot.YasuoSkill != null) bot.YasuoSkill.Advance(dt);
             if (bot.Combat != null) bot.Combat.Advance(dt);
+            bot.GarenSkills?.Advance(dt);
             var person = rules.Find(bot.Id);
             if (person.Eliminated || rules.Phase == MatchPhase.Finished) return;
             // Active projectiles keep flying even if the caster becomes
@@ -1393,8 +1415,10 @@ namespace HextechSeekers.Native
                     if (skill == NativeHextech.FreezeGold ||
                         skill == NativeHextech.AstralSilenceSilver)
                     {
-                        float tenacity = enemyId == HumanId ?
-                            garenSkills.CrowdControlDurationFactor : 1f;
+                        float tenacity = enemyId == HumanId && selectedHero == "Garen" ?
+                            garenSkills.CrowdControlDurationFactor :
+                            FindBot(enemyId)?.GarenSkills != null ?
+                            FindBot(enemyId).GarenSkills.CrowdControlDurationFactor : 1f;
                         if (hextech.TryActive(bot.Id, enemyId, true, 0, null,
                                               out var message, tenacity))
                             Debug.Log("MATCH_AI_HEXTECH: " + bot.Hero + " " + message);
@@ -1423,7 +1447,8 @@ namespace HextechSeekers.Native
             {
                 float allowance = (bot.Role == MatchRole.Hunter ? HunterSpeed : HiderSpeed)
                     * hextech.MoveMultiplier(bot.Id) *
-                    (bot.Combat != null ? bot.Combat.MoveMultiplier : 1f) * dt;
+                    (bot.Combat != null ? bot.Combat.MoveMultiplier : 1f) *
+                    (bot.GarenSkills != null ? bot.GarenSkills.MovementMultiplier : 1f) * dt;
                 while (allowance > 0 && bot.Waypoint < bot.Path.Count)
                 {
                     Vector2 goal = bot.Path[bot.Waypoint];
