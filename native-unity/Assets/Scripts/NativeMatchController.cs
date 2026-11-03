@@ -1604,6 +1604,11 @@ namespace HextechSeekers.Native
             if (combatVfx) combatVfx.End();
             humanContact.Cancel();
             humanPull.Cancel();
+            humanDash.Cancel();
+            humanYasuoQFlight?.Cancel();
+            humanCombat = null;
+            humanYasuo = null;
+            humanAnimationBindings = null;
             CleanupBots();
             menu = Menu.Role;
             rules = null;
@@ -1630,34 +1635,64 @@ namespace HextechSeekers.Native
             }
             float width = 525;
             bool tall = menu == Menu.Augment || menu == Menu.Playing;
-            float boxHeight = rules != null && rules.Phase == MatchPhase.Finished
+            float boxHeight = menu == Menu.Role ? 340f :
+                rules != null && rules.Phase == MatchPhase.Finished
                 ? 330f + rosterSize * 24f : (tall ? 310f : 218f);
             GUI.Box(new Rect(12, 12, width, boxHeight), "");
             GUI.Label(new Rect(25, 19, 495, 26), "HEXTECH SEEKERS | NATIVE 3D | GAMEPLAY ALPHA");
             if (menu == Menu.Role)
             {
-                GUI.Label(new Rect(25, 52, 470, 25),
-                    "Player: original Garen | AI slots: unimported tactical markers");
-                GUI.Label(new Rect(25, 83, 460, 25), "Total participants: " + rosterSize +
-                    " (one hunter, remainder hiders)");
-                if (GUI.Button(new Rect(295, 78, 45, 30), "-"))
+                GUI.Label(new Rect(25, 50, 475, 26),
+                    "Select your champion (no duplicate AI hero)");
+                for (int i = 0; i < NativePlayerRoster.Heroes.Length; i++)
+                {
+                    string choice = NativePlayerRoster.Heroes[i];
+                    if (GUI.Button(new Rect(25 + i * 121f, 80, 112, 38),
+                                   (choice == selectedHero ? "* " : "") + choice))
+                    {
+                        if (rift.SelectPlayerChampion(choice))
+                        {
+                            selectedHero = choice;
+                            feedback = rift.PlayerHasOriginalRig ?
+                                "Original " + choice + " rig loaded" :
+                                choice + ": tactical marker, original model not supplied";
+                        }
+                    }
+                }
+                GUI.Label(new Rect(25, 130, 475, 24),
+                    rift.PlayerHasOriginalRig ? "Original rig available: " + selectedHero :
+                    "ART NOT INSTALLED: " + selectedHero + " tactical marker");
+                GUI.Label(new Rect(25, 164, 460, 25),
+                    "Participants: " + rosterSize + " (one hunter, remaining hiders)");
+                if (GUI.Button(new Rect(295, 161, 45, 30), "-"))
                     rosterSize = Mathf.Max(2, rosterSize - 1);
-                if (GUI.Button(new Rect(350, 78, 45, 30), "+"))
+                if (GUI.Button(new Rect(350, 161, 45, 30), "+"))
                     rosterSize = Mathf.Min(4, rosterSize + 1);
-                if (GUI.Button(new Rect(25, 128, 223, 44), "Play as HUNTER"))
+                if (GUI.Button(new Rect(25, 213, 223, 44), "Play as HUNTER"))
                     Configure(MatchRole.Hunter);
-                if (GUI.Button(new Rect(260, 128, 225, 44), "Play as HIDER"))
+                if (GUI.Button(new Rect(260, 213, 225, 44), "Play as HIDER"))
                     Configure(MatchRole.Hider);
+                GUI.Label(new Rect(25, 269, 475, 22),
+                    "No source assets? Skills still run using a labeled tactical ring.");
+                GUI.Label(new Rect(25, 296, 475, 22), feedback);
             }
             else if (menu == Menu.Skill)
             {
                 GUI.Label(new Rect(25, 52, 478, 30),
-                    "Garen: choose your first legal Q/W. E is pure damage.");
-                if (GUI.Button(new Rect(25, 94, 215, 47), "Q | movement / cleanse"))
-                    SelectSkill(NativeSkillSlot.Q);
-                if (GUI.Button(new Rect(252, 94, 230, 47), "W | tenacity"))
-                    SelectSkill(NativeSkillSlot.W);
+                    selectedHero + ": choose ONE legal skill to begin.");
+                foreach (NativeSkillSlot slot in new[] {
+                             NativeSkillSlot.Q, NativeSkillSlot.W, NativeSkillSlot.E })
+                {
+                    if (!NativeSkillCatalog.Allowed(selectedHero, humanRole, slot))
+                        continue;
+                    int index = (int)slot;
+                    if (GUI.Button(new Rect(25 + index * 155f, 94, 148, 47),
+                                   slot + " | " + selectedHero))
+                        SelectSkill(slot);
+                }
                 GUI.Label(new Rect(25, 156, 470, 25),
+                    "Garen E is damage-only and not selectable.");
+                GUI.Label(new Rect(25, 185, 475, 22),
                     "No normal summoner spells, runes or damage-only abilities.");
             }
             else if (rules != null)
@@ -1665,7 +1700,7 @@ namespace HextechSeekers.Native
                 string phase = rules.Phase == MatchPhase.Preparation ? "PREPARATION" :
                                rules.Phase == MatchPhase.Pursuit ? "PURSUIT" : "FINISHED";
                 GUI.Label(new Rect(25, 47, 482, 24),
-                    "Role " + humanRole + " | " + phase + " | " +
+                    selectedHero + " | " + humanRole + " | " + phase + " | " +
                     Mathf.CeilToInt(rules.RemainingSeconds) + "s | " + rosterSize + " actors");
                 GUI.Label(new Rect(25, 76, 480, 22),
                     "Captured " + rules.CapturedCount + "/" + rules.HiderCount +
@@ -1678,7 +1713,7 @@ namespace HextechSeekers.Native
                     "Hextech: " + (selected.HasValue ? NativeHextechPool.Find(selected.Value).Name : "-") +
                     " | Cooldown " + Mathf.CeilToInt(hextech.RemainingCooldown(HumanId)) + "s");
                 GUI.Label(new Rect(25, 127, 485, 23),
-                    "RMB move | S stop | A basic | Q/W chosen skills | Tab target | F hextech");
+                    "RMB move | S stop | A basic | Q/W/E skills | Tab target | F hextech");
                 if (selected == NativeHextech.TimeClockSilver &&
                     rules.Phase == MatchPhase.Pursuit)
                 {
@@ -1691,10 +1726,18 @@ namespace HextechSeekers.Native
                     !humanLoadout.Secondary.HasValue &&
                     rules.Phase == MatchPhase.Preparation)
                 {
-                    var secondary = humanLoadout.Primary == NativeSkillSlot.Q ?
-                        NativeSkillSlot.W : NativeSkillSlot.Q;
-                    if (GUI.Button(new Rect(25, 195, 250, 32), "Level 2: learn " + secondary))
-                        humanLoadout.Choose(secondary);
+                    int optionIndex = 0;
+                    foreach (NativeSkillSlot slot in new[] {
+                                 NativeSkillSlot.Q, NativeSkillSlot.W, NativeSkillSlot.E })
+                    {
+                        if (slot == humanLoadout.Primary ||
+                            !NativeSkillCatalog.Allowed(selectedHero, humanRole, slot))
+                            continue;
+                        if (GUI.Button(new Rect(25 + 240 * optionIndex, 195, 224, 32),
+                                       "Level 2: learn " + slot))
+                            humanLoadout.Choose(slot);
+                        optionIndex++;
+                    }
                 }
                 if (rules.Phase == MatchPhase.Finished)
                 {
@@ -1710,12 +1753,21 @@ namespace HextechSeekers.Native
                     (privateFog && privateFog.Running ?
                      "Fog: private 3D terrain vision + explored darkness" :
                      "Fog unavailable: no full-map sight protection"));
-                if (garenSkills != null && humanLoadout != null)
+                if (humanLoadout != null)
+                {
+                    string cooldowns = selectedHero == "Garen"
+                        ? "Q " + Mathf.CeilToInt(garenSkills.CooldownQ) +
+                          "s  W " + Mathf.CeilToInt(garenSkills.CooldownW) + "s"
+                        : selectedHero == "Yasuo"
+                        ? "Q " + Mathf.CeilToInt(humanYasuo.CooldownQ) +
+                          "s  W " + Mathf.CeilToInt(humanCombat.CooldownW) +
+                          "s  E " + Mathf.CeilToInt(humanYasuo.CooldownE) + "s"
+                        : "Q " + Mathf.CeilToInt(humanCombat.CooldownQ) +
+                          "s  W " + Mathf.CeilToInt(humanCombat.CooldownW) +
+                          "s  E " + Mathf.CeilToInt(humanCombat.CooldownE) + "s";
                     GUI.Label(new Rect(25, 286, 490, 20),
-                        "Garen skills  Q " + Mathf.CeilToInt(garenSkills.CooldownQ) +
-                        "s" + (garenSkills.QActive ? " ACTIVE" : "") +
-                        "   W " + Mathf.CeilToInt(garenSkills.CooldownW) +
-                        "s" + (garenSkills.WActive ? " ACTIVE" : ""));
+                              selectedHero + " cooldowns: " + cooldowns);
+                }
                 if (rules.Phase == MatchPhase.Finished)
                 {
                     int row = 0;
