@@ -2,7 +2,7 @@ name: Unity Editor on Windows self-hosted (Personal)
 on:
   workflow_dispatch:
   push:
-    branches: [main, 'fix/**', 'feat/phase12-targeting-and-combat-ux']
+    branches: [main, 'fix/**', 'feat/**']
     paths:
       - '.github/workflows/unity-windows-selfhosted.yml'
       - 'native-unity/**'

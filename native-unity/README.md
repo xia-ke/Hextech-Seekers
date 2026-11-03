@@ -23,6 +23,26 @@ This directory coexists with the unchanged `dist/` web client. Open `native-unit
 
 Original browser generation explicitly documents `x,y,-z`; glTFast imports glTF handedness into Unity (X inversion). Applying a 180° yaw around the original scene is the proposed transformation to align nav `x,z` with original meshes. This has **not yet been visually validated** against the real GLB in Unity. Editor exposes `mapYawCorrection` and `worldScale` for adjustment; coordinate/origin must be measured before accepting Phase 1.
 
+## Phase 13 — four playable human champions and shared target arbitration
+
+The native Windows client now allows the human to select **Garen,
+Blitzcrank, Riven or Yasuo**, choose hunter or hider, and learn the
+role-appropriate Q/W/E skills (Garen E remains damage-only/disabled;
+Blitzcrank E is hunter-only). The role screen prohibits duplicate hero
+identities and keeps all four AI slots authentic about original art
+availability. The implemented movement, skill casts and source-verified
+animation bindings share the established single-round game rules.
+
+Tab-selected targets are honored by **A** basic attacks if visible and
+inside legal melee reach; hidden or out-of-range selections cannot cause
+blind capture. See [Phase 13 player-hero development notes](docs/phase-13-human-champion-selection.md)
+and [Phase 12 targeting details](docs/phase-12-targeting-ux.md).
+
+The repository still only bundles Garen's real original model. Other
+heroes are mechanically playable but use clearly labeled tactical
+markers until authorized original rig/animation sources are staged
+locally. This is not final character or VFX artistic acceptance.
+
 ## Phase 11 — original optional champions in Windows Player
 
 Blitzcrank, Riven and Yasuo now have an **offline, provenance-verified asset
