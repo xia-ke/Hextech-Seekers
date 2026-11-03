@@ -1482,9 +1482,9 @@ namespace HextechSeekers.Native
                 if (result.optionalOriginalRigs != result.optionalOriginalSources)
                     throw new InvalidOperationException("Optional original hero rig count mismatch");
                 ReturnToRoleSelection();
-                // Destroy() is deferred until end-of-frame. Avoid keeping old
-                // optional rigs/renderers around during the established smoke.
-                yield return null;
+                // Unity defers Destroy until frame end; the removed optional
+                // actors no longer participate in the authoritative rules.
+                // Do not yield inside this try/catch (C# CS1626).
                 rosterSize = 2;
                 Configure(MatchRole.Hunter);
                 SelectAugment(offered[0].Id);
