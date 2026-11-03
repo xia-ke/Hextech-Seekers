@@ -1427,6 +1427,7 @@ namespace HextechSeekers.Native
             public bool hiderCanMoveDuringPreparation;
             public bool hiderWinsBySurviving;
             public int numberOfActors;
+            public int optionalOriginalSources, optionalOriginalRigs;
         }
 
         IEnumerator VerifyGameplay()
@@ -1447,6 +1448,43 @@ namespace HextechSeekers.Native
                     throw new InvalidOperationException("Rift unavailable " +
                                                         (rift ? rift.LoadProblem : "no bootstrap"));
                 result.loadedRift = true;
+                // Exercise ALL three optional original champion rigs when their
+                // locally verified assets were staged in this Player. This is
+                // a distinct source/mesh smoke, not an artistic fidelity claim.
+                // Keep the established two-actor gameplay test unchanged below.
+                rosterSize = 4;
+                Configure(MatchRole.Hunter);
+                foreach (var bot in bots)
+                {
+                    string folder = Path.Combine(Application.streamingAssetsPath,
+                                                 "Champions", bot.Hero);
+                    if (!GarenRigRuntime.SourceFilesPresent(folder, bot.Hero))
+                    {
+                        Debug.Log("MATCH_OPTIONAL_ORIGINAL_HERO_ABSENT: " + bot.Hero +
+                                  " tactical marker only");
+                        continue;
+                    }
+                    result.optionalOriginalSources++;
+                    var renderer = bot.RealRig ?
+                        bot.RealRig.GetComponent<SkinnedMeshRenderer>() : null;
+                    if (!bot.RealRig || bot.RealRig.HeroName != bot.Hero ||
+                        !bot.RealRig.HasClip("idle1") && !bot.RealRig.HasClip("idle") ||
+                        !bot.RealRig.HasClip("run") || !bot.RealRig.HasClip("attack1") ||
+                        !renderer || !renderer.sharedMesh ||
+                        renderer.sharedMesh.vertexCount <= 0)
+                        throw new InvalidOperationException(
+                            "Staged original champion rig failed Unity GPU load: " + bot.Hero);
+                    result.optionalOriginalRigs++;
+                    Debug.Log("MATCH_OPTIONAL_ORIGINAL_HERO_READY: " + bot.Hero +
+                              " vertices=" + renderer.sharedMesh.vertexCount +
+                              " skillBindings=" + (bot.AnimationBindings != null));
+                }
+                if (result.optionalOriginalRigs != result.optionalOriginalSources)
+                    throw new InvalidOperationException("Optional original hero rig count mismatch");
+                ReturnToRoleSelection();
+                // Unity defers Destroy until frame end; the removed optional
+                // actors no longer participate in the authoritative rules.
+                // Do not yield inside this try/catch (C# CS1626).
                 rosterSize = 2;
                 Configure(MatchRole.Hunter);
                 SelectAugment(offered[0].Id);
