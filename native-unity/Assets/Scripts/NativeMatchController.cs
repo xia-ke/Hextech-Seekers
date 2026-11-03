@@ -7,10 +7,10 @@ using UnityEngine;
 namespace HextechSeekers.Native
 {
     /// <summary>
-    /// Native 3D hide-and-seek alpha. One original skinned Garen plus 1-3 AI
-    /// tactical markers using distinct hero SLOTS. A marker is never presented
-    /// as the actual unimported Blitzcrank/Riven/Yasuo character artwork.
-    /// Selection -> three Hextech cards -> Garen skill -> preparation -> pursuit.
+    /// Native 3D hide-and-seek alpha. A human may choose any of four heroes,
+    /// with 1–3 unique AI slots. Missing original hero art stays an explicitly
+    /// labeled tactical marker. Gameplay identity never depends on model files.
+    /// Hero/role -> three Hextech cards -> legal Q/W/E -> preparation -> pursuit.
     /// </summary>
     public sealed class NativeMatchController : MonoBehaviour
     {
@@ -27,8 +27,6 @@ namespace HextechSeekers.Native
             ? rift.SpawnCalibration.HunterSpawn : HunterStaging;
         Vector2 HiderSpawn => rift && rift.SpawnCalibration != null
             ? rift.SpawnCalibration.HiderSpawn : HiderStart;
-        static readonly string[] BotHeroSlots = { "Blitzcrank", "Riven", "Yasuo" };
-
         enum Menu { Role, Augment, Skill, Playing }
         sealed class Bot
         {
@@ -54,6 +52,7 @@ namespace HextechSeekers.Native
             public NativeDirectionalProjectile YasuoQFlight;
             public bool YasuoQTornadoFlight;
             public NativeChampionCombat Combat;
+            public NativeGarenSkills GarenSkills;
             public NativeAbilityAnimationBindings AnimationBindings;
             public readonly NativeBasicContactWindow BasicContact = new NativeBasicContactWindow();
         }
@@ -66,7 +65,15 @@ namespace HextechSeekers.Native
         NativeHeroControl heroControl;
         NativeFogOfWar privateFog;
         NativeCombatVfx combatVfx;
-        NativeAbilityAnimationBindings garenAnimationBindings;
+        NativeAbilityAnimationBindings humanAnimationBindings;
+        NativeChampionCombat humanCombat;
+        NativeYasuoSkillState humanYasuo;
+        NativeDirectionalProjectile humanYasuoQFlight;
+        bool humanYasuoQTornadoFlight;
+        bool humanQNeutralStacked;
+        NativeDashMotion humanDash = new NativeDashMotion();
+        Vector2 humanFacing = Vector2.right;
+        string selectedHero = "Garen";
         NativeBasicContactWindow humanContact = new NativeBasicContactWindow();
         NativeDashMotion humanPull = new NativeDashMotion();
         Vector2 previousHumanVisualPosition;
@@ -109,19 +116,24 @@ namespace HextechSeekers.Native
             CleanupBots();
             if (privateFog) privateFog.End();
             humanRole = role;
-            var participants = new MatchParticipant[rosterSize];
-            participants[0] = new MatchParticipant(HumanId, "Garen", role, true);
-            for (int i = 1; i < rosterSize; i++)
-            {
-                var botRole = role == MatchRole.Hunter ? MatchRole.Hider :
-                    (i == 1 ? MatchRole.Hunter : MatchRole.Hider);
-                participants[i] = new MatchParticipant(i + 1, BotHeroSlots[i - 1], botRole, false);
-            }
+            if (!rift.SelectPlayerChampion(selectedHero))
+                throw new InvalidOperationException("Cannot choose native player hero: " + selectedHero);
+            var participants = NativePlayerRoster.Build(selectedHero, role, rosterSize);
             rules = new NativeMatchRules(participants);
             hextech = new NativeHextechRuntime(rules);
             heroControl = new NativeHeroControl();
-            humanLoadout = new NativeHeroLoadout("Garen", role);
+            humanLoadout = new NativeHeroLoadout(selectedHero, role);
             garenSkills = new NativeGarenSkills();
+            humanCombat = selectedHero == "Garen" ? null :
+                new NativeChampionCombat(HumanId, selectedHero,
+                    humanLoadout, rules, hextech, rift.Navigation);
+            humanYasuo = selectedHero == "Yasuo" ? new NativeYasuoSkillState() : null;
+            humanYasuoQFlight = null;
+            humanYasuoQTornadoFlight = false;
+            humanQNeutralStacked = false;
+            humanDash.Cancel();
+            humanFacing = Vector2.right;
+            humanAnimationBindings = null;
             offered = NativeHextechPool.Deal(role, random);
             preferredTargetId = -1;
             preferredSpectateId = -1;
@@ -153,6 +165,8 @@ namespace HextechSeekers.Native
                     bot.YasuoSkill = new NativeYasuoSkillState();
                 bot.Combat = new NativeChampionCombat(bot.Id, bot.Hero,
                     bot.Loadout, rules, hextech, rift.Navigation);
+                if (bot.Hero == "Garen")
+                    bot.GarenSkills = new NativeGarenSkills();
                 var offeredBot = NativeHextechPool.Deal(p.Role, random);
                 // Each AI rolls and selects independently; duplicate choices
                 // across different characters are intentionally legal.
@@ -176,7 +190,7 @@ namespace HextechSeekers.Native
             foreach (var choice in offered)
                 if (choice.Id == selected) offeredToHuman = true;
             if (!offeredToHuman || !hextech.Select(HumanId, selected)) return;
-            feedback = "Choose Garen Q or W as your starting skill.";
+            feedback = "Choose one legal " + selectedHero + " Q/W/E skill for this round.";
             menu = Menu.Skill;
         }
 
@@ -208,14 +222,14 @@ namespace HextechSeekers.Native
             {
                 Debug.LogWarning("NATIVE_DEBUG_FX_UNAVAILABLE: " + fxError.Message);
             }
-            // The source Garen rig may not include all the correct original
-            // spell clips; the map is optional and never guessed.
+            // Use exact hero-specific verified source clip mappings only.
+            // No guessed 'spell1 = Q' mapping when original clips are missing.
             if (rift.HeroRig)
             {
-                string garenFolder = Path.Combine(Application.streamingAssetsPath,
-                                                  "Champions", "Garen");
-                garenAnimationBindings = LoadBindings(garenFolder, "Garen",
-                                                     rift.HeroRig);
+                string heroFolder = Path.Combine(Application.streamingAssetsPath,
+                                                 "Champions", selectedHero);
+                humanAnimationBindings = LoadBindings(heroFolder, selectedHero,
+                                                      rift.HeroRig);
             }
             hextech.ApplyPreparationPassives(HumanId, humanLoadout);
             foreach (var bot in bots)
@@ -261,6 +275,7 @@ namespace HextechSeekers.Native
             }
             feedback = startMessage;
             Debug.Log("MATCH_BEGIN: participants=" + rosterSize + " human=" + humanRole +
+                      " hero=" + selectedHero + " originalArt=" + rift.PlayerHasOriginalRig +
                       " hextech=" + hextech.Selected(HumanId));
         }
 
@@ -277,6 +292,8 @@ namespace HextechSeekers.Native
             {
                 hextech.Advance(dt);
                 garenSkills.Advance(dt);
+                humanCombat?.Advance(dt);
+                humanYasuo?.Advance(dt);
                 heroControl.Advance(dt);
                 rules.Advance(dt);
             }
@@ -290,16 +307,30 @@ namespace HextechSeekers.Native
                 (Vector2?)GetPosition(spectatedId) : null;
             rift.ExternalMoveEnabled = rules.CanMove(HumanId) &&
                 !hextech.Stunned(HumanId) && !heroControl.Locked(HumanId) &&
-                !humanPull.Active;
+                !humanPull.Active && !humanDash.Active;
             rift.ExternalMoveMultiplier =
                 (humanRole == MatchRole.Hunter ? HunterSpeed / HiderSpeed : 1f) *
-                hextech.MoveMultiplier(HumanId) * garenSkills.MovementMultiplier;
+                hextech.MoveMultiplier(HumanId) *
+                (selectedHero == "Garen" ? garenSkills.MovementMultiplier : 1f) *
+                (humanCombat != null ? humanCombat.MoveMultiplier : 1f);
             if (!rift.ExternalMoveEnabled) rift.StopMovement();
             if (humanPull.Active)
             {
+                humanDash.Cancel();
                 Vector2 pulled = humanPull.Step(dt);
                 if (!rift.TrySetExternalPosition(pulled)) humanPull.Cancel();
             }
+            if (humanDash.Active)
+            {
+                if (hextech.Stunned(HumanId) || heroControl.Locked(HumanId) ||
+                    !rules.CanMove(HumanId))
+                    humanDash.Cancel();
+                else if (!rift.TrySetExternalPosition(humanDash.Step(dt)))
+                    humanDash.Cancel();
+            }
+            // Already fired projectiles continue after their caster is stunned.
+            // None of these skills can directly capture a hider.
+            TickHumanProjectiles(dt);
             if (rules.Phase == MatchPhase.Finished)
             {
                 rift.StopMovement();
@@ -325,8 +356,9 @@ namespace HextechSeekers.Native
                 if (Input.GetKeyDown(KeyCode.S)) rift.StopMovement();
                 if (Input.GetMouseButtonDown(1) && !HoveringHud(Input.mousePosition))
                     rift.TryNavigateFromScreen(Input.mousePosition);
-                if (Input.GetKeyDown(KeyCode.Q)) TryGarenSkill(NativeSkillSlot.Q);
-                if (Input.GetKeyDown(KeyCode.W)) TryGarenSkill(NativeSkillSlot.W);
+                if (Input.GetKeyDown(KeyCode.Q)) TryHumanSkill(NativeSkillSlot.Q);
+                if (Input.GetKeyDown(KeyCode.W)) TryHumanSkill(NativeSkillSlot.W);
+                if (Input.GetKeyDown(KeyCode.E)) TryHumanSkill(NativeSkillSlot.E);
             }
             basicCooldown = Mathf.Max(0f, basicCooldown - dt);
             if (!rules.Find(HumanId).Eliminated && Input.GetKeyDown(KeyCode.Tab))
@@ -342,19 +374,30 @@ namespace HextechSeekers.Native
                 int targetId = ChooseHumanBasicTarget();
                 if (targetId >= 0)
                     humanContact.Begin(targetId);
-                combatVfx?.Pulse(HumanId, rift.PlayerPosition, "Garen Basic");
+                combatVfx?.Pulse(HumanId, rift.PlayerPosition, selectedHero + " Basic");
                 feedback = targetId >= 0
-                    ? "Attack windup: contact will recheck vision, range and immunity."
-                    : "Attack animation: no visible enemy currently within melee reach.";
+                    ? "Attack windup: contact will recheck sight, reach and immunity."
+                    : "Attack animation: no visible enemy in basic-attack reach.";
             }
 
             ResolveHumanBasicContact(dt);
             foreach (var bot in bots) UpdateBot(bot, dt);
             UpdateMarkers();
             UpdatePrivateFog();
-            combatVfx?.SetDash(HumanId,
-                garenSkills.QActive && rift.PlayerMoving,
-                previousHumanVisualPosition, rift.PlayerPosition, "Garen");
+            bool abilityDash = humanDash.Active ||
+                selectedHero == "Garen" && garenSkills.QActive && rift.PlayerMoving;
+            combatVfx?.SetDash(HumanId, abilityDash,
+                previousHumanVisualPosition, rift.PlayerPosition, selectedHero);
+            if (humanCombat != null)
+            {
+                combatVfx?.SetHook(HumanId, humanCombat.HookActive,
+                    humanCombat.HookLaunchPosition, humanCombat.HookTipPosition);
+                combatVfx?.SetWindWall(HumanId, humanCombat.WindWall);
+            }
+            if (humanYasuoQFlight != null)
+                combatVfx?.SetYasuoQ(HumanId, humanYasuoQFlight.Active,
+                    humanYasuoQFlight.Origin, humanYasuoQFlight.Position,
+                    humanYasuoQTornadoFlight);
             previousHumanVisualPosition = rift.PlayerPosition;
             TickCombatPresentation();
         }
@@ -404,6 +447,14 @@ namespace HextechSeekers.Native
                 hextech.Stunned(HumanId) || heroControl.Locked(HumanId)) return;
             bool seen = VisibleTo(HumanId, targetId);
             float distance = Vector2.Distance(rift.PlayerPosition, GetPosition(targetId));
+            if (!rules.IsValidCaptureHit(HumanId, targetId, true, seen, distance))
+            {
+                feedback = "Contact missed or target moved out of range.";
+                return;
+            }
+            if (humanCombat != null &&
+                humanCombat.ConsumeEmpoweredBasicAttack(out float airborne))
+                ApplyChampionControl(targetId, airborne);
             bool caught = hextech.TryBasicAttackCapture(
                 HumanId, targetId, true, seen, distance);
             feedback = caught ? "Contact: captured " + target.HeroKey :
@@ -467,13 +518,285 @@ namespace HextechSeekers.Native
             privateFog.UpdateView(rules, viewerId, GetPosition);
         }
 
+        Vector2 HumanAimDirection()
+        {
+            Vector2 origin = rift.PlayerPosition;
+            if (!HoveringHud(Input.mousePosition) &&
+                rift.TryGetWorldPointFromScreen(Input.mousePosition, out var hit))
+            {
+                Vector2 aim = hit - origin;
+                if (aim.sqrMagnitude >= 4f)
+                    humanFacing = aim.normalized;
+            }
+            return humanFacing;
+        }
+
+        void PlayHumanOriginalSkill(NativeSkillSlot slot, int stage = 1)
+        {
+            if (!rift.HeroRig || humanAnimationBindings == null) return;
+            string clip = humanAnimationBindings.Resolve(slot, stage);
+            if (!string.IsNullOrEmpty(clip))
+                rift.HeroRig.TryPlayOriginalSkillClip(clip);
+        }
+
+        void ApplyHumanSkillImpact(NativeSkillImpact impact)
+        {
+            if (impact == null) return;
+            if (impact.CasterLanding.HasValue)
+            {
+                if (!humanDash.Begin(rift.Navigation, rift.PlayerPosition,
+                                    impact.CasterLanding.Value))
+                    Debug.LogWarning("NATIVE_HUMAN_DASH_REJECTED: invalid swept path");
+                else
+                {
+                    rift.StopMovement();
+                    humanContact.Cancel();
+                }
+            }
+            if (impact.TargetId >= 0)
+            {
+                var target = FindBot(impact.TargetId);
+                if (target != null && !rules.Find(target.Id).Eliminated)
+                {
+                    if (impact.TargetLanding.HasValue)
+                    {
+                        target.Dash.Cancel();
+                        target.Pull.Cancel();
+                        target.Path.Clear();
+                        target.Waypoint = 0;
+                        target.BasicContact.Cancel();
+                        if (!target.Pull.Begin(rift.Navigation, target.Position,
+                                               impact.TargetLanding.Value))
+                            Debug.LogWarning("NATIVE_HUMAN_HOOK_PULL_REJECTED: unsafe path");
+                    }
+                    if (impact.LockSeconds > 0f)
+                        ApplyChampionControl(target.Id, impact.LockSeconds);
+                    if (VisibleTo(HumanId, target.Id))
+                        combatVfx?.Impact(HumanId, target.Position, impact.Skill, true);
+                }
+            }
+            foreach (int id in impact.AdditionalHitTargets)
+            {
+                var target = FindBot(id);
+                if (target == null || rules.Find(id).Eliminated) continue;
+                if (impact.LockSeconds > 0f)
+                    ApplyChampionControl(id, impact.LockSeconds);
+                if (VisibleTo(HumanId, id))
+                    combatVfx?.Impact(HumanId, target.Position, impact.Skill, true);
+            }
+            int stage = impact.Skill.EndsWith("Q3", StringComparison.Ordinal) ? 3 :
+                        impact.Skill.EndsWith("Q2", StringComparison.Ordinal) ? 2 : 1;
+            if (impact.Skill.StartsWith("Riven Q", StringComparison.Ordinal))
+                PlayHumanOriginalSkill(NativeSkillSlot.Q, stage);
+            else if (impact.Skill == "Riven W")
+                PlayHumanOriginalSkill(NativeSkillSlot.W);
+            else if (impact.Skill == "Riven E")
+                PlayHumanOriginalSkill(NativeSkillSlot.E);
+            combatVfx?.Pulse(HumanId, rift.PlayerPosition, impact.Skill);
+            feedback = impact.Skill + " applied (no skill capture or damage)";
+            Debug.Log("NATIVE_HUMAN_SKILL: " + impact.Skill +
+                      " target=" + impact.TargetId + " capture=false");
+        }
+
+        bool TryHumanYasuoQ(Vector2 origin, Vector2 direction)
+        {
+            if (humanYasuo == null ||
+                humanYasuoQFlight != null && humanYasuoQFlight.Active)
+                return false;
+            if (!humanYasuo.TryQ(humanLoadout, rules, hextech, HumanId,
+                                 false, out bool tornado))
+                return false;
+            float reach = tornado ? 660f : NativeYasuoSkillState.QReachProvisional;
+            float width = tornado ? 90f : NativeYasuoSkillState.QHalfWidthProvisional;
+            var shot = new NativeDirectionalProjectile();
+            if (!shot.Begin(HumanId, humanRole,
+                            tornado ? "Yasuo Q Tornado" : "Yasuo Q",
+                            origin, direction, reach, 1900f, width,
+                            rift.Navigation))
+            {
+                Debug.LogWarning("NATIVE_HUMAN_YASUO_Q_PROJECTILE_REJECTED");
+                return false;
+            }
+            humanYasuoQFlight = shot;
+            humanYasuoQTornadoFlight = tornado;
+            humanQNeutralStacked = false;
+            // Real neutral monsters can grant normal Yasuo Q stacks without
+            // receiving damage. This uses the verified nav/neutral contact.
+            if (!tornado && rift.NeutralMonsters != null &&
+                rift.NeutralMonsters.HasVerifiedCamps)
+            {
+                var monster = rift.NeutralMonsters.FirstLineContact(
+                    origin, direction, reach, width);
+                if (monster != null &&
+                    rift.Navigation.LineClear(origin, monster.WalkableAnchor))
+                {
+                    humanYasuo.RegisterQHit(false);
+                    humanQNeutralStacked = true;
+                    Debug.Log("NATIVE_HUMAN_YASUO_Q_NEUTRAL: " + monster.CampName);
+                }
+            }
+            PlayHumanOriginalSkill(NativeSkillSlot.Q, tornado ? 3 : 1);
+            combatVfx?.Pulse(HumanId, origin,
+                            tornado ? "Yasuo Q Tornado" : "Yasuo Q");
+            feedback = tornado ? "Yasuo tornado launched" : "Yasuo Q launched";
+            return true;
+        }
+
+        bool TryHumanYasuoE(Vector2 origin)
+        {
+            if (humanYasuo == null) return false;
+            NativeSkillTarget chosen = default;
+            bool found = false;
+            float nearest = float.PositiveInfinity;
+            foreach (var target in GetSkillTargets(HumanId))
+            {
+                if (target.Eliminated || !target.VisibleToCaster) continue;
+                float d = (target.Position - origin).sqrMagnitude;
+                if (d < nearest)
+                {
+                    chosen = target;
+                    nearest = d;
+                    found = true;
+                }
+            }
+            Vector2 destination;
+            if (found && humanYasuo.TryEDashThroughHero(
+                    humanLoadout, rules, hextech, HumanId, origin, chosen,
+                    rift.Navigation, out destination))
+            {
+                if (!humanDash.Begin(rift.Navigation, origin, destination))
+                    return false;
+                rift.StopMovement();
+                humanContact.Cancel();
+                PlayHumanOriginalSkill(NativeSkillSlot.E);
+                combatVfx?.Pulse(HumanId, origin, "Yasuo E Hero");
+                feedback = "Yasuo E through visible enemy; no capture";
+                return true;
+            }
+            if (rift.NeutralMonsters == null ||
+                !rift.NeutralMonsters.HasVerifiedCamps) return false;
+            foreach (var monster in rift.NeutralMonsters.Monsters)
+            {
+                if ((monster.WalkableAnchor - origin).sqrMagnitude >
+                    NativeYasuoSkillState.EDashRangeProvisional *
+                    NativeYasuoSkillState.EDashRangeProvisional) continue;
+                if (!humanYasuo.TryEDashToMonster(
+                        humanLoadout, rules, hextech, HumanId, origin,
+                        monster.Id, rift.NeutralMonsters, out destination))
+                    continue;
+                if (!humanDash.Begin(rift.Navigation, origin, destination))
+                    return false;
+                rift.StopMovement();
+                humanContact.Cancel();
+                PlayHumanOriginalSkill(NativeSkillSlot.E);
+                combatVfx?.Pulse(HumanId, origin, "Yasuo E Neutral");
+                feedback = "Yasuo E through neutral; monster remains alive";
+                return true;
+            }
+            return false;
+        }
+
+        void TryHumanSkill(NativeSkillSlot slot)
+        {
+            if (humanLoadout == null || !humanLoadout.Knows(slot) ||
+                !rules.CanMove(HumanId) || !hextech.CanUseHeroSkill(HumanId) ||
+                heroControl.Locked(HumanId) || humanDash.Active ||
+                humanPull.Active)
+            {
+                feedback = "Skill unavailable: unlearned, silenced, stunned or moving";
+                return;
+            }
+            if (selectedHero == "Garen")
+            {
+                TryGarenSkill(slot);
+                return;
+            }
+            Vector2 origin = rift.PlayerPosition;
+            Vector2 direction = HumanAimDirection();
+            bool cast = false;
+            if (selectedHero == "Blitzcrank")
+            {
+                switch (slot)
+                {
+                    case NativeSkillSlot.Q:
+                        cast = humanCombat.TryBlitzHook(origin, direction);
+                        break;
+                    case NativeSkillSlot.W:
+                        cast = humanCombat.TryBlitzW();
+                        break;
+                    case NativeSkillSlot.E:
+                        cast = humanCombat.TryBlitzE();
+                        break;
+                }
+                if (cast)
+                {
+                    PlayHumanOriginalSkill(slot);
+                    combatVfx?.Pulse(HumanId, origin, "Blitzcrank " + slot);
+                    feedback = "Blitzcrank " + slot + " cast; no skill capture";
+                }
+            }
+            else if (selectedHero == "Riven")
+            {
+                NativeSkillImpact impact = slot == NativeSkillSlot.Q ?
+                    humanCombat.TryRivenQ(origin, direction, GetSkillTargets(HumanId)) :
+                    slot == NativeSkillSlot.W ?
+                    humanCombat.TryRivenW(origin, GetSkillTargets(HumanId)) :
+                    humanCombat.TryRivenE(origin, direction);
+                cast = impact != null;
+                if (cast) ApplyHumanSkillImpact(impact);
+            }
+            else if (selectedHero == "Yasuo")
+            {
+                if (slot == NativeSkillSlot.Q)
+                    cast = TryHumanYasuoQ(origin, direction);
+                else if (slot == NativeSkillSlot.W)
+                {
+                    cast = humanCombat.TryYasuoWindWall(origin, direction);
+                    if (cast)
+                    {
+                        PlayHumanOriginalSkill(slot);
+                        combatVfx?.Pulse(HumanId, origin, "Yasuo W");
+                    }
+                }
+                else if (slot == NativeSkillSlot.E)
+                    cast = TryHumanYasuoE(origin);
+            }
+            if (!cast) feedback = selectedHero + " " + slot +
+                " unavailable (cooldown, range, obstacle or no valid target)";
+        }
+
+        void TickHumanProjectiles(float dt)
+        {
+            if (rules.Phase == MatchPhase.Finished) return;
+            if (humanCombat != null && humanCombat.HookActive)
+                ApplyHumanSkillImpact(humanCombat.StepBlitzHook(
+                    dt, GetSkillTargets(HumanId), ActiveEnemyWindWall(HumanId)));
+            if (humanYasuoQFlight == null || !humanYasuoQFlight.Active) return;
+            var impact = humanYasuoQFlight.Step(dt, rift.Navigation,
+                GetSkillTargets(HumanId), ActiveEnemyWindWall(HumanId),
+                humanCombat != null ? humanCombat.Elapsed : hextech.Elapsed);
+            if (impact == null) return;
+            if (impact.TargetId >= 0 && !rules.Find(impact.TargetId).Eliminated)
+            {
+                if (humanYasuoQTornadoFlight)
+                    ApplyChampionControl(impact.TargetId, .75f);
+                else if (!humanQNeutralStacked)
+                    humanYasuo?.RegisterQHit(false);
+                if (VisibleTo(HumanId, impact.TargetId))
+                    combatVfx?.Impact(HumanId, GetPosition(impact.TargetId),
+                                      impact.Skill, true);
+            }
+            Debug.Log("NATIVE_HUMAN_Q_CONTACT: " + impact.Skill +
+                      " target=" + impact.TargetId +
+                      " blocked=" + impact.ProjectileBlocked +
+                      " capture=false");
+        }
+
         void TryGarenSkill(NativeSkillSlot slot)
         {
             if (garenSkills.TryCast(slot, humanLoadout, rules, hextech, HumanId, false))
             {
-                if (rift.HeroRig && garenAnimationBindings != null)
-                    rift.HeroRig.TryPlayOriginalSkillClip(
-                        garenAnimationBindings.Resolve(slot));
+                PlayHumanOriginalSkill(slot);
                 combatVfx?.Pulse(HumanId, rift.PlayerPosition, "Garen " + slot);
                 feedback = slot == NativeSkillSlot.Q ?
                     "Garen Q: slow cleanse + brief movement speed (tuning pending)" :
@@ -501,15 +824,13 @@ namespace HextechSeekers.Native
             Vector2 origin = rift.PlayerPosition;
             foreach (var bot in bots)
             {
-                var p = rules.Find(bot.Id);
-                bool opponent = p != null && p.Role != humanRole;
-                bool alive = p != null && !p.Eliminated;
-                // Never attempt to target a concealed actor by remembered
-                // selection or Card Sense. No physics or screen-space guess.
+                var participant = rules.Find(bot.Id);
+                bool opponent = participant != null && participant.Role != humanRole;
+                bool alive = participant != null && !participant.Eliminated;
                 bool visible = opponent && alive && VisibleTo(HumanId, bot.Id);
-                float distance = Vector2.Distance(origin, bot.Position);
                 candidates.Add(new NativeTargetSelection.Candidate(
-                    bot.Id, opponent, alive, visible, distance));
+                    bot.Id, opponent, alive, visible,
+                    Vector2.Distance(origin, bot.Position)));
             }
             return NativeTargetSelection.ChooseBasicTarget(
                 preferredTargetId, candidates, NativeMatchRules.BasicAttackReach);
@@ -521,11 +842,10 @@ namespace HextechSeekers.Native
             var target = rules.Find(preferredTargetId);
             if (target == null || target.Eliminated || target.Role == humanRole)
                 return "UNAVAILABLE";
-            bool visible = !rules.Find(HumanId).Eliminated &&
-                           VisibleTo(HumanId, preferredTargetId);
+            bool eliminated = rules.Find(HumanId).Eliminated;
+            bool visible = !eliminated && VisibleTo(HumanId, preferredTargetId);
             return NativeTargetSelection.CanDisplaySelectedEnemy(
-                rules.Find(HumanId).Eliminated, target.Role != humanRole,
-                !target.Eliminated, visible)
+                eliminated, target.Role != humanRole, !target.Eliminated, visible)
                 ? target.HeroKey + " (visible)" : "UNSEEN (no auto-attack)";
         }
 
@@ -660,6 +980,9 @@ namespace HextechSeekers.Native
         NativeWindWall ActiveEnemyWindWall(int actorId)
         {
             var actor = rules.Find(actorId);
+            if (actorId != HumanId && humanCombat != null &&
+                humanRole != actor.Role && humanCombat.WindWall != null)
+                return humanCombat.WindWall;
             foreach (var bot in bots)
                 if (bot.Id != actorId && bot.Role != actor.Role &&
                     bot.Combat != null && bot.Combat.WindWall != null)
@@ -671,8 +994,10 @@ namespace HextechSeekers.Native
         {
             // Garen W's active tenacity also reduces champion-control windows,
             // not just Hextech crowd control.
-            float durationFactor = targetId == HumanId && garenSkills != null ?
-                garenSkills.CrowdControlDurationFactor : 1f;
+            float durationFactor = targetId == HumanId && selectedHero == "Garen" ?
+                garenSkills.CrowdControlDurationFactor :
+                FindBot(targetId)?.GarenSkills != null ?
+                FindBot(targetId).GarenSkills.CrowdControlDurationFactor : 1f;
             heroControl.Apply(targetId, duration * durationFactor);
         }
 
@@ -756,7 +1081,23 @@ namespace HextechSeekers.Native
             Vector2 direction = GetPosition(enemyId) - bot.Position;
             if (direction.sqrMagnitude < 1f) return;
             var targets = GetSkillTargets(bot.Id);
-            if (bot.Hero == "Blitzcrank")
+            if (bot.Hero == "Garen")
+            {
+                if (bot.GarenSkills.TryCast(NativeSkillSlot.Q, bot.Loadout,
+                    rules, hextech, bot.Id, false))
+                {
+                    PlayBotOriginalSkill(bot, NativeSkillSlot.Q);
+                    combatVfx?.Pulse(bot.Id, bot.Position, "Garen Q");
+                    return;
+                }
+                if (bot.GarenSkills.TryCast(NativeSkillSlot.W, bot.Loadout,
+                    rules, hextech, bot.Id, false))
+                {
+                    PlayBotOriginalSkill(bot, NativeSkillSlot.W);
+                    combatVfx?.Pulse(bot.Id, bot.Position, "Garen W");
+                }
+            }
+            else if (bot.Hero == "Blitzcrank")
             {
                 // A fleeing hider does not automatically pull the hunter onto
                 // themselves. Q is legal, but this AI tactic reserves it for
@@ -971,6 +1312,7 @@ namespace HextechSeekers.Native
         {
             if (bot.YasuoSkill != null) bot.YasuoSkill.Advance(dt);
             if (bot.Combat != null) bot.Combat.Advance(dt);
+            bot.GarenSkills?.Advance(dt);
             var person = rules.Find(bot.Id);
             if (person.Eliminated || rules.Phase == MatchPhase.Finished) return;
             // Active projectiles keep flying even if the caster becomes
@@ -1096,8 +1438,10 @@ namespace HextechSeekers.Native
                     if (skill == NativeHextech.FreezeGold ||
                         skill == NativeHextech.AstralSilenceSilver)
                     {
-                        float tenacity = enemyId == HumanId ?
-                            garenSkills.CrowdControlDurationFactor : 1f;
+                        float tenacity = enemyId == HumanId && selectedHero == "Garen" ?
+                            garenSkills.CrowdControlDurationFactor :
+                            FindBot(enemyId)?.GarenSkills != null ?
+                            FindBot(enemyId).GarenSkills.CrowdControlDurationFactor : 1f;
                         if (hextech.TryActive(bot.Id, enemyId, true, 0, null,
                                               out var message, tenacity))
                             Debug.Log("MATCH_AI_HEXTECH: " + bot.Hero + " " + message);
@@ -1126,7 +1470,8 @@ namespace HextechSeekers.Native
             {
                 float allowance = (bot.Role == MatchRole.Hunter ? HunterSpeed : HiderSpeed)
                     * hextech.MoveMultiplier(bot.Id) *
-                    (bot.Combat != null ? bot.Combat.MoveMultiplier : 1f) * dt;
+                    (bot.Combat != null ? bot.Combat.MoveMultiplier : 1f) *
+                    (bot.GarenSkills != null ? bot.GarenSkills.MovementMultiplier : 1f) * dt;
                 while (allowance > 0 && bot.Waypoint < bot.Path.Count)
                 {
                     Vector2 goal = bot.Path[bot.Waypoint];
@@ -1307,6 +1652,11 @@ namespace HextechSeekers.Native
             if (combatVfx) combatVfx.End();
             humanContact.Cancel();
             humanPull.Cancel();
+            humanDash.Cancel();
+            humanYasuoQFlight?.Cancel();
+            humanCombat = null;
+            humanYasuo = null;
+            humanAnimationBindings = null;
             CleanupBots();
             menu = Menu.Role;
             rules = null;
@@ -1333,34 +1683,64 @@ namespace HextechSeekers.Native
             }
             float width = 525;
             bool tall = menu == Menu.Augment || menu == Menu.Playing;
-            float boxHeight = rules != null && rules.Phase == MatchPhase.Finished
+            float boxHeight = menu == Menu.Role ? 340f :
+                rules != null && rules.Phase == MatchPhase.Finished
                 ? 330f + rosterSize * 24f : (tall ? 310f : 218f);
             GUI.Box(new Rect(12, 12, width, boxHeight), "");
             GUI.Label(new Rect(25, 19, 495, 26), "HEXTECH SEEKERS | NATIVE 3D | GAMEPLAY ALPHA");
             if (menu == Menu.Role)
             {
-                GUI.Label(new Rect(25, 52, 470, 25),
-                    "Player: original Garen | AI slots: unimported tactical markers");
-                GUI.Label(new Rect(25, 83, 460, 25), "Total participants: " + rosterSize +
-                    " (one hunter, remainder hiders)");
-                if (GUI.Button(new Rect(295, 78, 45, 30), "-"))
+                GUI.Label(new Rect(25, 50, 475, 26),
+                    "Select your champion (no duplicate AI hero)");
+                for (int i = 0; i < NativePlayerRoster.Heroes.Length; i++)
+                {
+                    string choice = NativePlayerRoster.Heroes[i];
+                    if (GUI.Button(new Rect(25 + i * 121f, 80, 112, 38),
+                                   (choice == selectedHero ? "* " : "") + choice))
+                    {
+                        if (rift.SelectPlayerChampion(choice))
+                        {
+                            selectedHero = choice;
+                            feedback = rift.PlayerHasOriginalRig ?
+                                "Original " + choice + " rig loaded" :
+                                choice + ": tactical marker, original model not supplied";
+                        }
+                    }
+                }
+                GUI.Label(new Rect(25, 130, 475, 24),
+                    rift.PlayerHasOriginalRig ? "Original rig available: " + selectedHero :
+                    "ART NOT INSTALLED: " + selectedHero + " tactical marker");
+                GUI.Label(new Rect(25, 164, 460, 25),
+                    "Participants: " + rosterSize + " (one hunter, remaining hiders)");
+                if (GUI.Button(new Rect(295, 161, 45, 30), "-"))
                     rosterSize = Mathf.Max(2, rosterSize - 1);
-                if (GUI.Button(new Rect(350, 78, 45, 30), "+"))
+                if (GUI.Button(new Rect(350, 161, 45, 30), "+"))
                     rosterSize = Mathf.Min(4, rosterSize + 1);
-                if (GUI.Button(new Rect(25, 128, 223, 44), "Play as HUNTER"))
+                if (GUI.Button(new Rect(25, 213, 223, 44), "Play as HUNTER"))
                     Configure(MatchRole.Hunter);
-                if (GUI.Button(new Rect(260, 128, 225, 44), "Play as HIDER"))
+                if (GUI.Button(new Rect(260, 213, 225, 44), "Play as HIDER"))
                     Configure(MatchRole.Hider);
+                GUI.Label(new Rect(25, 269, 475, 22),
+                    "No source assets? Skills still run using a labeled tactical ring.");
+                GUI.Label(new Rect(25, 296, 475, 22), feedback);
             }
             else if (menu == Menu.Skill)
             {
                 GUI.Label(new Rect(25, 52, 478, 30),
-                    "Garen: choose your first legal Q/W. E is pure damage.");
-                if (GUI.Button(new Rect(25, 94, 215, 47), "Q | movement / cleanse"))
-                    SelectSkill(NativeSkillSlot.Q);
-                if (GUI.Button(new Rect(252, 94, 230, 47), "W | tenacity"))
-                    SelectSkill(NativeSkillSlot.W);
+                    selectedHero + ": choose ONE legal skill to begin.");
+                foreach (NativeSkillSlot slot in new[] {
+                             NativeSkillSlot.Q, NativeSkillSlot.W, NativeSkillSlot.E })
+                {
+                    if (!NativeSkillCatalog.Allowed(selectedHero, humanRole, slot))
+                        continue;
+                    int index = (int)slot;
+                    if (GUI.Button(new Rect(25 + index * 155f, 94, 148, 47),
+                                   slot + " | " + selectedHero))
+                        SelectSkill(slot);
+                }
                 GUI.Label(new Rect(25, 156, 470, 25),
+                    "Garen E is damage-only and not selectable.");
+                GUI.Label(new Rect(25, 185, 475, 22),
                     "No normal summoner spells, runes or damage-only abilities.");
             }
             else if (rules != null)
@@ -1368,7 +1748,7 @@ namespace HextechSeekers.Native
                 string phase = rules.Phase == MatchPhase.Preparation ? "PREPARATION" :
                                rules.Phase == MatchPhase.Pursuit ? "PURSUIT" : "FINISHED";
                 GUI.Label(new Rect(25, 47, 482, 24),
-                    "Role " + humanRole + " | " + phase + " | " +
+                    selectedHero + " | " + humanRole + " | " + phase + " | " +
                     Mathf.CeilToInt(rules.RemainingSeconds) + "s | " + rosterSize + " actors");
                 GUI.Label(new Rect(25, 76, 480, 22),
                     "Captured " + rules.CapturedCount + "/" + rules.HiderCount +
@@ -1381,7 +1761,7 @@ namespace HextechSeekers.Native
                     "Hextech: " + (selected.HasValue ? NativeHextechPool.Find(selected.Value).Name : "-") +
                     " | Cooldown " + Mathf.CeilToInt(hextech.RemainingCooldown(HumanId)) + "s");
                 GUI.Label(new Rect(25, 127, 485, 23),
-                    "Target: " + SelectedTargetStatus() + " | A attack | Tab cycle | F hextech");
+                    "Target: " + SelectedTargetStatus() + " | A basic | Tab | Q/W/E | F");
                 if (selected == NativeHextech.TimeClockSilver &&
                     rules.Phase == MatchPhase.Pursuit)
                 {
@@ -1394,10 +1774,18 @@ namespace HextechSeekers.Native
                     !humanLoadout.Secondary.HasValue &&
                     rules.Phase == MatchPhase.Preparation)
                 {
-                    var secondary = humanLoadout.Primary == NativeSkillSlot.Q ?
-                        NativeSkillSlot.W : NativeSkillSlot.Q;
-                    if (GUI.Button(new Rect(25, 195, 250, 32), "Level 2: learn " + secondary))
-                        humanLoadout.Choose(secondary);
+                    int optionIndex = 0;
+                    foreach (NativeSkillSlot slot in new[] {
+                                 NativeSkillSlot.Q, NativeSkillSlot.W, NativeSkillSlot.E })
+                    {
+                        if (slot == humanLoadout.Primary ||
+                            !NativeSkillCatalog.Allowed(selectedHero, humanRole, slot))
+                            continue;
+                        if (GUI.Button(new Rect(25 + 240 * optionIndex, 195, 224, 32),
+                                       "Level 2: learn " + slot))
+                            humanLoadout.Choose(slot);
+                        optionIndex++;
+                    }
                 }
                 if (rules.Phase == MatchPhase.Finished)
                 {
@@ -1413,12 +1801,21 @@ namespace HextechSeekers.Native
                     (privateFog && privateFog.Running ?
                      "Fog: private 3D terrain vision + explored darkness" :
                      "Fog unavailable: no full-map sight protection"));
-                if (garenSkills != null && humanLoadout != null)
+                if (humanLoadout != null)
+                {
+                    string cooldowns = selectedHero == "Garen"
+                        ? "Q " + Mathf.CeilToInt(garenSkills.CooldownQ) +
+                          "s  W " + Mathf.CeilToInt(garenSkills.CooldownW) + "s"
+                        : selectedHero == "Yasuo"
+                        ? "Q " + Mathf.CeilToInt(humanYasuo.CooldownQ) +
+                          "s  W " + Mathf.CeilToInt(humanCombat.CooldownW) +
+                          "s  E " + Mathf.CeilToInt(humanYasuo.CooldownE) + "s"
+                        : "Q " + Mathf.CeilToInt(humanCombat.CooldownQ) +
+                          "s  W " + Mathf.CeilToInt(humanCombat.CooldownW) +
+                          "s  E " + Mathf.CeilToInt(humanCombat.CooldownE) + "s";
                     GUI.Label(new Rect(25, 286, 490, 20),
-                        "Garen skills  Q " + Mathf.CeilToInt(garenSkills.CooldownQ) +
-                        "s" + (garenSkills.QActive ? " ACTIVE" : "") +
-                        "   W " + Mathf.CeilToInt(garenSkills.CooldownW) +
-                        "s" + (garenSkills.WActive ? " ACTIVE" : ""));
+                              selectedHero + " cooldowns: " + cooldowns);
+                }
                 if (rules.Phase == MatchPhase.Finished)
                 {
                     int row = 0;
@@ -1451,6 +1848,7 @@ namespace HextechSeekers.Native
             public bool hiderWinsBySurviving;
             public int numberOfActors;
             public int optionalOriginalSources, optionalOriginalRigs;
+            public int selectableHeroRostersValidated, missingHumanOriginalArt;
         }
 
         IEnumerator VerifyGameplay()
@@ -1504,7 +1902,43 @@ namespace HextechSeekers.Native
                 }
                 if (result.optionalOriginalRigs != result.optionalOriginalSources)
                     throw new InvalidOperationException("Optional original hero rig count mismatch");
+
+                // Real Windows Player acceptance for the selected human identity,
+                // no duplicate hero slots, and honest marker-vs-original source.
+                foreach (string candidate in NativePlayerRoster.Heroes)
+                {
+                    ReturnToRoleSelection();
+                    selectedHero = candidate;
+                    if (!rift.SelectPlayerChampion(candidate))
+                        throw new InvalidOperationException("Player could not select " + candidate);
+                    Configure(MatchRole.Hunter);
+                    if (rules.Players.Count != 4 ||
+                        rules.Find(HumanId).HeroKey != candidate ||
+                        humanLoadout.Hero != candidate)
+                        throw new InvalidOperationException(
+                            "Human champion identity was replaced: " + candidate);
+                    var seenHeroes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var participant in rules.Players)
+                        if (!seenHeroes.Add(participant.HeroKey))
+                            throw new InvalidOperationException(
+                                "Duplicate champion in player roster: " + candidate);
+                    string heroFolder = Path.Combine(Application.streamingAssetsPath,
+                                                     "Champions", candidate);
+                    bool sourceAvailable = candidate == "Garen" ||
+                        GarenRigRuntime.SourceFilesPresent(heroFolder, candidate);
+                    if (sourceAvailable != rift.PlayerHasOriginalRig ||
+                        rift.PlayerHeroName != candidate)
+                        throw new InvalidOperationException(
+                            "Human original art/missing-art marker mismatch: " + candidate);
+                    if (!sourceAvailable) result.missingHumanOriginalArt++;
+                    result.selectableHeroRostersValidated++;
+                    Debug.Log("MATCH_HUMAN_HERO_SELECTION_PASS: " + candidate +
+                              " originalArt=" + sourceAvailable);
+                }
                 ReturnToRoleSelection();
+                selectedHero = "Garen";
+                if (!rift.SelectPlayerChampion(selectedHero))
+                    throw new InvalidOperationException("Cannot restore original Garen");
                 // Unity defers Destroy until frame end; the removed optional
                 // actors no longer participate in the authoritative rules.
                 // Do not yield inside this try/catch (C# CS1626).
@@ -1547,7 +1981,8 @@ namespace HextechSeekers.Native
                     !result.eliminatedTargetRejectedOnRealRift ||
                     !result.caughtHiderEliminated || !result.hunterEarlyBonusApplied ||
                     !result.hiderCanMoveDuringPreparation || !result.hiderWinsBySurviving ||
-                    result.numberOfActors != 2)
+                    result.numberOfActors != 2 ||
+                    result.selectableHeroRostersValidated != 4)
                     throw new InvalidOperationException("Gameplay smoke assertions failed");
                 result.status = "PASS";
             }
