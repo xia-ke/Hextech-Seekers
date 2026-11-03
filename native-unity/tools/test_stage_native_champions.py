@@ -81,6 +81,18 @@ class ChampionStagingTests(unittest.TestCase):
         self.assertFalse((destination / "unrelated.dat").exists())
         self.assertEqual(validate_bundle(destination, "Blitzcrank")["hero"], "Blitzcrank")
 
+    def test_source_workstation_path_is_never_packaged(self):
+        folder = self.bundle("Yasuo")
+        receipt_file = folder / "local-import-provenance.json"
+        receipt = json.loads(receipt_file.read_text())
+        receipt["source"] = "C:/Users/example/PrivateRiotAssetArchive"
+        receipt_file.write_text(json.dumps(receipt))
+        stage_available(self.source, self.target)
+        deployed = json.loads(
+            (self.target / "Yasuo" / "local-import-provenance.json").read_text())
+        self.assertNotIn("source", deployed)
+        self.assertIn("bundleSha256", deployed)
+
     def test_bad_sha_aborts_without_mutating_unity(self):
         folder = self.bundle()
         (folder / "blitzcrank.bin").write_bytes(b"tampered")
