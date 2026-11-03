@@ -139,6 +139,25 @@ jobs:
           }
           if ($LASTEXITCODE -ne 0) { throw "Pinned original asset preparation failed ($LASTEXITCODE)" }
 
+      - name: Stage optional provenance-verified original hero rigs from persistent runner storage
+        env:
+          HEXTECH_CHAMPION_ASSET_ROOT: ${{ vars.HEXTECH_CHAMPION_ASSET_ROOT }}
+        run: |
+          # Never fetch or commit copyrighted champion art. Keep the source
+          # outside the Git workspace: checkout uses git clean -ffdx.
+          $sourceRoot = if ($env:HEXTECH_CHAMPION_ASSET_ROOT) {
+            $env:HEXTECH_CHAMPION_ASSET_ROOT
+          } else {
+            'F:\\actions-runner\\HextechChampionSources'
+          }
+          Write-Host 'Checking locally imported champion sources (optional; Garen baseline remains available)'
+          if (Get-Command py -ErrorAction SilentlyContinue) {
+            & py -3 native-unity/tools/stage_native_champions.py --source-root $sourceRoot
+          } else {
+            & python native-unity/tools/stage_native_champions.py --source-root $sourceRoot
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Original optional champion staging failed ($LASTEXITCODE)" }
+
       - name: Convert pinned Rift WebP textures into PNG-compatible GLB
         run: |
           # Unity is not the first GUI application encountered on Windows:
