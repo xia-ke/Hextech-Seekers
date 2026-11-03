@@ -23,6 +23,25 @@ This directory coexists with the unchanged `dist/` web client. Open `native-unit
 
 Original browser generation explicitly documents `x,y,-z`; glTFast imports glTF handedness into Unity (X inversion). Applying a 180° yaw around the original scene is the proposed transformation to align nav `x,z` with original meshes. This has **not yet been visually validated** against the real GLB in Unity. Editor exposes `mapYawCorrection` and `worldScale` for adjustment; coordinate/origin must be measured before accepting Phase 1.
 
+## Phase 11 — original optional champions in Windows Player
+
+Blitzcrank, Riven and Yasuo now have an **offline, provenance-verified asset
+staging pipeline**, but their actual original art is not bundled in this Git
+repository. Import each locally held original `.lmesh`, `.lanim` and `.png`
+to a persistent directory **outside the Git working tree** using
+`native-unity/tools/import_native_hero.py`. The import checks real
+idle/run/attack animation names and emits a SHA-256 file receipt.
+`native-unity/tools/stage_native_champions.py` validates the complete receipt,
+replaces staged hero folders atomically, and rejects unverified skill mappings.
+
+Both native Windows workflows stage these optional assets before Unity builds.
+The real Windows gameplay smoke now audits all three original AI rig slots
+when their sources exist; if none exists, the tested Garen baseline remains
+valid and the other three are accurately labeled tactical markers, not
+counterfeit champion geometry. See
+[Phase 11 import and QA guide](docs/phase-11-original-champion-import.md)
+for exact Windows commands, external directory layout and acceptance limits.
+
 ## License & provenance
 
 Original League of Legends map/champion art is attributed to **Riot Games**, distinct from MIT licenses of third-party format/conversion code. Reusing art inside a private prototype does not convey unrestricted redistribution rights. Do not distribute a game installer with original artwork without checking applicable Riot policy/permissions.
