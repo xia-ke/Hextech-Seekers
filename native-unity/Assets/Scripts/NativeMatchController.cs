@@ -7,10 +7,10 @@ using UnityEngine;
 namespace HextechSeekers.Native
 {
     /// <summary>
-    /// Native 3D hide-and-seek alpha. One original skinned Garen plus 1-3 AI
-    /// tactical markers using distinct hero SLOTS. A marker is never presented
-    /// as the actual unimported Blitzcrank/Riven/Yasuo character artwork.
-    /// Selection -> three Hextech cards -> Garen skill -> preparation -> pursuit.
+    /// Native 3D hide-and-seek alpha. A human may choose any of four heroes,
+    /// with 1–3 unique AI slots. Missing original hero art stays an explicitly
+    /// labeled tactical marker. Gameplay identity never depends on model files.
+    /// Hero/role -> three Hextech cards -> legal Q/W/E -> preparation -> pursuit.
     /// </summary>
     public sealed class NativeMatchController : MonoBehaviour
     {
@@ -27,8 +27,6 @@ namespace HextechSeekers.Native
             ? rift.SpawnCalibration.HunterSpawn : HunterStaging;
         Vector2 HiderSpawn => rift && rift.SpawnCalibration != null
             ? rift.SpawnCalibration.HiderSpawn : HiderStart;
-        static readonly string[] BotHeroSlots = { "Blitzcrank", "Riven", "Yasuo" };
-
         enum Menu { Role, Augment, Skill, Playing }
         sealed class Bot
         {
@@ -66,7 +64,14 @@ namespace HextechSeekers.Native
         NativeHeroControl heroControl;
         NativeFogOfWar privateFog;
         NativeCombatVfx combatVfx;
-        NativeAbilityAnimationBindings garenAnimationBindings;
+        NativeAbilityAnimationBindings humanAnimationBindings;
+        NativeChampionCombat humanCombat;
+        NativeYasuoSkillState humanYasuo;
+        NativeDirectionalProjectile humanYasuoQFlight;
+        bool humanYasuoQTornadoFlight;
+        NativeDashMotion humanDash = new NativeDashMotion();
+        Vector2 humanFacing = Vector2.right;
+        string selectedHero = "Garen";
         NativeBasicContactWindow humanContact = new NativeBasicContactWindow();
         NativeDashMotion humanPull = new NativeDashMotion();
         Vector2 previousHumanVisualPosition;
@@ -109,19 +114,23 @@ namespace HextechSeekers.Native
             CleanupBots();
             if (privateFog) privateFog.End();
             humanRole = role;
-            var participants = new MatchParticipant[rosterSize];
-            participants[0] = new MatchParticipant(HumanId, "Garen", role, true);
-            for (int i = 1; i < rosterSize; i++)
-            {
-                var botRole = role == MatchRole.Hunter ? MatchRole.Hider :
-                    (i == 1 ? MatchRole.Hunter : MatchRole.Hider);
-                participants[i] = new MatchParticipant(i + 1, BotHeroSlots[i - 1], botRole, false);
-            }
+            if (!rift.SelectPlayerChampion(selectedHero))
+                throw new InvalidOperationException("Cannot choose native player hero: " + selectedHero);
+            var participants = NativePlayerRoster.Build(selectedHero, role, rosterSize);
             rules = new NativeMatchRules(participants);
             hextech = new NativeHextechRuntime(rules);
             heroControl = new NativeHeroControl();
-            humanLoadout = new NativeHeroLoadout("Garen", role);
+            humanLoadout = new NativeHeroLoadout(selectedHero, role);
             garenSkills = new NativeGarenSkills();
+            humanCombat = selectedHero == "Garen" ? null :
+                new NativeChampionCombat(HumanId, selectedHero,
+                    humanLoadout, rules, hextech, rift.Navigation);
+            humanYasuo = selectedHero == "Yasuo" ? new NativeYasuoSkillState() : null;
+            humanYasuoQFlight = null;
+            humanYasuoQTornadoFlight = false;
+            humanDash.Cancel();
+            humanFacing = Vector2.right;
+            humanAnimationBindings = null;
             offered = NativeHextechPool.Deal(role, random);
             preferredTargetId = -1;
             preferredSpectateId = -1;
@@ -176,7 +185,7 @@ namespace HextechSeekers.Native
             foreach (var choice in offered)
                 if (choice.Id == selected) offeredToHuman = true;
             if (!offeredToHuman || !hextech.Select(HumanId, selected)) return;
-            feedback = "Choose Garen Q or W as your starting skill.";
+            feedback = "Choose one legal " + selectedHero + " Q/W/E skill for this round.";
             menu = Menu.Skill;
         }
 
@@ -208,14 +217,14 @@ namespace HextechSeekers.Native
             {
                 Debug.LogWarning("NATIVE_DEBUG_FX_UNAVAILABLE: " + fxError.Message);
             }
-            // The source Garen rig may not include all the correct original
-            // spell clips; the map is optional and never guessed.
+            // Use exact hero-specific verified source clip mappings only.
+            // No guessed 'spell1 = Q' mapping when original clips are missing.
             if (rift.HeroRig)
             {
-                string garenFolder = Path.Combine(Application.streamingAssetsPath,
-                                                  "Champions", "Garen");
-                garenAnimationBindings = LoadBindings(garenFolder, "Garen",
-                                                     rift.HeroRig);
+                string heroFolder = Path.Combine(Application.streamingAssetsPath,
+                                                 "Champions", selectedHero);
+                humanAnimationBindings = LoadBindings(heroFolder, selectedHero,
+                                                      rift.HeroRig);
             }
             hextech.ApplyPreparationPassives(HumanId, humanLoadout);
             foreach (var bot in bots)
@@ -261,6 +270,7 @@ namespace HextechSeekers.Native
             }
             feedback = startMessage;
             Debug.Log("MATCH_BEGIN: participants=" + rosterSize + " human=" + humanRole +
+                      " hero=" + selectedHero + " originalArt=" + rift.PlayerHasOriginalRig +
                       " hextech=" + hextech.Selected(HumanId));
         }
 
