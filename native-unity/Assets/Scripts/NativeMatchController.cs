@@ -339,11 +339,13 @@ namespace HextechSeekers.Native
             {
                 basicCooldown = HumanBasicCooldown;
                 rift.PerformBasicAttack();
-                var target = NearestVisibleEnemy(HumanId);
-                if (target != null)
-                    humanContact.Begin(target.Id);
+                int targetId = ChooseHumanBasicTarget();
+                if (targetId >= 0)
+                    humanContact.Begin(targetId);
                 combatVfx?.Pulse(HumanId, rift.PlayerPosition, "Garen Basic");
-                feedback = "Attack animation started; target hit checked at contact frame.";
+                feedback = targetId >= 0
+                    ? "Attack windup: contact will recheck vision, range and immunity."
+                    : "Attack animation: no visible enemy currently within melee reach.";
             }
 
             ResolveHumanBasicContact(dt);
@@ -493,19 +495,38 @@ namespace HextechSeekers.Native
         bool VisibleTo(int observerId, int targetId) =>
             NativeSight.Visible(rift.Navigation, GetPosition(observerId), GetPosition(targetId));
 
-        Bot NearestVisibleEnemy(int observer)
+        int ChooseHumanBasicTarget()
         {
-            Bot found = null;
-            float nearest = float.MaxValue;
+            var candidates = new List<NativeTargetSelection.Candidate>(bots.Count);
+            Vector2 origin = rift.PlayerPosition;
             foreach (var bot in bots)
             {
                 var p = rules.Find(bot.Id);
-                if (p.Eliminated || p.Role == rules.Find(observer).Role ||
-                    !VisibleTo(observer, bot.Id)) continue;
-                float distance = Vector2.Distance(GetPosition(observer), bot.Position);
-                if (distance < nearest) { nearest = distance; found = bot; }
+                bool opponent = p != null && p.Role != humanRole;
+                bool alive = p != null && !p.Eliminated;
+                // Never attempt to target a concealed actor by remembered
+                // selection or Card Sense. No physics or screen-space guess.
+                bool visible = opponent && alive && VisibleTo(HumanId, bot.Id);
+                float distance = Vector2.Distance(origin, bot.Position);
+                candidates.Add(new NativeTargetSelection.Candidate(
+                    bot.Id, opponent, alive, visible, distance));
             }
-            return found;
+            return NativeTargetSelection.ChooseBasicTarget(
+                preferredTargetId, candidates, NativeMatchRules.BasicAttackReach);
+        }
+
+        string SelectedTargetStatus()
+        {
+            if (rules == null || preferredTargetId < 0) return "AUTO NEAREST";
+            var target = rules.Find(preferredTargetId);
+            if (target == null || target.Eliminated || target.Role == humanRole)
+                return "UNAVAILABLE";
+            bool visible = !rules.Find(HumanId).Eliminated &&
+                           VisibleTo(HumanId, preferredTargetId);
+            return NativeTargetSelection.CanDisplaySelectedEnemy(
+                rules.Find(HumanId).Eliminated, target.Role != humanRole,
+                !target.Eliminated, visible)
+                ? target.HeroKey + " (visible)" : "UNSEEN (no auto-attack)";
         }
 
         int GetTargetForActor(int actorId)
@@ -1360,7 +1381,7 @@ namespace HextechSeekers.Native
                     "Hextech: " + (selected.HasValue ? NativeHextechPool.Find(selected.Value).Name : "-") +
                     " | Cooldown " + Mathf.CeilToInt(hextech.RemainingCooldown(HumanId)) + "s");
                 GUI.Label(new Rect(25, 127, 485, 23),
-                    "RMB move | S stop | A basic | Q/W chosen skills | Tab target | F hextech");
+                    "Target: " + SelectedTargetStatus() + " | A attack | Tab cycle | F hextech");
                 if (selected == NativeHextech.TimeClockSilver &&
                     rules.Phase == MatchPhase.Pursuit)
                 {
@@ -1422,6 +1443,8 @@ namespace HextechSeekers.Native
             public bool hunterLockedDuringPreparation;
             public bool hunterReleasedAfterPreparation;
             public bool hunterCapturedUsingBasicAttack;
+            public bool preferredTargetAcquiredOnRealRift;
+            public bool eliminatedTargetRejectedOnRealRift;
             public bool caughtHiderEliminated;
             public bool hunterEarlyBonusApplied;
             public bool hiderCanMoveDuringPreparation;
@@ -1496,11 +1519,16 @@ namespace HextechSeekers.Native
                 result.hunterReleasedAfterPreparation = rules.CanMove(HumanId);
                 rift.TryTeleportTo(bots[0].Position);
                 bool visible = VisibleTo(HumanId, 2);
+                preferredTargetId = 2;
+                result.preferredTargetAcquiredOnRealRift =
+                    visible && ChooseHumanBasicTarget() == 2;
                 rift.PerformBasicAttack();
                 result.hunterCapturedUsingBasicAttack = rules.TryCapture(HumanId, 2,
                     true, visible, Vector2.Distance(rift.PlayerPosition, bots[0].Position));
                 result.caughtHiderEliminated = rules.Find(2).Eliminated &&
                                                rules.Phase == MatchPhase.Finished;
+                result.eliminatedTargetRejectedOnRealRift =
+                    ChooseHumanBasicTarget() == -1;
                 result.hunterEarlyBonusApplied = rules.Find(HumanId).Score == 2;
 
                 ReturnToRoleSelection();
@@ -1515,6 +1543,8 @@ namespace HextechSeekers.Native
                 if (!result.loadedRift || !result.hunterLockedDuringPreparation ||
                     !result.hunterReleasedAfterPreparation ||
                     !result.hunterCapturedUsingBasicAttack ||
+                    !result.preferredTargetAcquiredOnRealRift ||
+                    !result.eliminatedTargetRejectedOnRealRift ||
                     !result.caughtHiderEliminated || !result.hunterEarlyBonusApplied ||
                     !result.hiderCanMoveDuringPreparation || !result.hiderWinsBySurviving ||
                     result.numberOfActors != 2)
