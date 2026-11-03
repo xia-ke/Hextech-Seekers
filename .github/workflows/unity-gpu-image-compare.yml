@@ -1,0 +1,110 @@
+name: Compare native GPU foliage evidence (diagnostic only)
+on:
+  workflow_dispatch:
+  push:
+    branches: ['fix/**']
+    paths:
+      - '.github/workflows/unity-gpu-image-compare.yml'
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: [self-hosted, Windows, X64, hextech-unity]
+    timeout-minutes: 12
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Measure foliage black-pixel regressions from the actual GPU captures
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          $root = 'F:\actions-runner\HextechVisualEvidence'
+          $oldRun = '41471948938'
+          $newRun = '41486376458'
+          $labels = @('native-idle.png', 'native-run.png', 'native-attack.png')
+          $zones = @(
+            @{ Name='wholeScreen'; Left=0; Top=0; Right=1280; Bottom=720 },
+            @{ Name='rightFoliage'; Left=820; Top=130; Right=1200; Bottom=620 },
+            @{ Name='leftFoliage'; Left=120; Top=230; Right=500; Bottom=620 }
+          )
+          $rows = New-Object 'System.Collections.Generic.List[object]'
+          function Measure-Png([string]$file, [hashtable]$rect) {
+            $bitmap = [System.Drawing.Bitmap]::new($file)
+            try {
+              if ($bitmap.Width -ne 1280 -or $bitmap.Height -ne 720) {
+                throw "Expected 1280x720 screenshot: $file ($($bitmap.Width)x$($bitmap.Height))"
+              }
+              $dark = 0
+              $magenta = 0
+              $samples = 0
+              for ($y=$rect.Top; $y -lt $rect.Bottom; $y+=4) {
+                for ($x=$rect.Left; $x -lt $rect.Right; $x+=4) {
+                  $pixel = $bitmap.GetPixel($x,$y)
+                  if ($pixel.R -le 10 -and $pixel.G -le 10 -and $pixel.B -le 10) { $dark++ }
+                  if ($pixel.R -ge 140 -and $pixel.B -ge 140 -and $pixel.G -le 90) { $magenta++ }
+                  $samples++
+                }
+              }
+              return [pscustomobject]@{
+                darkRatio = [math]::Round(100.0*$dark/$samples, 3)
+                magentaRatio = [math]::Round(100.0*$magenta/$samples, 3)
+                sampleCount = $samples
+              }
+            } finally {
+              $bitmap.Dispose()
+            }
+          }
+          foreach ($name in $labels) {
+            $oldFile = Join-Path (Join-Path (Join-Path $root $oldRun) 'evidence') $name
+            $newFile = Join-Path (Join-Path (Join-Path $root $newRun) 'evidence') $name
+            if (-not (Test-Path -LiteralPath $oldFile -PathType Leaf)) {
+              throw "Missing baseline screenshot: $oldFile"
+            }
+            if (-not (Test-Path -LiteralPath $newFile -PathType Leaf)) {
+              throw "Missing new screenshot: $newFile"
+            }
+            foreach ($zone in $zones) {
+              $old = Measure-Png $oldFile $zone
+              $new = Measure-Png $newFile $zone
+              $rows.Add([pscustomobject]@{
+                image = $name
+                zone = $zone.Name
+                baselineDarkPercent = $old.darkRatio
+                latestDarkPercent = $new.darkRatio
+                changeDarkPoints = [math]::Round($new.darkRatio-$old.darkRatio,3)
+                baselineMagentaPercent = $old.magentaRatio
+                latestMagentaPercent = $new.magentaRatio
+                sampleCount = $new.sampleCount
+              })
+            }
+          }
+          $json = $rows | ConvertTo-Json -Depth 3
+          Write-Host 'NATIVE_GPU_PIXEL_DIAGNOSTIC_BEGIN'
+          Write-Host $json
+          Write-Host 'NATIVE_GPU_PIXEL_DIAGNOSTIC_END'
+          Write-Host 'These black-pixel ratios are DIAGNOSTIC ONLY. Terrain shadows and camera/framing changes prevent an automatic visual-fidelity PASS.'
+          $summary = $env:GITHUB_STEP_SUMMARY
+          if ($summary) {
+            Add-Content -LiteralPath $summary -Value @(
+              '# Comparison of real Windows GPU screenshots'
+              ''
+              "Old run: $oldRun; New run: $newRun"
+              ''
+              '| Image | Crop | Old black ≤10 (%) | New black ≤10 (%) | Delta (points) | New magenta (%) |'
+              '|---|---|---:|---:|---:|---:|'
+            ) -Encoding UTF8
+            foreach ($row in $rows) {
+              Add-Content -LiteralPath $summary -Value (
+                '| {0} | {1} | {2} | {3} | {4} | {5} |' -f $row.image,$row.zone,$row.baselineDarkPercent,$row.latestDarkPercent,$row.changeDarkPoints,$row.latestMagentaPercent
+              ) -Encoding UTF8
+            }
+            Add-Content -LiteralPath $summary -Value @(
+              ''
+              '**Diagnostic only.** Requires manual screenshot review and a legitimate, watermark-free Unity Player license before release acceptance.'
+            ) -Encoding UTF8
+          }
+          $newResult = Join-Path (Join-Path (Join-Path $root $newRun) 'evidence') 'result.json'
+          if (Test-Path -LiteralPath $newResult) {
+            $status = Get-Content -LiteralPath $newResult -Raw | ConvertFrom-Json
+            Write-Host ("NATIVE_GPU_RESULT: status={0} watermark={1} mapLoaded={2} renderers={3} frames={4}" -f $status.status,$status.unityWatermarkVisible,$status.originalSceneLoaded,$status.mapRendererCount,$status.frames)
+          }
