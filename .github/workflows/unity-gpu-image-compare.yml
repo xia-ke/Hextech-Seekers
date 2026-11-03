@@ -7,6 +7,9 @@ on:
       - '.github/workflows/unity-gpu-image-compare.yml'
 permissions:
   contents: read
+concurrency:
+  group: hextech-gpu-image-compare
+  cancel-in-progress: true
 jobs:
   compare:
     runs-on: [self-hosted, Windows, X64, hextech-unity]
@@ -108,16 +111,3 @@ jobs:
             $status = Get-Content -LiteralPath $newResult -Raw | ConvertFrom-Json
             Write-Host ("NATIVE_GPU_RESULT: status={0} watermark={1} mapLoaded={2} renderers={3} frames={4}" -f $status.status,$status.unityWatermarkVisible,$status.originalSceneLoaded,$status.mapRendererCount,$status.frames)
           }
-      - name: Upload the actual new GPU screenshots for independent visual inspection
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: hextech-gpu-screenshots-41486376458
-          path: |
-            F:/actions-runner/HextechVisualEvidence/41486376458/evidence/native-idle.png
-            F:/actions-runner/HextechVisualEvidence/41486376458/evidence/native-run.png
-            F:/actions-runner/HextechVisualEvidence/41486376458/evidence/native-attack.png
-            F:/actions-runner/HextechVisualEvidence/41486376458/evidence/result.json
-            F:/actions-runner/HextechVisualEvidence/41486376458/map-conversion.json
-          if-no-files-found: error
-          retention-days: 7
