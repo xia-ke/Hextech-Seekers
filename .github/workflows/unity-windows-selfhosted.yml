@@ -72,6 +72,21 @@ jobs:
             & python native-unity/tools/prepare_assets.py
           }
           if ($LASTEXITCODE -ne 0) { throw "Original asset preparation failed: $LASTEXITCODE" }
+      - name: Stage optional imported champion assets (offline, hash-verified)
+        env:
+          HEXTECH_CHAMPION_ASSET_ROOT: ${{ vars.HEXTECH_CHAMPION_ASSET_ROOT }}
+        run: |
+          $sourceRoot = if ($env:HEXTECH_CHAMPION_ASSET_ROOT) {
+            $env:HEXTECH_CHAMPION_ASSET_ROOT
+          } else {
+            'F:\\actions-runner\\HextechChampionSources'
+          }
+          if (Get-Command py -ErrorAction SilentlyContinue) {
+            & py -3 native-unity/tools/stage_native_champions.py --source-root $sourceRoot
+          } else {
+            & python native-unity/tools/stage_native_champions.py --source-root $sourceRoot
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Original optional champion staging failed ($LASTEXITCODE)" }
       - name: Run Unity Editor compile and EditMode tests
         run: |
           $out = Join-Path $env:RUNNER_TEMP 'hextech-unity-evidence'
