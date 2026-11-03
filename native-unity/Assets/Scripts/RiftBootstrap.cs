@@ -28,6 +28,10 @@ namespace HextechSeekers.Native
         Vector2[] route = Array.Empty<Vector2>();
         int waypoint;
         GarenRigRuntime heroRig;
+        GarenRigRuntime garenBaseline;
+        GameObject playerTacticalMarker;
+        Material playerMarkerMaterial;
+        string playerHeroName = "Garen";
         Vector2 previousLocation;
         GameObject loadedMap;
         GltfImport mapImport;
@@ -37,6 +41,8 @@ namespace HextechSeekers.Native
         public bool HasLoadFailed => !ready && !string.Equals(problem, "Initializing 3D Rift...", StringComparison.Ordinal);
         public string LoadProblem => problem;
         public GarenRigRuntime HeroRig => heroRig;
+        public string PlayerHeroName => playerHeroName;
+        public bool PlayerHasOriginalRig => heroRig != null;
         public GameObject LoadedMap => loadedMap;
         public RiftGrid Navigation => nav;
         public NativeCampCatalog CampCatalog { get; private set; }
@@ -237,6 +243,7 @@ namespace HextechSeekers.Native
                 // Do not silently fall back to the old cyan diagnostic disc.
                 string heroPath = Path.Combine(root, "Champions", "Garen");
                 heroRig = GarenRigRuntime.Load(transform, heroPath);
+                garenBaseline = heroRig;
                 previousLocation = location;
                 heroRig.transform.position = ToScene(location);
                 // Only verified camp coordinates may create monster entities.
@@ -289,6 +296,8 @@ namespace HextechSeekers.Native
                 heroRig.Tick(Time.deltaTime, waypoint < route.Length);
                 previousLocation = location;
             }
+            if (playerTacticalMarker)
+                playerTacticalMarker.transform.position = at;
             var forward = Quaternion.Euler(cameraPitch, 0, 0) * Vector3.forward;
             Vector3 focus = CameraFollowOverride.HasValue ?
                 ToScene(CameraFollowOverride.Value) : at;
@@ -297,6 +306,91 @@ namespace HextechSeekers.Native
             sceneCamera.orthographic = true;
             sceneCamera.orthographicSize = cameraOrthographicSize;
         }
+        /// <summary>
+        /// Change the locally controlled hero. If authorized original art is not
+        /// installed, display a clearly named tactical ring, NEVER Garen in
+        /// another hero's place. The gameplay identity remains the chosen hero.
+        /// </summary>
+        public bool SelectPlayerChampion(string chosen)
+        {
+            if (!ready || !NativePlayerRoster.IsSelectable(chosen)) return false;
+            chosen = NativePlayerRoster.CanonicalHero(chosen);
+            if (string.Equals(playerHeroName, chosen, StringComparison.Ordinal))
+                return true;
+            if (heroRig && heroRig != garenBaseline)
+                Destroy(heroRig.gameObject);
+            if (playerTacticalMarker) Destroy(playerTacticalMarker);
+            playerTacticalMarker = null;
+            if (playerMarkerMaterial) Destroy(playerMarkerMaterial);
+            playerMarkerMaterial = null;
+            garenBaseline.gameObject.SetActive(false);
+            heroRig = null;
+            playerHeroName = chosen;
+            StopMovement();
+            if (chosen == "Garen")
+            {
+                heroRig = garenBaseline;
+                garenBaseline.gameObject.SetActive(true);
+                heroRig.transform.position = ToScene(location);
+                Debug.Log("NATIVE_HUMAN_ORIGINAL_HERO_READY: Garen");
+                return true;
+            }
+            string folder = Path.Combine(Application.streamingAssetsPath,
+                                         "Champions", chosen);
+            if (GarenRigRuntime.SourceFilesPresent(folder, chosen))
+            {
+                try
+                {
+                    heroRig = GarenRigRuntime.LoadChampion(transform, folder, chosen);
+                    heroRig.transform.position = ToScene(location);
+                    Debug.Log("NATIVE_HUMAN_ORIGINAL_HERO_READY: " + chosen);
+                    return true;
+                }
+                catch (Exception invalid)
+                {
+                    Debug.LogError("NATIVE_HUMAN_ORIGINAL_HERO_REJECTED: " +
+                                   chosen + " " + invalid);
+                }
+            }
+            var template = Resources.Load<Material>("Native/GarenLit");
+            if (!template) throw new InvalidDataException(
+                "Native/GarenLit material must exist for the tactical source warning");
+            playerTacticalMarker = new GameObject(
+                "HUMAN_TACTICAL_MARKER_" + chosen + "_ORIGINAL_ART_UNAVAILABLE");
+            var ring = playerTacticalMarker.AddComponent<LineRenderer>();
+            ring.useWorldSpace = false;
+            ring.loop = true;
+            ring.positionCount = 32;
+            ring.startWidth = 14f;
+            ring.endWidth = 14f;
+            for (int i = 0; i < 32; i++)
+            {
+                float a = 2f * Mathf.PI * i / 32;
+                ring.SetPosition(i, new Vector3(65f * Mathf.Cos(a), 18f,
+                                                65f * Mathf.Sin(a)));
+            }
+            playerMarkerMaterial = new Material(template);
+            playerMarkerMaterial.name = "HUMAN_TACTICAL_ONLY_" + chosen;
+            playerMarkerMaterial.SetColor("_BaseColor", new Color(.12f, .85f, 1f));
+            ring.sharedMaterial = playerMarkerMaterial;
+            playerTacticalMarker.transform.position = ToScene(location);
+            Debug.LogWarning("NATIVE_HUMAN_ORIGINAL_HERO_ABSENT: " + chosen +
+                             " tactical ring, no substituted champion art");
+            return true;
+        }
+
+        public bool TryGetWorldPointFromScreen(Vector2 screen, out Vector2 point)
+        {
+            point = default;
+            if (!ready || !sceneCamera) return false;
+            var ray = sceneCamera.ScreenPointToRay(screen);
+            var plane = new Plane(Vector3.up, ToScene(location));
+            if (!plane.Raycast(ray, out float distance)) return false;
+            Vector3 hit = ray.GetPoint(distance);
+            point = new Vector2(hit.x, hit.z);
+            return true;
+        }
+
         public bool TryTeleportTo(Vector2 desired)
         {
             if (!ready || !nav.TryNearest(desired, out var destination, 65)) return false;
@@ -304,7 +398,8 @@ namespace HextechSeekers.Native
             previousLocation = destination;
             route = Array.Empty<Vector2>();
             waypoint = 0;
-            heroRig.transform.position = ToScene(location);
+            if (heroRig) heroRig.transform.position = ToScene(location);
+            if (playerTacticalMarker) playerTacticalMarker.transform.position = ToScene(location);
             return true;
         }
 
@@ -322,6 +417,7 @@ namespace HextechSeekers.Native
             route = Array.Empty<Vector2>();
             waypoint = 0;
             if (heroRig) heroRig.transform.position = ToScene(location);
+            if (playerTacticalMarker) playerTacticalMarker.transform.position = ToScene(location);
             return true;
         }
 
@@ -391,6 +487,7 @@ namespace HextechSeekers.Native
         }
         void OnDestroy()
         {
+            if (playerMarkerMaterial) Destroy(playerMarkerMaterial);
             if (neutralScene) Destroy(neutralScene.gameObject);
             if (loadedMap) Destroy(loadedMap);
             mapImport?.Dispose();
