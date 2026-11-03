@@ -66,7 +66,13 @@ jobs:
           [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "exe=$unity" + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
           Write-Host "Using Unity: $unity; Runner desktop user: $env:USERNAME"
 
-      - name: Activate the repository Unity license on the Windows GPU runner
+      - name: Select Unity license activation method
+        run: |
+          Write-Host 'Default: reuse the Windows Runner account Unity Hub license.'
+          Write-Host 'For Unity Personal, sign in to Unity Hub as the same Windows account that runs this Runner.'
+          Write-Host 'Manual ULF activation is only for eligible paid or legacy licenses and is opt-in through UNITY_ACTIVATE_FROM_SECRET=true.'
+      - name: Activate supported paid or legacy ULF license (opt-in only)
+        if: ${{ vars.UNITY_ACTIVATE_FROM_SECRET == 'true' }}
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
         run: |
