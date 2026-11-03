@@ -273,7 +273,7 @@ namespace HextechSeekers.Native
             if (!ExternalGameplayControl)
             {
                 if (Input.GetMouseButtonDown(1)) SetDestination();
-                if (Input.GetKeyDown(KeyCode.A)) heroRig.PlayAttack();
+                if (Input.GetKeyDown(KeyCode.A) && heroRig) heroRig.PlayAttack();
             }
             if (waypoint < route.Length && (!ExternalGameplayControl || ExternalMoveEnabled))
             {
@@ -294,10 +294,10 @@ namespace HextechSeekers.Native
                 if (delta.sqrMagnitude > .0001f)
                     heroRig.transform.rotation = Quaternion.LookRotation(new Vector3(delta.x,0,delta.y), Vector3.up);
                 heroRig.Tick(Time.deltaTime, waypoint < route.Length);
-                previousLocation = location;
             }
             if (playerTacticalMarker)
                 playerTacticalMarker.transform.position = at;
+            previousLocation = location;
             var forward = Quaternion.Euler(cameraPitch, 0, 0) * Vector3.forward;
             Vector3 focus = CameraFollowOverride.HasValue ?
                 ToScene(CameraFollowOverride.Value) : at;
@@ -318,8 +318,15 @@ namespace HextechSeekers.Native
             if (string.Equals(playerHeroName, chosen, StringComparison.Ordinal))
                 return true;
             if (heroRig && heroRig != garenBaseline)
+            {
+                heroRig.gameObject.SetActive(false);
                 Destroy(heroRig.gameObject);
-            if (playerTacticalMarker) Destroy(playerTacticalMarker);
+            }
+            if (playerTacticalMarker)
+            {
+                playerTacticalMarker.SetActive(false);
+                Destroy(playerTacticalMarker);
+            }
             playerTacticalMarker = null;
             if (playerMarkerMaterial) Destroy(playerMarkerMaterial);
             playerMarkerMaterial = null;
