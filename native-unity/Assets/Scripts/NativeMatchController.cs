@@ -70,6 +70,7 @@ namespace HextechSeekers.Native
         NativeYasuoSkillState humanYasuo;
         NativeDirectionalProjectile humanYasuoQFlight;
         bool humanYasuoQTornadoFlight;
+        bool humanQNeutralStacked;
         NativeDashMotion humanDash = new NativeDashMotion();
         Vector2 humanFacing = Vector2.right;
         string selectedHero = "Garen";
@@ -129,6 +130,7 @@ namespace HextechSeekers.Native
             humanYasuo = selectedHero == "Yasuo" ? new NativeYasuoSkillState() : null;
             humanYasuoQFlight = null;
             humanYasuoQTornadoFlight = false;
+            humanQNeutralStacked = false;
             humanDash.Cancel();
             humanFacing = Vector2.right;
             humanAnimationBindings = null;
@@ -615,6 +617,7 @@ namespace HextechSeekers.Native
             }
             humanYasuoQFlight = shot;
             humanYasuoQTornadoFlight = tornado;
+            humanQNeutralStacked = false;
             // Real neutral monsters can grant normal Yasuo Q stacks without
             // receiving damage. This uses the verified nav/neutral contact.
             if (!tornado && rift.NeutralMonsters != null &&
@@ -622,9 +625,11 @@ namespace HextechSeekers.Native
             {
                 var monster = rift.NeutralMonsters.FirstLineContact(
                     origin, direction, reach, width);
-                if (monster != null)
+                if (monster != null &&
+                    rift.Navigation.LineClear(origin, monster.WalkableAnchor))
                 {
                     humanYasuo.RegisterQHit(false);
+                    humanQNeutralStacked = true;
                     Debug.Log("NATIVE_HUMAN_YASUO_Q_NEUTRAL: " + monster.CampName);
                 }
             }
@@ -773,7 +778,7 @@ namespace HextechSeekers.Native
             {
                 if (humanYasuoQTornadoFlight)
                     ApplyChampionControl(impact.TargetId, .75f);
-                else
+                else if (!humanQNeutralStacked)
                     humanYasuo?.RegisterQHit(false);
                 if (VisibleTo(HumanId, impact.TargetId))
                     combatVfx?.Impact(HumanId, GetPosition(impact.TargetId),
