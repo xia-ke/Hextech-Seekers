@@ -115,13 +115,14 @@ def verify(directory):
         if player.get(key) is not True:
             raise ValueError(f"Player report {key} is not true")
 
-    # Unity 6 exposes trial/development watermark state through
-    # UnityEngine.Rendering.Watermark. Do not accept a screenshot that merely
-    # happens to hide or crop the screen-space watermark.
-    expected_false = (
-        "unityWatermarkVisible", "developmentWatermarkEnabled", "debugHudEnabled",
-    )
-    for key in expected_false:
+    # Trial-license watermarks are NOT removed from images and are tracked
+    # explicitly as warnings. They do not block technical GPU acceptance.
+    # Development/debug overlays, by contrast, must stay disabled in QA.
+    if not isinstance(player.get("unityWatermarkVisible"), bool):
+        raise ValueError("Player did not report a boolean unityWatermarkVisible")
+    if player.get("trialWatermarkIgnoredForTechnicalQa") is not player["unityWatermarkVisible"]:
+        raise ValueError("Trial watermark warning status does not match Unity's visibility report")
+    for key in ("developmentWatermarkEnabled", "debugHudEnabled"):
         if player.get(key) is not False:
             raise ValueError(f"Player report {key} must be false; got {player.get(key)!r}")
 
@@ -171,6 +172,11 @@ def verify(directory):
         "fpsAverage": player.get("fpsAverage"),
         "worstFrameMilliseconds": player.get("worstFrameMilliseconds"),
         "unityWatermarkVisible": player.get("unityWatermarkVisible"),
+        "trialWatermarkIgnoredForTechnicalQa": player.get("trialWatermarkIgnoredForTechnicalQa"),
+        "technicalWarning": (
+            "Unity Trial watermark remains visible in evidence; ignored for technical smoke QA"
+            if player["unityWatermarkVisible"] else None
+        ),
         "developmentWatermarkEnabled": player.get("developmentWatermarkEnabled"),
         "debugHudEnabled": player.get("debugHudEnabled"),
         "alphaAudit": alpha_audit,
@@ -203,6 +209,7 @@ def main():
             "Unity: " + str(result["editorVersion"]),
             "Map renderers: " + str(result["mapRendererCount"]),
             "Average FPS: " + str(result["fpsAverage"]),
+            "Trial watermark visible (non-blocking): " + str(result["unityWatermarkVisible"]),
             "",
             "Inspect native-idle.png, native-run.png, native-attack.png side-by-side.",
             "Do not claim scene/animation fidelity accepted until manual visual inspection.",
