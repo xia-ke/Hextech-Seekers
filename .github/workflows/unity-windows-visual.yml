@@ -373,6 +373,85 @@ jobs:
             throw "Native gameplay smoke failed (process=$($proc.ExitCode), status=$($json.status))"
           }
 
+      - name: Verify original champion rigs and capture per-hero real GPU art evidence
+        run: |
+          $project = Join-Path $env:GITHUB_WORKSPACE 'native-unity'
+          $exe = Join-Path $project 'Build\Windows\HextechSeekers.exe'
+          $root = Join-Path $env:RUNNER_TEMP "hextech-native-gpu-$env:GITHUB_RUN_ID"
+          $evidence = Join-Path $root 'evidence'
+          $log = Join-Path $root 'ChampionVisualQA.log'
+          $args = @(
+            '-force-d3d11',
+            '-screen-fullscreen', '0',
+            '-screen-width', '1280',
+            '-screen-height', '720',
+            '-logFile', ('"{0}"' -f $log),
+            '-hextechChampionVisualQA',
+            '-hextechEvidenceDir', ('"{0}"' -f $evidence)
+          )
+          Write-Host 'Checking actual GPU hero art: real mesh/idle/run/attack, or explicitly missing original source'
+          $proc = Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe) -ArgumentList $args -PassThru
+          if (-not $proc.WaitForExit(240000)) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            throw 'Original champion GPU QA timed out after 4 minutes'
+          }
+          Write-Host "Champion GPU art QA exit=$($proc.ExitCode)"
+          if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 100 }
+          $file = Join-Path $evidence 'champion-visual-result.json'
+          if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+            throw 'Champion GPU QA did not write champion-visual-result.json'
+          }
+          $report = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
+          Get-Content -LiteralPath $file
+          if ($proc.ExitCode -ne 0 -or $report.status -ne 'CAPTURED_REQUIRES_VISUAL_REVIEW' -or
+              -not $report.hardwareGpu -or -not $report.mapLoaded -or
+              $report.selectableHeroes -ne 4 -or $report.originalRigCount -lt 1 -or
+              $report.originalRigCount + $report.missingSourceCount -ne 4 -or
+              @($report.heroes).Count -ne 4) {
+            throw "Champion GPU QA failed: $($report.status) $($report.reason)"
+          }
+          $seen = @{}
+          foreach ($hero in @($report.heroes)) {
+            if ($seen.ContainsKey($hero.hero)) { throw "Duplicate hero in art audit: $($hero.hero)" }
+            $seen[$hero.hero] = $true
+            $expected = if ($hero.sourcePresent) { 3 } else { 1 }
+            if (@($hero.images).Count -ne $expected) {
+              throw "Wrong evidence count for $($hero.hero): expected $expected"
+            }
+            if ($hero.sourcePresent) {
+              if ($hero.assetState -ne 'ORIGINAL_RIG' -or -not $hero.realSkinnedMesh -or
+                  $hero.markerShown -or -not $hero.idle -or -not $hero.run -or
+                  -not $hero.attack -or -not $hero.pivotInView -or
+                  $hero.vertices -lt 3 -or $hero.bones -lt 1) {
+                throw "Original hero rig/animation invalid: $($hero.hero)"
+              }
+            } elseif ($hero.assetState -ne 'SOURCE_MISSING_MARKER' -or
+                      $hero.realSkinnedMesh -or -not $hero.markerShown) {
+              throw "Missing original art incorrectly presented as finished: $($hero.hero)"
+            }
+            foreach ($name in @($hero.images)) {
+              $image = Join-Path $evidence $name
+              if (-not (Test-Path -LiteralPath $image -PathType Leaf)) {
+                throw "Missing actual GPU champion screenshot: $name"
+              }
+              $bytes = [System.IO.File]::ReadAllBytes($image)
+              if ($bytes.Length -lt 16384) { throw "Champion image too small: $name" }
+              $signature = @(137,80,78,71,13,10,26,10)
+              for ($i = 0; $i -lt $signature.Length; $i++) {
+                if ($bytes[$i] -ne $signature[$i]) { throw "Champion image is not PNG: $name" }
+              }
+              $width = [System.Net.IPAddress]::NetworkToHostOrder([BitConverter]::ToInt32($bytes, 16))
+              $height = [System.Net.IPAddress]::NetworkToHostOrder([BitConverter]::ToInt32($bytes, 20))
+              if ($width -lt 800 -or $height -lt 450) { throw "Champion image too small: $name" }
+              Write-Host "CHAMPION_GPU_EVIDENCE_OK: $name bytes=$($bytes.Length) $width x $height"
+            }
+          }
+          foreach ($hero in @('Garen', 'Blitzcrank', 'Riven', 'Yasuo')) {
+            if (-not $seen.ContainsKey($hero)) { throw "Hero absent from GPU art audit: $hero" }
+          }
+          Write-Host "CHAMPION_ART_GPU_VISUAL_QA_PASS: real=$($report.originalRigCount) missing=$($report.missingSourceCount)"
+          Write-Host 'Original art scale, direction and aesthetics still require manual screenshot review'
+
       - name: Capture and verify Phase 10 combat effects on the actual GPU
         run: |
           $project = Join-Path $env:GITHUB_WORKSPACE 'native-unity'
