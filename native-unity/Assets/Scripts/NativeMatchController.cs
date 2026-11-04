@@ -1852,6 +1852,123 @@ namespace HextechSeekers.Native
             public int numberOfActors;
             public int optionalOriginalSources, optionalOriginalRigs;
             public int selectableHeroRostersValidated, missingHumanOriginalArt;
+            public int humanSkillSmokesPassed, humanSkillSmokesExpected;
+            public bool noHumanSkillDirectCaptures;
+            public string[] humanSkillEvidence;
+        }
+
+        // This test intentionally calls the SAME private cast entry used by Q/W/E
+        // key handling. It supplies only a deterministic mouse aim, never a
+        // synthetic skill-success flag or a forged capture result.
+        Vector2 QaSafeDashDirection(float length)
+        {
+            Vector2 origin = rift.PlayerPosition;
+            var choices = new[] {
+                Vector2.right, Vector2.left, Vector2.up, Vector2.down,
+                new Vector2(1, 1).normalized, new Vector2(1, -1).normalized,
+                new Vector2(-1, 1).normalized, new Vector2(-1, -1).normalized
+            };
+            float bestDistance = 0f;
+            Vector2 bestDirection = Vector2.right;
+            foreach (var direction in choices)
+            {
+                Vector2 landing = NativeSkillGeometry.WalkableDash(
+                    rift.Navigation, origin, direction, length);
+                float distance = Vector2.Distance(origin, landing);
+                if (distance > bestDistance)
+                {
+                    bestDistance = distance;
+                    bestDirection = direction;
+                }
+            }
+            if (bestDistance < 8f)
+                throw new InvalidOperationException("No safe Map11 dash path for human skill QA");
+            return bestDirection;
+        }
+
+        void VerifyHumanSkillOnRealRift(string hero, MatchRole role,
+                                       NativeSkillSlot slot, List<string> audit)
+        {
+            ReturnToRoleSelection();
+            selectedHero = hero;
+            rosterSize = 2;
+            Configure(role);
+            SelectAugment(offered[0].Id);
+            SelectSkill(slot);
+            if (menu != Menu.Playing || !humanLoadout.Knows(slot) ||
+                rules.Players.Count != 2)
+                throw new InvalidOperationException("QA skill loadout not playable: " + hero + " " + slot);
+
+            bool lockedDuringPreparation = role == MatchRole.Hunter;
+            if (lockedDuringPreparation)
+            {
+                if (TryHumanSkill(slot, Vector2.right))
+                    throw new InvalidOperationException("Hunter cast during preparation: " + hero);
+                rules.Advance(NativeMatchRules.PreparationSeconds);
+                if (!rules.CanMove(HumanId))
+                    throw new InvalidOperationException("Hunter remained locked after preparation");
+            }
+            else if (!rules.CanMove(HumanId) || rules.Phase != MatchPhase.Preparation)
+                throw new InvalidOperationException("Hider could not cast during preparation");
+
+            if (!rift.TryTeleportTo(HiderSpawn))
+                throw new InvalidOperationException("Map11 QA staging is not navigable");
+            // Target-dependent Riven W requires a real opposing actor in
+            // physical melee proximity. No target is auto-captured.
+            if (hero == "Riven" && slot == NativeSkillSlot.W)
+            {
+                bots[0].Position = rift.PlayerPosition;
+                if (!VisibleTo(HumanId, bots[0].Id))
+                    throw new InvalidOperationException("Nearby Riven W target not visible");
+            }
+            Vector2 direction = (hero == "Riven" &&
+                (slot == NativeSkillSlot.E || slot == NativeSkillSlot.Q))
+                ? QaSafeDashDirection(slot == NativeSkillSlot.Q
+                    ? NativeChampionCombat.RivenQDashProvisional
+                    : NativeChampionCombat.RivenEDashProvisional)
+                : Vector2.right;
+
+            int capturesBefore = rules.CapturedCount;
+            MatchPhase phaseBefore = rules.Phase;
+            bool cast = TryHumanSkill(slot, direction);
+            bool active = false;
+            switch (hero)
+            {
+                case "Garen":
+                    active = slot == NativeSkillSlot.Q
+                        ? garenSkills.QActive : garenSkills.WActive;
+                    break;
+                case "Blitzcrank":
+                    active = slot == NativeSkillSlot.Q ? humanCombat.HookActive :
+                        slot == NativeSkillSlot.W ? humanCombat.BlitzBoostRemaining > 0f :
+                        humanCombat.BlitzEArmed;
+                    break;
+                case "Riven":
+                    active = slot == NativeSkillSlot.W
+                        ? heroControl.Locked(bots[0].Id) :
+                        humanDash.Active && (slot != NativeSkillSlot.Q ||
+                                             humanCombat.RivenQStage == 1);
+                    break;
+                case "Yasuo":
+                    active = slot == NativeSkillSlot.Q
+                        ? humanYasuoQFlight != null && humanYasuoQFlight.Active
+                        : humanCombat.WindWallRemaining > 0f;
+                    break;
+            }
+
+            bool repeatRejected = !TryHumanSkill(slot, direction);
+            bool noCapture = rules.CapturedCount == capturesBefore &&
+                             rules.Phase == phaseBefore &&
+                             !rules.Find(bots[0].Id).Eliminated;
+            if (!cast || !active || !repeatRejected || !noCapture)
+                throw new InvalidOperationException(
+                    "Real human skill smoke failed: " + hero + " " + role + " " + slot +
+                    " cast=" + cast + " active=" + active +
+                    " repeatRejected=" + repeatRejected + " noCapture=" + noCapture);
+            string evidence = hero + ":" + role + ":" + slot +
+                              ":cast=true:repeatRejected=true:capture=false";
+            audit.Add(evidence);
+            Debug.Log("MATCH_HUMAN_SKILL_SMOKE_PASS: " + evidence);
         }
 
         IEnumerator VerifyGameplay()
@@ -1938,6 +2055,36 @@ namespace HextechSeekers.Native
                     Debug.Log("MATCH_HUMAN_HERO_SELECTION_PASS: " + candidate +
                               " originalArt=" + sourceAvailable);
                 }
+                // Exercise nine actual human key-equivalent casts on the
+                // loaded original Map11 with live rules, skill whitelists,
+                // cooldown and navigation. This is not a simulated keyboard
+                // event or a claim of completed original ability artwork.
+                var skillAudit = new List<string>();
+                VerifyHumanSkillOnRealRift("Garen", MatchRole.Hunter,
+                    NativeSkillSlot.Q, skillAudit);
+                VerifyHumanSkillOnRealRift("Garen", MatchRole.Hunter,
+                    NativeSkillSlot.W, skillAudit);
+                VerifyHumanSkillOnRealRift("Blitzcrank", MatchRole.Hunter,
+                    NativeSkillSlot.Q, skillAudit);
+                VerifyHumanSkillOnRealRift("Blitzcrank", MatchRole.Hider,
+                    NativeSkillSlot.W, skillAudit);
+                VerifyHumanSkillOnRealRift("Blitzcrank", MatchRole.Hunter,
+                    NativeSkillSlot.E, skillAudit);
+                VerifyHumanSkillOnRealRift("Riven", MatchRole.Hider,
+                    NativeSkillSlot.Q, skillAudit);
+                VerifyHumanSkillOnRealRift("Riven", MatchRole.Hider,
+                    NativeSkillSlot.W, skillAudit);
+                VerifyHumanSkillOnRealRift("Riven", MatchRole.Hider,
+                    NativeSkillSlot.E, skillAudit);
+                VerifyHumanSkillOnRealRift("Yasuo", MatchRole.Hider,
+                    NativeSkillSlot.Q, skillAudit);
+                VerifyHumanSkillOnRealRift("Yasuo", MatchRole.Hider,
+                    NativeSkillSlot.W, skillAudit);
+                result.humanSkillSmokesExpected = 10;
+                result.humanSkillSmokesPassed = skillAudit.Count;
+                result.noHumanSkillDirectCaptures = skillAudit.Count == 10;
+                result.humanSkillEvidence = skillAudit.ToArray();
+
                 ReturnToRoleSelection();
                 selectedHero = "Garen";
                 if (!rift.SelectPlayerChampion(selectedHero))
@@ -1985,7 +2132,10 @@ namespace HextechSeekers.Native
                     !result.caughtHiderEliminated || !result.hunterEarlyBonusApplied ||
                     !result.hiderCanMoveDuringPreparation || !result.hiderWinsBySurviving ||
                     result.numberOfActors != 2 ||
-                    result.selectableHeroRostersValidated != 4)
+                    result.selectableHeroRostersValidated != 4 ||
+                    result.humanSkillSmokesExpected != 10 ||
+                    result.humanSkillSmokesPassed != 10 ||
+                    !result.noHumanSkillDirectCaptures)
                     throw new InvalidOperationException("Gameplay smoke assertions failed");
                 result.status = "PASS";
             }
