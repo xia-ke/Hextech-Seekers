@@ -696,7 +696,10 @@ namespace HextechSeekers.Native
             return false;
         }
 
-        void TryHumanSkill(NativeSkillSlot slot)
+        // Player input and real GPU QA use the same authoritative cast path.
+        // A QA-only aim override avoids relying on an OS mouse cursor on
+        // headless/interactive Windows runner desktops.
+        bool TryHumanSkill(NativeSkillSlot slot, Vector2? qaAim = null)
         {
             if (humanLoadout == null || !humanLoadout.Knows(slot) ||
                 !rules.CanMove(HumanId) || !hextech.CanUseHeroSkill(HumanId) ||
@@ -704,15 +707,12 @@ namespace HextechSeekers.Native
                 humanPull.Active)
             {
                 feedback = "Skill unavailable: unlearned, silenced, stunned or moving";
-                return;
+                return false;
             }
             if (selectedHero == "Garen")
-            {
-                TryGarenSkill(slot);
-                return;
-            }
+                return TryGarenSkill(slot);
             Vector2 origin = rift.PlayerPosition;
-            Vector2 direction = HumanAimDirection();
+            Vector2 direction = qaAim.HasValue ? qaAim.Value.normalized : HumanAimDirection();
             bool cast = false;
             if (selectedHero == "Blitzcrank")
             {
@@ -763,6 +763,7 @@ namespace HextechSeekers.Native
             }
             if (!cast) feedback = selectedHero + " " + slot +
                 " unavailable (cooldown, range, obstacle or no valid target)";
+            return cast;
         }
 
         void TickHumanProjectiles(float dt)
@@ -792,7 +793,7 @@ namespace HextechSeekers.Native
                       " capture=false");
         }
 
-        void TryGarenSkill(NativeSkillSlot slot)
+        bool TryGarenSkill(NativeSkillSlot slot)
         {
             if (garenSkills.TryCast(slot, humanLoadout, rules, hextech, HumanId, false))
             {
@@ -802,8 +803,10 @@ namespace HextechSeekers.Native
                     "Garen Q: slow cleanse + brief movement speed (tuning pending)" :
                     "Garen W: tenacity window; ordinary shield does NOT block capture";
                 Debug.Log("MATCH_GAREN_SKILL: " + slot + " (non-damaging adapted mechanics)");
+                return true;
             }
-            else feedback = "Skill unavailable: check chosen skills, cooldown, stun or silence";
+            feedback = "Skill unavailable: check chosen skills, cooldown, stun or silence";
+            return false;
         }
 
         Bot FindBot(int id)
