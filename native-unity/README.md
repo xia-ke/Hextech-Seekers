@@ -23,6 +23,20 @@ This directory coexists with the unchanged `dist/` web client. Open `native-unit
 
 Original browser generation explicitly documents `x,y,-z`; glTFast imports glTF handedness into Unity (X inversion). Applying a 180° yaw around the original scene is the proposed transformation to align nav `x,z` with original meshes. This has **not yet been visually validated** against the real GLB in Unity. Editor exposes `mapYawCorrection` and `worldScale` for adjustment; coordinate/origin must be measured before accepting Phase 1.
 
+## Phase 15 — human Q/W/E ability execution in the actual Windows Player
+
+The **real Windows GPU gameplay test** now exercises 10 learned human
+Q/W/E skill casts through the same controller entry point used by actual
+keyboard input: Garen Q/W, Blitzcrank Q/W/E, Riven Q/W/E and Yasuo Q/W.
+It checks preparation-phase hunter lock, hider legal casts, active skill
+state, immediate recast rejection, actual Rift dash/path checks, and
+that abilities cannot directly capture a player.
+
+The Player writes per-cast evidence and assertions in
+`gameplay-result.json`. This is not fake keyboard input or a claim that
+missing original model, ability clips and VFX assets are completed.
+See [Phase 15 Windows Player skill QA](docs/phase-15-real-player-skill-regression.md).
+
 ## Phase 14 — real GPU original champion art diagnostics
 
 All four selectable heroes now have a separate **technical original-art QA**
