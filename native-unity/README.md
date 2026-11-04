@@ -23,6 +23,19 @@ This directory coexists with the unchanged `dist/` web client. Open `native-unit
 
 Original browser generation explicitly documents `x,y,-z`; glTFast imports glTF handedness into Unity (X inversion). Applying a 180° yaw around the original scene is the proposed transformation to align nav `x,z` with original meshes. This has **not yet been visually validated** against the real GLB in Unity. Editor exposes `mapYawCorrection` and `worldScale` for adjustment; coordinate/origin must be measured before accepting Phase 1.
 
+## Phase 16 — complete Riven Q1/Q2/Q3 and Yasuo E champion traversal
+
+The real Windows GPU Player suite now checks **Yasuo E across a visible
+opposing hero**, its independently enforced per-target repeat lock after the
+global recast delay, and **Riven Q1→Q2→Q3** with real Rift nav-authorized
+movement and third-stage crowd control. Neither skill can directly capture.
+The gameplay report and GitHub Actions require both named advanced
+scenario records, in addition to Phase 15's ten basic human skill checks.
+
+See [Phase 16 complex skill acceptance](docs/phase-16-advanced-skill-gpu-acceptance.md).
+No original optional champion art is claimed without locally staged verified
+sources.
+
 ## Phase 15 — human Q/W/E ability execution in the actual Windows Player
 
 The **real Windows GPU gameplay test** now exercises 10 learned human
