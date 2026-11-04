@@ -390,6 +390,23 @@ jobs:
             }
             Write-Host "HUMAN_SKILL_GPU_QA_PASS: $item"
           }
+          # Phase 16: target-dependent actual Map11 casts must be present.
+          if ($json.advancedHumanSkillSmokesExpected -ne 2 -or
+              $json.advancedHumanSkillSmokesPassed -ne 2 -or
+              -not $json.noAdvancedSkillDirectCaptures -or
+              @($json.advancedHumanSkillEvidence).Count -ne 2) {
+            throw "Advanced human skill smoke missing or failed: $($json.advancedHumanSkillSmokesPassed)/2"
+          }
+          $expectedAdvanced = @(
+            'Yasuo:Hider:E:targetPassed=true:targetLock=true:capture=false',
+            'Riven:Hider:Q123:thirdControl=true:cooldown=true:capture=false'
+          )
+          foreach ($item in $expectedAdvanced) {
+            if (@($json.advancedHumanSkillEvidence) -notcontains $item) {
+              throw "Advanced human skill smoke evidence missing: $item"
+            }
+            Write-Host "ADVANCED_HUMAN_SKILL_GPU_QA_PASS: $item"
+          }
 
       - name: Verify original champion rigs and capture per-hero real GPU art evidence
         run: |
