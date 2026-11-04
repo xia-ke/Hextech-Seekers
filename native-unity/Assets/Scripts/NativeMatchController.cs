@@ -1855,6 +1855,9 @@ namespace HextechSeekers.Native
             public int humanSkillSmokesPassed, humanSkillSmokesExpected;
             public bool noHumanSkillDirectCaptures;
             public string[] humanSkillEvidence;
+            public int advancedHumanSkillSmokesExpected, advancedHumanSkillSmokesPassed;
+            public bool noAdvancedSkillDirectCaptures;
+            public string[] advancedHumanSkillEvidence;
         }
 
         // This test intentionally calls the SAME private cast entry used by Q/W/E
@@ -1971,6 +1974,170 @@ namespace HextechSeekers.Native
             Debug.Log("MATCH_HUMAN_SKILL_SMOKE_PASS: " + evidence);
         }
 
+
+        // Find a navigable, unobstructed lane for a deterministic real
+        // target-dependent Yasuo E. The original Map11 has walls and camps;
+        // do not force a dash through them or bypass real vision rules.
+        Vector2 QaPlaceYasuoECorridor(float reach)
+        {
+            var nav = rift.Navigation;
+            Vector2 anchor = rift.PlayerPosition;
+            var directions = new[] {
+                Vector2.right, Vector2.left, Vector2.up, Vector2.down,
+                new Vector2(1, 1).normalized, new Vector2(1, -1).normalized,
+                new Vector2(-1, 1).normalized, new Vector2(-1, -1).normalized
+            };
+            // Search a small area near legal HiderSpawn first, then walkable
+            // cell centers on the actual loaded Map11 as a stable fallback.
+            for (int pass = 0; pass < 2; pass++)
+            {
+                int countX = pass == 0 ? 13 : RiftGrid.Width / 3;
+                int countY = pass == 0 ? 13 : RiftGrid.Height / 3;
+                for (int x = 0; x < countX; x++)
+                for (int y = 0; y < countY; y++)
+                {
+                    Vector2 sample = pass == 0 ?
+                        anchor + new Vector2((x - 6) * 120f, (y - 6) * 120f) :
+                        nav.Center(x * 3 + 1, y * 3 + 1);
+                    var cell = nav.Cell(sample.x, sample.y);
+                    if (!nav.Valid(cell.x, cell.y)) continue;
+                    Vector2 origin = nav.Center(cell.x, cell.y);
+                    bool nearCamp = false;
+                    if (rift.NeutralMonsters != null)
+                        foreach (var monster in rift.NeutralMonsters.Monsters)
+                            if ((monster.WalkableAnchor - origin).sqrMagnitude <=
+                                NativeYasuoSkillState.EDashRangeProvisional *
+                                NativeYasuoSkillState.EDashRangeProvisional)
+                                nearCamp = true;
+                    if (nearCamp) continue;
+                    foreach (var dir in directions)
+                    {
+                        Vector2 target = origin + dir * 170f;
+                        Vector2 landing = origin + dir * reach;
+                        if (!nav.CanWalk(target) || !nav.CanWalk(landing) ||
+                            !nav.LineClear(origin, landing) ||
+                            !NativeSight.Visible(nav, origin, target))
+                            continue;
+                        if (!rift.TryTeleportTo(origin) ||
+                            Vector2.Distance(rift.PlayerPosition, origin) > 1f)
+                            continue;
+                        return dir;
+                    }
+                }
+            }
+            throw new InvalidOperationException(
+                "Map11 has no navigable camp-free Yasuo E hero corridor");
+        }
+
+        void VerifyHumanYasuoEContactOnRealRift(List<string> audit)
+        {
+            ReturnToRoleSelection();
+            selectedHero = "Yasuo";
+            rosterSize = 2;
+            Configure(MatchRole.Hider);
+            SelectAugment(offered[0].Id);
+            SelectSkill(NativeSkillSlot.E);
+            if (menu != Menu.Playing || !humanLoadout.Knows(NativeSkillSlot.E))
+                throw new InvalidOperationException("Yasuo E not selected in playable round");
+
+            Vector2 direction = QaPlaceYasuoECorridor(340f);
+            Vector2 start = rift.PlayerPosition;
+            var target = bots[0];
+            target.Position = start + direction * 170f;
+            bool visible = VisibleTo(HumanId, target.Id);
+            if (!visible)
+                throw new InvalidOperationException("Yasuo E setup target not in actual vision");
+            int captured = rules.CapturedCount;
+            bool cast = TryHumanSkill(NativeSkillSlot.E, direction);
+            Vector2 landing = humanDash.Destination;
+            bool passedTarget = Vector2.Dot(landing - target.Position, direction) > 40f;
+            bool pathClear = rift.Navigation.LineClear(start, landing);
+            bool realDash = cast && humanDash.Active &&
+                            humanYasuo.CooldownE > 0f && passedTarget && pathClear;
+            if (!realDash)
+                throw new InvalidOperationException("Yasuo E did not dash beyond visible hero");
+
+            // Complete exactly the same continuous external motion used in
+            // Update, and then return to the start to challenge per-target E
+            // lock after the global recast delay has elapsed.
+            if (!rift.TrySetExternalPosition(humanDash.Step(.25f)) || humanDash.Active)
+                throw new InvalidOperationException("Yasuo E motion did not finish on Map11");
+            if (!rift.TryTeleportTo(start))
+                throw new InvalidOperationException("Yasuo E retest staging rejected");
+            humanYasuo.Advance(.6f);
+            hextech.Advance(.6f);
+            bool globalReady = humanYasuo.CooldownE <= 0f;
+            bool targetLocked = !TryHumanSkill(NativeSkillSlot.E, direction);
+            bool noCapture = rules.CapturedCount == captured &&
+                             !rules.Find(target.Id).Eliminated &&
+                             rules.Phase == MatchPhase.Preparation;
+            if (!globalReady || !targetLocked || !noCapture)
+                throw new InvalidOperationException(
+                    "Yasuo E failed per-target lock or no-capture: " +
+                    "globalReady=" + globalReady + " targetLocked=" + targetLocked +
+                    " noCapture=" + noCapture);
+            audit.Add("Yasuo:Hider:E:targetPassed=true:targetLock=true:capture=false");
+            Debug.Log("MATCH_ADVANCED_HUMAN_SKILL_PASS: " + audit[audit.Count - 1]);
+        }
+
+        void VerifyHumanRivenQComboOnRealRift(List<string> audit)
+        {
+            ReturnToRoleSelection();
+            selectedHero = "Riven";
+            rosterSize = 2;
+            Configure(MatchRole.Hider);
+            SelectAugment(offered[0].Id);
+            SelectSkill(NativeSkillSlot.Q);
+            if (menu != Menu.Playing || !humanLoadout.Knows(NativeSkillSlot.Q))
+                throw new InvalidOperationException("Riven Q not selected in playable round");
+            if (!rift.TryTeleportTo(HiderSpawn))
+                throw new InvalidOperationException("Riven Q Map11 spawn not navigable");
+            int captured = rules.CapturedCount;
+            for (int stage = 1; stage <= 3; stage++)
+            {
+                Vector2 direction = QaSafeDashDirection(
+                    NativeChampionCombat.RivenQDashProvisional);
+                if (stage == 3)
+                {
+                    bots[0].Position = NativeSkillGeometry.WalkableDash(
+                        rift.Navigation, rift.PlayerPosition, direction,
+                        NativeChampionCombat.RivenQDashProvisional);
+                    if (!VisibleTo(HumanId, bots[0].Id))
+                        throw new InvalidOperationException("Riven Q3 target not visible");
+                }
+                bool cast = TryHumanSkill(NativeSkillSlot.Q, direction);
+                int expectedStage = stage == 3 ? 0 : stage;
+                if (!cast || !humanDash.Active || humanCombat.RivenQStage != expectedStage)
+                    throw new InvalidOperationException("Riven Q" + stage +
+                        " did not stage a real navigable dash");
+                if (TryHumanSkill(NativeSkillSlot.Q, direction))
+                    throw new InvalidOperationException(
+                        "Riven Q recast illegally allowed while dashing");
+                if (!rift.TrySetExternalPosition(humanDash.Step(.25f)) || humanDash.Active)
+                    throw new InvalidOperationException(
+                        "Riven Q" + stage + " failed continuous Map11 motion");
+                if (stage < 3)
+                {
+                    humanCombat.Advance(
+                        NativeChampionCombat.RivenQRecastMinimumProvisional + .05f);
+                    hextech.Advance(
+                        NativeChampionCombat.RivenQRecastMinimumProvisional + .05f);
+                }
+            }
+            bool thirdStun = heroControl.Locked(bots[0].Id);
+            bool cooldown = humanCombat.CooldownQ > 0f &&
+                            !TryHumanSkill(NativeSkillSlot.Q, Vector2.right);
+            bool noCapture = rules.CapturedCount == captured &&
+                             !rules.Find(bots[0].Id).Eliminated &&
+                             rules.Phase == MatchPhase.Preparation;
+            if (!thirdStun || !cooldown || !noCapture)
+                throw new InvalidOperationException(
+                    "Riven Q3 failed stun, cooldown or no-capture: stun=" +
+                    thirdStun + " cooldown=" + cooldown + " noCapture=" + noCapture);
+            audit.Add("Riven:Hider:Q123:thirdControl=true:cooldown=true:capture=false");
+            Debug.Log("MATCH_ADVANCED_HUMAN_SKILL_PASS: " + audit[audit.Count - 1]);
+        }
+
         IEnumerator VerifyGameplay()
         {
             var result = new GameplayReport { status = "FAIL" };
@@ -2085,6 +2252,16 @@ namespace HextechSeekers.Native
                 result.noHumanSkillDirectCaptures = skillAudit.Count == 10;
                 result.humanSkillEvidence = skillAudit.ToArray();
 
+                // Phase 16: real Map11 advanced casts on the human-controlled
+                // actor, not just isolated editor math or synthetic contacts.
+                var advancedAudit = new List<string>();
+                VerifyHumanYasuoEContactOnRealRift(advancedAudit);
+                VerifyHumanRivenQComboOnRealRift(advancedAudit);
+                result.advancedHumanSkillSmokesExpected = 2;
+                result.advancedHumanSkillSmokesPassed = advancedAudit.Count;
+                result.noAdvancedSkillDirectCaptures = advancedAudit.Count == 2;
+                result.advancedHumanSkillEvidence = advancedAudit.ToArray();
+
                 ReturnToRoleSelection();
                 selectedHero = "Garen";
                 if (!rift.SelectPlayerChampion(selectedHero))
@@ -2135,7 +2312,10 @@ namespace HextechSeekers.Native
                     result.selectableHeroRostersValidated != 4 ||
                     result.humanSkillSmokesExpected != 10 ||
                     result.humanSkillSmokesPassed != 10 ||
-                    !result.noHumanSkillDirectCaptures)
+                    !result.noHumanSkillDirectCaptures ||
+                    result.advancedHumanSkillSmokesExpected != 2 ||
+                    result.advancedHumanSkillSmokesPassed != 2 ||
+                    !result.noAdvancedSkillDirectCaptures)
                     throw new InvalidOperationException("Gameplay smoke assertions failed");
                 result.status = "PASS";
             }
