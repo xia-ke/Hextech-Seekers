@@ -43,6 +43,8 @@ namespace HextechSeekers.Native
         public GarenRigRuntime HeroRig => heroRig;
         public string PlayerHeroName => playerHeroName;
         public bool PlayerHasOriginalRig => heroRig != null;
+        public bool PlayerHasTacticalMarker =>
+            playerTacticalMarker && playerTacticalMarker.activeInHierarchy;
         public GameObject LoadedMap => loadedMap;
         public RiftGrid Navigation => nav;
         public NativeCampCatalog CampCatalog { get; private set; }
