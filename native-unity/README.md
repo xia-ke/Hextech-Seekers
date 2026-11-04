@@ -23,6 +23,22 @@ This directory coexists with the unchanged `dist/` web client. Open `native-unit
 
 Original browser generation explicitly documents `x,y,-z`; glTFast imports glTF handedness into Unity (X inversion). Applying a 180° yaw around the original scene is the proposed transformation to align nav `x,z` with original meshes. This has **not yet been visually validated** against the real GLB in Unity. Editor exposes `mapYawCorrection` and `worldScale` for adjustment; coordinate/origin must be measured before accepting Phase 1.
 
+## Phase 14 — real GPU original champion art diagnostics
+
+All four selectable heroes now have a separate **technical original-art QA**
+path. The Windows GPU workflow captures three real animation screenshots per
+installed original skinned rig (Idle / Run / Attack), validates skeleton,
+texture and geometry, records raw model dimensions for scale review, and
+clearly captures missing-source tactical markers without treating them as
+finished character art. A staged original source that fails to load blocks
+the test rather than silently falling back. Technical success does not mean
+human visual art approval.
+
+See [Phase 14 GPU hero art audit](docs/phase-14-real-gpu-champion-art-audit.md)
+and [the original source import instructions](docs/phase-11-original-champion-import.md).
+The original Blitzcrank, Riven and Yasuo rigs remain **external optional
+sources** and are not committed by this project.
+
 ## Phase 13 — four playable human champions and shared target arbitration
 
 The native Windows client now allows the human to select **Garen,
