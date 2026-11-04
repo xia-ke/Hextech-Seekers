@@ -372,6 +372,24 @@ jobs:
           if ($proc.ExitCode -ne 0 -or $json.status -ne 'PASS') {
             throw "Native gameplay smoke failed (process=$($proc.ExitCode), status=$($json.status))"
           }
+          # Phase 15 must exercise the real human skill entry point in the
+          # actual Player. A generic PASS without per-hero evidence is invalid.
+          if ($json.humanSkillSmokesExpected -ne 10 -or
+              $json.humanSkillSmokesPassed -ne 10 -or
+              -not $json.noHumanSkillDirectCaptures -or
+              @($json.humanSkillEvidence).Count -ne 10) {
+            throw "Human skill smoke missing or failed: expected=$($json.humanSkillSmokesExpected) passed=$($json.humanSkillSmokesPassed)"
+          }
+          $uniqueEvidence = @($json.humanSkillEvidence | Select-Object -Unique)
+          if ($uniqueEvidence.Count -ne 10) {
+            throw 'Duplicate human skill smoke scenarios did not cover 10 distinct casts'
+          }
+          foreach ($item in @($json.humanSkillEvidence)) {
+            if (-not $item.Contains(':cast=true:repeatRejected=true:capture=false')) {
+              throw "Human skill smoke audit fields invalid: $item"
+            }
+            Write-Host "HUMAN_SKILL_GPU_QA_PASS: $item"
+          }
 
       - name: Verify original champion rigs and capture per-hero real GPU art evidence
         run: |
