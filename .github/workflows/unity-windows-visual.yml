@@ -471,6 +471,20 @@ jobs:
           }
           Write-Host "VISION_SKILL_GPU_QA_PASS: $visionCase"
 
+          # Phase 17B: real Map11 source-backed camp, not synthetic monster QA.
+          if ($json.neutralSkillSmokesExpected -ne 1 -or
+              $json.neutralSkillSmokesPassed -ne 1 -or
+              @($json.neutralSkillEvidence).Count -ne 1) {
+            throw "Phase17B source-backed real neutral Player QA missing"
+          }
+          $neutralCase = [string]@($json.neutralSkillEvidence)[0]
+          if (-not $neutralCase.StartsWith('Yasuo:Hider:E:real-source-camp=') -or
+              -not $neutralCase.Contains(':dash=real-rift:target-lock=blocked:') -or
+              -not $neutralCase.EndsWith(':neutral-alive=true:capture=false')) {
+            throw "Phase17B invalid neutral Player evidence: $neutralCase"
+          }
+          Write-Host "NEUTRAL_SKILL_GPU_QA_PASS: $neutralCase"
+
       - name: Verify original champion rigs and capture per-hero real GPU art evidence
         run: |
           $project = Join-Path $env:GITHUB_WORKSPACE 'native-unity'
