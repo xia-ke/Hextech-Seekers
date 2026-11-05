@@ -10,7 +10,11 @@ namespace HextechSeekers.Native.Tests
         static byte[] AllWalkable()
         {
             var raw = new byte[RiftGrid.BinaryBytes];
-            for (int i = 0; i < RiftGrid.Width * RiftGrid.Height; i++) raw[i] = 1;
+            for (int i = 0; i < RiftGrid.Width * RiftGrid.Height; i++)
+            {
+                raw[i] = 1;
+                raw[RiftGrid.BushOffset + i] = byte.MaxValue;
+            }
             return raw;
         }
 
