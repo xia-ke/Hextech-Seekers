@@ -234,7 +234,48 @@ jobs:
             '-accept-apiupdate'
           )
           Write-Host 'Building original Rift/Garen Windows x64 Player with Unity Editor'
-          $proc = Start-Process -FilePath $unity -ArgumentList $args -Wait -PassThru
+          # Start-Process -Wait hides all progress until Unity exits. Poll the
+          # process and print a bounded tail of Build.log for diagnosis.
+          $proc = Start-Process -FilePath $unity -ArgumentList $args -PassThru
+          $started = Get-Date
+          $timeoutMinutes = 75
+          $pollSeconds = 30
+          $lastLogSize = -1L
+          $timedOut = $false
+          try {
+            while ($true) {
+              $proc.Refresh()
+              if ($proc.HasExited) { break }
+              $elapsed = (Get-Date) - $started
+              if ($elapsed.TotalMinutes -ge $timeoutMinutes) {
+                $timedOut = $true
+                Write-Error "Unity Player build timed out after $([int]$elapsed.TotalMinutes) min (PID $($proc.Id))." -ErrorAction Continue
+                # Unity may spawn child import/compiler processes; terminate only
+                # after the explicit build timeout, never on a healthy build.
+                & taskkill /PID $proc.Id /T /F 2>&1 | ForEach-Object { Write-Host $_ }
+                break
+              }
+              $bytes = -1L
+              if (Test-Path -LiteralPath $log -PathType Leaf) {
+                try {
+                  $bytes = (Get-Item -LiteralPath $log -ErrorAction Stop).Length
+                  if ($bytes -ne $lastLogSize) {
+                    Get-Content -LiteralPath $log -Tail 8 -ErrorAction Stop |
+                      ForEach-Object { Write-Host "UNITY_BUILD_LOG: $_" }
+                  }
+                } catch {
+                  Write-Warning "Build.log temporarily unavailable: $($_.Exception.Message)"
+                }
+              }
+              $lastLogSize = $bytes
+              Write-Host ("UNITY_BUILD_HEARTBEAT: elapsedSeconds={0} pid={1} logBytes={2}" -f [int]$elapsed.TotalSeconds, $proc.Id, $bytes)
+              Start-Sleep -Seconds $pollSeconds
+            }
+          } finally {
+            $proc.Refresh()
+            if ($proc.HasExited) { $proc.WaitForExit() }
+          }
+          if ($timedOut) { throw "Windows Player build exceeded $timeoutMinutes-minute process timeout; inspect Build.log" }
           Write-Host "Unity BuildWindows exit code: $($proc.ExitCode)"
           if (Test-Path -LiteralPath $log) {
             Write-Host '=== Build.log last 160 lines ==='
