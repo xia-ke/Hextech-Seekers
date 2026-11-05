@@ -101,6 +101,30 @@ namespace HextechSeekers.Native.Tests
         }
 
         [Test]
+        public void FogPresentationModesChangeOnlyVisualOpacityNotPrivateVisibility()
+        {
+            var normal = NativeFogOfWar.DisplayOpacity(NativeFogOfWar.FogDisplay.Normal);
+            var light = NativeFogOfWar.DisplayOpacity(NativeFogOfWar.FogDisplay.Light);
+            var off = NativeFogOfWar.DisplayOpacity(NativeFogOfWar.FogDisplay.Off);
+            Assert.Greater(normal.y, normal.x);
+            Assert.Less(normal.y, .60f,
+                "Unknown terrain should retain a readable silhouette");
+            Assert.Less(light.x, normal.x);
+            Assert.Less(light.y, normal.y);
+            Assert.AreEqual(Vector3.zero, off);
+
+            // Display modes must not modify the authoritative personal mask.
+            var nav = new RiftGrid(AllWalkable());
+            var sight = new NativeVisionGrid(nav);
+            Vector2 observer = nav.Center(210, 210);
+            Vector2 hidden = nav.Center(250, 210);
+            sight.Reveal(observer);
+            Assert.AreEqual(NativeVisionGrid.VisibleShade, sight.ShadeAt(210, 210));
+            Assert.AreEqual(NativeVisionGrid.UnknownShade, sight.ShadeAt(250, 210));
+            Assert.IsFalse(sight.IsCurrentlyVisible(hidden));
+        }
+
+        [Test]
         public void FogPixelsMatchGridAndRejectWrongTextureBuffer()
         {
             var nav = new RiftGrid(AllWalkable());
