@@ -213,6 +213,43 @@ namespace HextechSeekers.Native.Tests
         }
 
         [Test]
+        public void YasuoNearestLegalHeroSelectionSkipsLockedOrHiddenCloserTargets()
+        {
+            var nav = new RiftGrid(Walkable());
+            var match = new NativeMatchRules(new[] {
+                new MatchParticipant(1, "Yasuo", MatchRole.Hunter, true),
+                new MatchParticipant(2, "Garen", MatchRole.Hider, false),
+                new MatchParticipant(3, "Riven", MatchRole.Hider, false)
+            });
+            var effects = new NativeHextechRuntime(match);
+            var loadout = new NativeHeroLoadout("Yasuo", MatchRole.Hunter);
+            Assert.IsTrue(loadout.Choose(NativeSkillSlot.E));
+            match.Begin();
+            match.Advance(NativeMatchRules.PreparationSeconds);
+            var state = new NativeYasuoSkillState();
+            Vector2 origin = nav.Center(200, 200);
+            var near = new NativeSkillTarget(2, nav.Center(203, 200),
+                MatchRole.Hider, false, false);
+            var farther = new NativeSkillTarget(3, nav.Center(205, 200),
+                MatchRole.Hider, false, true);
+            Assert.IsTrue(state.TryEDashThroughNearestHero(
+                loadout, match, effects, 1, origin,
+                new[] { near, farther }, nav,
+                out Vector2 destination, out int selected));
+            Assert.AreEqual(3, selected, "Nearest hidden target must not block a visible opponent");
+            Assert.IsTrue(nav.LineClear(origin, destination));
+            state.Advance(.6f);
+            near.VisibleToCaster = true;
+            Assert.IsTrue(state.TryEDashThroughNearestHero(
+                loadout, match, effects, 1, origin,
+                new[] { farther, near }, nav,
+                out _, out selected));
+            Assert.AreEqual(2, selected,
+                "Still-locked farther target must not suppress a newly legal closer target");
+            Assert.AreEqual(0, match.CapturedCount);
+        }
+
+        [Test]
         public void MissingSkillAndIncorrectHeroCannotCastMonsterAbility()
         {
             var match = Round(out var effects);
