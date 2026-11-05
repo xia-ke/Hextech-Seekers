@@ -50,6 +50,7 @@ namespace HextechSeekers.Native
         public NativeCampCatalog CampCatalog { get; private set; }
         public NativeSpawnCalibration SpawnCalibration { get; private set; }
         public NativeNeutralMonsterWorld NeutralMonsters { get; private set; }
+        public NativeNeutralMonsterScene NeutralScene => neutralScene;
         NativeNeutralMonsterScene neutralScene;
         public Vector2 PlayerPosition => location;
         // Observer-only camera follow. Does not move the locally controlled
@@ -257,6 +258,11 @@ namespace HextechSeekers.Native
                     neutralRoot.transform.SetParent(transform, false);
                     neutralScene = neutralRoot.AddComponent<NativeNeutralMonsterScene>();
                     neutralScene.Initialize(NeutralMonsters, nav);
+                    bool requireOriginalBlue = Array.IndexOf(
+                        Environment.GetCommandLineArgs(),
+                        "-hextechRequireOriginalBlueArt") >= 0;
+                    await neutralScene.LoadOriginalBlueAsync(
+                        Path.Combine(root, "Neutrals"), requireOriginalBlue);
                 }
                 else Debug.Log("NATIVE_NEUTRALS_WAITING_FOR_VERIFIED_CAMP_COORDINATES");
                 ready = true;
