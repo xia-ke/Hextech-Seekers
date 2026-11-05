@@ -1844,6 +1844,8 @@ namespace HextechSeekers.Native
             public string[] humanSkillEvidence;
             public int targetedSkillSmokesExpected, targetedSkillSmokesPassed;
             public string[] targetedSkillEvidence;
+            public int visionSkillSmokesExpected, visionSkillSmokesPassed;
+            public string[] visionSkillEvidence;
         }
 
         // This test intentionally calls the SAME private cast entry used by Q/W/E
@@ -2105,6 +2107,104 @@ namespace HextechSeekers.Native
             Debug.Log("MATCH_TARGETED_SKILL_SMOKE_PASS: " + record);
         }
 
+        // Phase17A: physical Map11 bush concealment, using live opponent
+        // positions and the same TryHumanSkill(E) path as keyboard input.
+        // No fabricated VisibleToCaster flags or synthetic target records.
+        void VerifyHumanYasuoEHiddenTargetsOnRealRift(List<string> audit)
+        {
+            ReturnToRoleSelection();
+            selectedHero = "Yasuo";
+            rosterSize = 3;
+            Configure(MatchRole.Hunter);
+            SelectAugment(offered[0].Id);
+            SelectSkill(NativeSkillSlot.E);
+            if (menu != Menu.Playing || bots.Count != 2)
+                throw new InvalidOperationException("Phase17A Yasuo hunter roster staging failed");
+            rules.Advance(NativeMatchRules.PreparationSeconds);
+            if (!rules.CanMove(HumanId))
+                throw new InvalidOperationException("Phase17A hunter preparation lock never released");
+
+            var nav = rift.Navigation;
+            Vector2[] directions = {
+                Vector2.right, Vector2.left, Vector2.up, Vector2.down,
+                new Vector2(1, 1).normalized, new Vector2(1, -1).normalized,
+                new Vector2(-1, 1).normalized, new Vector2(-1, -1).normalized
+            };
+            Vector2 origin = default, hidden = default, visible = default;
+            bool staged = false;
+            // The target must be in an actual bush in the pinned Map11
+            // navigation binary. Both approach paths must be walkable; the
+            // closer enemy must be concealed specifically by bush vision.
+            for (int y = 2; y < RiftGrid.Height - 2 && !staged; y += 2)
+            for (int x = 2; x < RiftGrid.Width - 2 && !staged; x += 2)
+            {
+                Vector2 bushTarget = nav.Center(x, y);
+                if (!nav.CanWalk(bushTarget) || nav.BushAt(bushTarget) == 0)
+                    continue;
+                foreach (Vector2 direction in directions)
+                {
+                    Vector2 observer = bushTarget - direction * 200f;
+                    if (!nav.CanWalk(observer) || nav.BushAt(observer) != 0 ||
+                        !nav.LineClear(observer, bushTarget) ||
+                        NativeSight.Visible(nav, observer, bushTarget))
+                        continue;
+                    foreach (Vector2 candidateDirection in directions)
+                    {
+                        Vector2 candidate = observer + candidateDirection * 335f;
+                        Vector2 exit = candidate + candidateDirection *
+                            NativeYasuoSkillState.EDashBeyondProvisional;
+                        if (!nav.CanWalk(candidate) || !nav.CanWalk(exit) ||
+                            !nav.LineClear(observer, exit) ||
+                            !NativeSight.Visible(nav, observer, candidate))
+                            continue;
+                        origin = observer;
+                        hidden = bushTarget;
+                        visible = candidate;
+                        staged = true;
+                        break;
+                    }
+                    if (staged) break;
+                }
+            }
+            if (!staged || !rift.TryTeleportTo(origin))
+                throw new InvalidOperationException(
+                    "Phase17A no authentic Map11 bush concealment and valid E exit geometry");
+
+            bots[0].Position = hidden;
+            bots[1].Position = visible;
+            if (Vector2.Distance(origin, hidden) >= Vector2.Distance(origin, visible) ||
+                VisibleTo(HumanId, bots[0].Id) ||
+                !VisibleTo(HumanId, bots[1].Id))
+                throw new InvalidOperationException(
+                    "Phase17A actual nearer hidden/farther visible opponent setup invalid");
+
+            // Prove the concealed target cannot be used alone. The other
+            // hider is temporarily positioned outside actual sight range.
+            bots[1].Position = origin + Vector2.right * 2000f;
+            if (VisibleTo(HumanId, bots[1].Id) ||
+                TryHumanSkill(NativeSkillSlot.E) || humanDash.Active)
+                throw new InvalidOperationException(
+                    "Phase17A Yasuo E selected a concealed Map11 enemy");
+
+            // Restore the real second opponent, and prove selection skips
+            // the nearer concealed enemy rather than suppressing the cast.
+            bots[1].Position = visible;
+            if (!TryHumanSkill(NativeSkillSlot.E) || !humanDash.Active)
+                throw new InvalidOperationException(
+                    "Phase17A Yasuo E failed to skip hidden nearer enemy");
+            Vector2 landing = humanDash.Step(NativeDashMotion.ProvisionalDashSeconds);
+            if (humanDash.Active || !nav.CanWalk(landing) ||
+                !nav.LineClear(origin, landing) ||
+                rules.CapturedCount != 0 || rules.Find(bots[0].Id).Eliminated ||
+                rules.Find(bots[1].Id).Eliminated)
+                throw new InvalidOperationException(
+                    "Phase17A legal visible E dash/capture invariant failed");
+            const string record =
+                "Yasuo:Hunter:E:real-map11-bush=true:hidden-nearest-rejected=true:visible-farther-dashed=true:capture=false";
+            audit.Add(record);
+            Debug.Log("MATCH_VISION_SKILL_SMOKE_PASS: " + record);
+        }
+
         IEnumerator VerifyGameplay()
         {
             var result = new GameplayReport { status = "FAIL" };
@@ -2225,6 +2325,11 @@ namespace HextechSeekers.Native
                 result.targetedSkillSmokesExpected = 4;
                 result.targetedSkillSmokesPassed = targetedAudit.Count;
                 result.targetedSkillEvidence = targetedAudit.ToArray();
+                var visionAudit = new List<string>();
+                VerifyHumanYasuoEHiddenTargetsOnRealRift(visionAudit);
+                result.visionSkillSmokesExpected = 1;
+                result.visionSkillSmokesPassed = visionAudit.Count;
+                result.visionSkillEvidence = visionAudit.ToArray();
 
                 ReturnToRoleSelection();
                 selectedHero = "Garen";
@@ -2278,7 +2383,9 @@ namespace HextechSeekers.Native
                     result.humanSkillSmokesPassed != 10 ||
                     !result.noHumanSkillDirectCaptures ||
                     result.targetedSkillSmokesExpected != 4 ||
-                    result.targetedSkillSmokesPassed != 4)
+                    result.targetedSkillSmokesPassed != 4 ||
+                    result.visionSkillSmokesExpected != 1 ||
+                    result.visionSkillSmokesPassed != 1)
                     throw new InvalidOperationException("Gameplay smoke assertions failed");
                 result.status = "PASS";
             }
