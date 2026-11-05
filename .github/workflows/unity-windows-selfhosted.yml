@@ -9,7 +9,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: hextech-native-windows-editor
+  # Independent refs queue on the same runner rather than cancelling each other.
+  group: hextech-native-windows-editor-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   editor:
@@ -40,7 +41,24 @@ jobs:
             Write-Warning "Git fetch attempt $attempt failed"
             Start-Sleep -Seconds (5 * $attempt)
           }
-          if (-not $fetched) { throw "Cannot fetch $env:GITHUB_SHA from repository" }
+          if (-not $fetched) {
+            # Windows Git/OpenSSL can fail TLS negotiation even when the
+            # exact commit is reachable. Never disable certificate checks.
+            Write-Warning 'OpenSSL Git fetch failed; retrying with Windows Schannel TLS'
+            & git -C $workspace -c core.longpaths=true -c http.sslBackend=schannel fetch --no-tags --depth=1 origin $env:GITHUB_SHA
+            if ($LASTEXITCODE -eq 0) { $fetched = $true }
+          }
+          if (-not $fetched) {
+            # A prior GPU job on the same self-hosted runner may have fetched
+            # this commit already. Reuse it only when the EXACT Git commit
+            # object for GITHUB_SHA exists locally; no stale-branch fallback.
+            & git -C $workspace cat-file -e "$($env:GITHUB_SHA)^{commit}" 2>$null
+            if ($LASTEXITCODE -eq 0) {
+              Write-Warning 'Network unavailable; using locally cached exact GITHUB_SHA commit'
+              $fetched = $true
+            }
+          }
+          if (-not $fetched) { throw "Cannot fetch or verify exact commit $env:GITHUB_SHA" }
           & git -C $workspace -c core.longpaths=true reset --hard $env:GITHUB_SHA
           if ($LASTEXITCODE -ne 0) { throw 'Cannot reset workspace to exact requested commit' }
           & git -C $workspace -c core.longpaths=true clean -ffdx
