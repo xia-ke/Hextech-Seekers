@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "manuallyVerified": true,
+  "source": {
+    "repo": "iamywl/Web_game",
+    "commit": "557a9d5352af12bee8bf3db879c22d04d0a0954e",
+    "path": "public/assets/maps/summoners-rift/placements.json",
+    "mapContainer": "Maps/MapGeometry/Map11/Base_SRX",
+    "mapMaterialSha256": "b8709c64290fe8327ee1d14e927628efddd6dcea9ef1968989098d8477e71c3c",
+    "coordinateTransform": "native x=sourcePosition[0], native z=-sourcePosition[2]",
+    "verification": "Each included position independently checked against pinned 295x296 navigation clearance and a valid E approach/exit; only lower playable region included"
+  },
+  "camps": [
+    {
+      "name": "Chaos Blue",
+      "x": 11031.729,
+      "z": -6990.844,
+      "sourceId": "0xb0528add",
+      "sourcePosition": [
+        11031.728515625,
+        51.722999572753906,
+        6990.84423828125
+      ]
+    },
+    {
+      "name": "Order Red",
+      "x": 7765.244,
+      "z": -4020.187,
+      "sourceId": "0x5f8d7bea",
+      "sourcePosition": [
+        7765.244140625,
+        50.382999420166016,
+        4020.18701171875
+      ]
+    },
+    {
+      "name": "Chaos OwlBear",
+      "x": 12625.562,
+      "z": -6434.189,
+      "sourceId": "0x789acc87",
+      "sourcePosition": [
+        12625.5615234375,
+        53.99991226196289,
+        6434.18896484375
+      ]
+    },
+    {
+      "name": "Chaos Wolves",
+      "x": 10979.8,
+      "z": -8356.89,
+      "sourceId": "0xf15c8aff",
+      "sourcePosition": [
+        10979.7998046875,
+        62.38999938964844,
+        8356.8896484375
+      ]
+    },
+    {
+      "name": "Order Wraiths",
+      "x": 6969,
+      "z": -5422,
+      "sourceId": "0x9d0e7aac",
+      "sourcePosition": [
+        6969,
+        52,
+        5422
+      ]
+    },
+    {
+      "name": "Order Small Golems",
+      "x": 8390,
+      "z": -2675,
+      "sourceId": "0x44b899d1",
+      "sourcePosition": [
+        8390,
+        51,
+        2675
+      ]
+    },
+    {
+      "name": "Dragon Crab",
+      "x": 10500,
+      "z": -5170,
+      "sourceId": "0x6ae501",
+      "sourcePosition": [
+        10500,
+        -62,
+        5170
+      ]
+    },
+    {
+      "name": "Dragon",
+      "x": 9837.674,
+      "z": -4397.761,
+      "sourceId": "0x4a7f091d",
+      "sourcePosition": [
+        9837.673828125,
+        -82.2770004272461,
+        4397.76123046875
+      ]
+    }
+  ]
+}
