@@ -1855,6 +1855,8 @@ namespace HextechSeekers.Native
             public int humanSkillSmokesPassed, humanSkillSmokesExpected;
             public bool noHumanSkillDirectCaptures;
             public string[] humanSkillEvidence;
+            public int targetedSkillSmokesExpected, targetedSkillSmokesPassed;
+            public string[] targetedSkillEvidence;
         }
 
         // This test intentionally calls the SAME private cast entry used by Q/W/E
@@ -1971,6 +1973,128 @@ namespace HextechSeekers.Native
             Debug.Log("MATCH_HUMAN_SKILL_SMOKE_PASS: " + evidence);
         }
 
+        // Phase 16: exercise the complete Riven Q chain through the same
+        // input entry used by the player, including real Rift swept dashes.
+        void VerifyHumanRivenComboOnRealRift(List<string> audit)
+        {
+            ReturnToRoleSelection();
+            selectedHero = "Riven";
+            rosterSize = 2;
+            Configure(MatchRole.Hider);
+            SelectAugment(offered[0].Id);
+            SelectSkill(NativeSkillSlot.Q);
+            if (menu != Menu.Playing || !rift.TryTeleportTo(HiderSpawn))
+                throw new InvalidOperationException("Phase16 Riven staging failed");
+            int captures = rules.CapturedCount;
+            MatchPhase phase = rules.Phase;
+            for (int stage = 1; stage <= 3; stage++)
+            {
+                Vector2 direction = QaSafeDashDirection(
+                    NativeChampionCombat.RivenQDashProvisional);
+                Vector2 before = rift.PlayerPosition;
+                if (!TryHumanSkill(NativeSkillSlot.Q, direction) ||
+                    !humanDash.Active ||
+                    humanCombat.RivenQStage != (stage == 3 ? 0 : stage))
+                    throw new InvalidOperationException("Phase16 Riven Q" + stage +
+                        " did not start from the real human cast entry");
+                if (TryHumanSkill(NativeSkillSlot.Q, direction))
+                    throw new InvalidOperationException(
+                        "Phase16 Riven Q accepted an immediate recast");
+                Vector2 landing = humanDash.Step(
+                    NativeDashMotion.ProvisionalDashSeconds);
+                if (humanDash.Active || !rift.Navigation.CanWalk(landing) ||
+                    !rift.Navigation.LineClear(before, landing) ||
+                    !rift.TrySetExternalPosition(landing))
+                    throw new InvalidOperationException(
+                        "Phase16 Riven Q swept dash was not navigable");
+                humanCombat.Advance(
+                    NativeChampionCombat.RivenQRecastMinimumProvisional + .01f);
+                if (rules.CapturedCount != captures || rules.Phase != phase ||
+                    rules.Find(bots[0].Id).Eliminated)
+                    throw new InvalidOperationException(
+                        "Phase16 Riven Q caused a direct capture");
+                string record = "Riven:Hider:Q" + stage +
+                    ":entry=TryHumanSkill:dash=real-rift:recast=blocked:capture=false";
+                audit.Add(record);
+                Debug.Log("MATCH_TARGETED_SKILL_SMOKE_PASS: " + record);
+            }
+            if (TryHumanSkill(NativeSkillSlot.Q, Vector2.right) ||
+                humanCombat.CooldownQ <= 0f)
+                throw new InvalidOperationException(
+                    "Phase16 Riven Q bypassed post-combo cooldown");
+        }
+
+        // The bot is positioned only on a genuine visible Map11 walkable
+        // segment, not a fabricated skill-target record or forced success.
+        void VerifyHumanYasuoEOnRealRift(List<string> audit)
+        {
+            ReturnToRoleSelection();
+            selectedHero = "Yasuo";
+            rosterSize = 2;
+            Configure(MatchRole.Hider);
+            SelectAugment(offered[0].Id);
+            SelectSkill(NativeSkillSlot.E);
+            if (menu != Menu.Playing || !rift.TryTeleportTo(HiderSpawn))
+                throw new InvalidOperationException("Phase16 Yasuo staging failed");
+            Vector2 origin = rift.PlayerPosition;
+            Vector2[] headings = {
+                Vector2.right, Vector2.left, Vector2.up, Vector2.down,
+                new Vector2(1, 1).normalized, new Vector2(1, -1).normalized,
+                new Vector2(-1, 1).normalized, new Vector2(-1, -1).normalized
+            };
+            bool staged = false;
+            foreach (Vector2 heading in headings)
+            {
+                Vector2 target = origin + heading * 120f;
+                Vector2 exit = origin + heading *
+                    (120f + NativeYasuoSkillState.EDashBeyondProvisional);
+                if (!rift.Navigation.CanWalk(target) ||
+                    !rift.Navigation.CanWalk(exit) ||
+                    !rift.Navigation.LineClear(origin, exit)) continue;
+                bots[0].Position = target;
+                if (!VisibleTo(HumanId, bots[0].Id)) continue;
+                staged = true;
+                break;
+            }
+            if (!staged)
+                throw new InvalidOperationException(
+                    "Phase16 no visible Map11 Yasuo E target/exit path");
+            if (TryHumanSkill(NativeSkillSlot.E) != true ||
+                !humanDash.Active)
+                throw new InvalidOperationException(
+                    "Phase16 Yasuo E failed real target-dependent cast");
+            Vector2 landing = humanDash.Step(
+                NativeDashMotion.ProvisionalDashSeconds);
+            if (humanDash.Active || !rift.Navigation.CanWalk(landing) ||
+                !rift.Navigation.LineClear(origin, landing) ||
+                !rift.TrySetExternalPosition(landing))
+                throw new InvalidOperationException(
+                    "Phase16 Yasuo E real dash path failed");
+            if (rules.CapturedCount != 0 || rules.Find(bots[0].Id).Eliminated)
+                throw new InvalidOperationException(
+                    "Phase16 Yasuo E directly captured a target");
+            // Test the actual per-target lock, not just the shorter global
+            // cooldown. Restore the legal start before attempting again.
+            humanYasuo.Advance(.6f);
+            if (!rift.TryTeleportTo(origin))
+                throw new InvalidOperationException(
+                    "Phase16 Yasuo E reset to verified staging failed");
+            NativeSkillTarget locked = default;
+            bool found = false;
+            foreach (var target in GetSkillTargets(HumanId))
+                if (target.Id == bots[0].Id) { locked = target; found = true; break; }
+            if (!found || !locked.VisibleToCaster ||
+                humanYasuo.TryEDashThroughHero(
+                    humanLoadout, rules, hextech, HumanId,
+                    origin, locked, rift.Navigation, out var ignoredLanding))
+                throw new InvalidOperationException(
+                    "Phase16 Yasuo E per-target reuse lock failed");
+            const string record =
+                "Yasuo:Hider:E:entry=TryHumanSkill:target=visible-opponent:dash=real-rift:target-lock=blocked:capture=false";
+            audit.Add(record);
+            Debug.Log("MATCH_TARGETED_SKILL_SMOKE_PASS: " + record);
+        }
+
         IEnumerator VerifyGameplay()
         {
             var result = new GameplayReport { status = "FAIL" };
@@ -2084,6 +2208,13 @@ namespace HextechSeekers.Native
                 result.humanSkillSmokesPassed = skillAudit.Count;
                 result.noHumanSkillDirectCaptures = skillAudit.Count == 10;
                 result.humanSkillEvidence = skillAudit.ToArray();
+                // Phase 16 target-dependent and chained human-skill paths.
+                var targetedAudit = new List<string>();
+                VerifyHumanRivenComboOnRealRift(targetedAudit);
+                VerifyHumanYasuoEOnRealRift(targetedAudit);
+                result.targetedSkillSmokesExpected = 4;
+                result.targetedSkillSmokesPassed = targetedAudit.Count;
+                result.targetedSkillEvidence = targetedAudit.ToArray();
 
                 ReturnToRoleSelection();
                 selectedHero = "Garen";
@@ -2135,7 +2266,9 @@ namespace HextechSeekers.Native
                     result.selectableHeroRostersValidated != 4 ||
                     result.humanSkillSmokesExpected != 10 ||
                     result.humanSkillSmokesPassed != 10 ||
-                    !result.noHumanSkillDirectCaptures)
+                    !result.noHumanSkillDirectCaptures ||
+                    result.targetedSkillSmokesExpected != 4 ||
+                    result.targetedSkillSmokesPassed != 4)
                     throw new InvalidOperationException("Gameplay smoke assertions failed");
                 result.status = "PASS";
             }
