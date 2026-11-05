@@ -250,6 +250,49 @@ namespace HextechSeekers.Native.Tests
         }
 
         [Test]
+        public void YasuoEHeroAndMonsterWithSameNumericIdHaveIndependentLocks()
+        {
+            var nav = new RiftGrid(Walkable());
+            Vector2 source = nav.Center(200, 200);
+            var world = new NativeNeutralMonsterWorld(nav,
+                MakeVerifiedCatalog(nav, nav.Center(204, 200)));
+            var match = Round(out var effects);
+            var loadout = new NativeHeroLoadout("Yasuo", MatchRole.Hider);
+            Assert.IsTrue(loadout.Choose(NativeSkillSlot.E));
+            var hero = new NativeSkillTarget(1, nav.Center(206, 200),
+                MatchRole.Hunter, false, true);
+            Assert.AreEqual(1, world.Monsters[0].Id,
+                "Regression setup must deliberately collide numeric hero and monster IDs");
+
+            var state = new NativeYasuoSkillState();
+            Assert.IsTrue(state.TryEDashToMonster(loadout, match, effects,
+                2, source, 1, world, out _));
+            state.Advance(.6f);
+            Assert.IsTrue(state.TryEDashThroughHero(loadout, match, effects,
+                2, source, hero, nav, out _),
+                "Monster #1's lock must not prevent a different champion #1 dash");
+            state.Advance(.6f);
+            Assert.IsFalse(state.TryEDashToMonster(loadout, match, effects,
+                2, source, 1, world, out _),
+                "Monster target may not be reused until its own lock expires");
+            Assert.IsFalse(state.TryEDashThroughHero(loadout, match, effects,
+                2, source, hero, nav, out _),
+                "Champion target may not be reused until its own lock expires");
+
+            var reverse = new NativeYasuoSkillState();
+            Assert.IsTrue(reverse.TryEDashThroughHero(loadout, match, effects,
+                2, source, hero, nav, out _));
+            reverse.Advance(.6f);
+            Assert.IsTrue(reverse.TryEDashToMonster(loadout, match, effects,
+                2, source, 1, world, out _),
+                "Champion #1's lock must not prevent a different neutral monster #1 dash");
+            Assert.AreEqual(0, match.CapturedCount,
+                "Neither type of E dash directly captures an opponent");
+            Assert.IsTrue(world.Find(1).Alive);
+            Assert.IsFalse(world.Find(1).Aggressive);
+        }
+
+        [Test]
         public void MissingSkillAndIncorrectHeroCannotCastMonsterAbility()
         {
             var match = Round(out var effects);
