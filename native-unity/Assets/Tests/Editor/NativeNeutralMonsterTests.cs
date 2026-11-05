@@ -171,6 +171,48 @@ namespace HextechSeekers.Native.Tests
         }
 
         [Test]
+        public void YasuoHeroDashRejectsHiddenAlliedAndEliminatedTargetsWithoutSpendingCooldown()
+        {
+            var nav = new RiftGrid(Walkable());
+            var match = Round(out var effects);
+            var loadout = new NativeHeroLoadout("Yasuo", MatchRole.Hider);
+            Assert.IsTrue(loadout.Choose(NativeSkillSlot.E));
+            var state = new NativeYasuoSkillState();
+            Vector2 origin = nav.Center(200, 200);
+            Vector2 targetPosition = nav.Center(204, 200);
+            Assert.IsFalse(state.TryEDashThroughHero(
+                loadout, match, effects, 2, origin,
+                new NativeSkillTarget(1, targetPosition,
+                    MatchRole.Hunter, false, false), nav, out _),
+                "Invisible enemy must not be automatically acquired for targeted E");
+            Assert.IsFalse(state.TryEDashThroughHero(
+                loadout, match, effects, 2, origin,
+                new NativeSkillTarget(1, targetPosition,
+                    MatchRole.Hider, false, true), nav, out _),
+                "A teammate cannot be a targeted dash enemy");
+            Assert.IsFalse(state.TryEDashThroughHero(
+                loadout, match, effects, 2, origin,
+                new NativeSkillTarget(1, targetPosition,
+                    MatchRole.Hunter, true, true), nav, out _),
+                "Eliminated enemy cannot be a valid skill target");
+            Assert.AreEqual(0f, state.CooldownE,
+                "Rejected target candidates cannot consume E cooldown");
+            var visible = new NativeSkillTarget(
+                1, targetPosition, MatchRole.Hunter, false, true);
+            Assert.IsTrue(state.TryEDashThroughHero(
+                loadout, match, effects, 2, origin, visible, nav,
+                out Vector2 destination));
+            Assert.IsTrue(nav.CanWalk(destination));
+            Assert.IsTrue(nav.LineClear(origin, destination));
+            state.Advance(.6f);
+            Assert.AreEqual(0f, state.CooldownE);
+            Assert.IsFalse(state.TryEDashThroughHero(
+                loadout, match, effects, 2, origin, visible, nav, out _),
+                "Per-target lock lasts longer than global E cooldown");
+            Assert.AreEqual(0, match.CapturedCount);
+        }
+
+        [Test]
         public void MissingSkillAndIncorrectHeroCannotCastMonsterAbility()
         {
             var match = Round(out var effects);
