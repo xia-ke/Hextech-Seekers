@@ -690,37 +690,80 @@ jobs:
           $buildTarget = Join-Path (Join-Path $buildRoot $env:GITHUB_RUN_ID) 'Windows'
           $latestTarget = Join-Path $buildRoot 'latest'
           $exeName = 'HextechSeekers.exe'
+          $summary = $env:GITHUB_STEP_SUMMARY
           if ((Test-Path -LiteralPath (Join-Path $buildSource $exeName) -PathType Leaf) -and
               (Test-Path -LiteralPath (Join-Path $buildSource 'HextechSeekers_Data') -PathType Container)) {
+            # This versioned build is immutable and always the authoritative
+            # artifact for this exact GITHUB_SHA. Never delete another running
+            # Player just to update the convenience "latest" directory.
             New-Item -ItemType Directory -Force -Path $buildTarget | Out-Null
             Copy-Item -Path (Join-Path $buildSource '*') -Destination $buildTarget -Recurse -Force -ErrorAction Stop
-            if (Test-Path -LiteralPath $latestTarget) {
-              Remove-Item -LiteralPath $latestTarget -Recurse -Force
-            }
-            New-Item -ItemType Directory -Force -Path $latestTarget | Out-Null
-            Copy-Item -Path (Join-Path $buildSource '*') -Destination $latestTarget -Recurse -Force -ErrorAction Stop
             $buildInfo = @(
               'Hextech Seekers Windows x64 Player'
               ('GitHub run: ' + $env:GITHUB_RUN_ID)
               ('Commit: ' + $env:GITHUB_SHA)
               ('Built from: ' + $buildSource)
               ('Stable build: ' + $buildTarget)
-              ('Latest build: ' + $latestTarget)
               'Keep HextechSeekers.exe beside HextechSeekers_Data.'
             )
             Set-Content -LiteralPath (Join-Path $buildTarget 'BUILD-INFO.txt') -Value $buildInfo -Encoding UTF8
-            Set-Content -LiteralPath (Join-Path $latestTarget 'BUILD-INFO.txt') -Value $buildInfo -Encoding UTF8
+            New-Item -ItemType Directory -Force -Path $buildRoot | Out-Null
+            Set-Content -LiteralPath (Join-Path $buildRoot 'LATEST-BUILD-INFO.txt') -Encoding UTF8 -Value $buildInfo
+
+            $latestInUse = $false
+            $lockProbe = Join-Path $latestTarget 'HextechSeekers_Data\Managed\mscorlib.dll'
+            if (Test-Path -LiteralPath $lockProbe -PathType Leaf) {
+              try {
+                $stream = [System.IO.File]::Open($lockProbe,
+                  [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite,
+                  [System.IO.FileShare]::None)
+                $stream.Dispose()
+              } catch {
+                $latestInUse = $true
+                Write-Warning "Existing 'latest' Player in use; keeping it intact and publishing immutable $buildTarget"
+              }
+            }
+            if (-not $latestInUse) {
+              # Stage before swapping so we never expose a partly copied
+              # latest build. A locked/missing target leaves the versioned
+              # build accessible, without failing gameplay GPU acceptance.
+              $next = Join-Path $buildRoot ("latest-pending-" + $env:GITHUB_RUN_ID)
+              $previous = Join-Path $buildRoot ("latest-previous-" + $env:GITHUB_RUN_ID)
+              try {
+                New-Item -ItemType Directory -Force -Path $next | Out-Null
+                Copy-Item -Path (Join-Path $buildTarget '*') -Destination $next -Recurse -Force -ErrorAction Stop
+                if (Test-Path -LiteralPath $latestTarget) {
+                  Move-Item -LiteralPath $latestTarget -Destination $previous -ErrorAction Stop
+                }
+                Move-Item -LiteralPath $next -Destination $latestTarget -ErrorAction Stop
+                Write-Host ('PLAYER_LATEST_UPDATED=' + $latestTarget)
+              } catch {
+                Write-Warning "Cannot atomically refresh latest directory: $($_.Exception.Message)"
+                if (-not (Test-Path -LiteralPath $latestTarget) -and
+                    (Test-Path -LiteralPath $previous)) {
+                  Move-Item -LiteralPath $previous -Destination $latestTarget -ErrorAction Stop
+                }
+              } finally {
+                if (Test-Path -LiteralPath $next) {
+                  Remove-Item -LiteralPath $next -Recurse -Force -ErrorAction SilentlyContinue
+                }
+                if (Test-Path -LiteralPath $previous) {
+                  Remove-Item -LiteralPath $previous -Recurse -Force -ErrorAction SilentlyContinue
+                }
+              }
+            }
             Write-Host ('PLAYER_BUILD_DIR=' + $buildTarget)
-            Write-Host ('PLAYER_BUILD_EXE=' + (Join-Path $latestTarget $exeName))
-            $buildBytes = (Get-ChildItem -LiteralPath $latestTarget -Recurse -File | Measure-Object -Property Length -Sum).Sum
+            Write-Host ('PLAYER_BUILD_EXE=' + (Join-Path $buildTarget $exeName))
+            $buildBytes = (Get-ChildItem -LiteralPath $buildTarget -Recurse -File |
+                Measure-Object -Property Length -Sum).Sum
             Write-Host ('PLAYER_BUILD_TOTAL_BYTES=' + $buildBytes)
             if ($summary) {
               Add-Content -LiteralPath $summary -Encoding UTF8 -Value @(
                 '### Playable Windows build preserved outside the Git workspace'
                 ''
-                ('Latest executable: ' + (Join-Path $latestTarget $exeName))
-                ('Run-specific copy: ' + $buildTarget)
+                ('Executable: ' + (Join-Path $buildTarget $exeName))
                 ('Commit: ' + $env:GITHUB_SHA)
+                ('Latest may be held open by a running Player; use the run-specific copy.')
               )
             }
           } else {
