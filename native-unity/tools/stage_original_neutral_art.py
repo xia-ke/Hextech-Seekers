@@ -12,6 +12,7 @@ import os
 import time
 import urllib.request
 from pathlib import Path
+from typing import Optional
 
 from convert_webp_glb import convert, parse_glb, sha256
 
@@ -44,7 +45,7 @@ def verified_source(data: bytes) -> bytes:
     return data
 
 
-def source_bytes(cache_root: Path | None) -> bytes:
+def source_bytes(cache_root: Optional[Path]) -> bytes:
     cached = cache_root / (NAME + ".glb") if cache_root else None
     if cached and cached.is_file():
         if cached.is_symlink():
@@ -75,7 +76,7 @@ def source_bytes(cache_root: Path | None) -> bytes:
     raise RuntimeError("Cannot retrieve pinned original blue sentinel asset") from last
 
 
-def stage(target: Path = TARGET, cache_root: Path | None = None) -> dict:
+def stage(target: Path = TARGET, cache_root: Optional[Path] = None) -> dict:
     original = source_bytes(cache_root)
     converted, audit = convert(original, SOURCE_SHA256)
     document, _ = parse_glb(converted)
