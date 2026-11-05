@@ -1846,6 +1846,8 @@ namespace HextechSeekers.Native
             public string[] targetedSkillEvidence;
             public int visionSkillSmokesExpected, visionSkillSmokesPassed;
             public string[] visionSkillEvidence;
+            public int neutralSkillSmokesExpected, neutralSkillSmokesPassed;
+            public string[] neutralSkillEvidence;
         }
 
         // This test intentionally calls the SAME private cast entry used by Q/W/E
@@ -2222,6 +2224,122 @@ namespace HextechSeekers.Native
             Debug.Log("MATCH_VISION_SKILL_SMOKE_PASS: " + record);
         }
 
+        // Phase17B: source-backed Map11 jungle camps must exist as actual
+        // passive Unity targets. Exercise the SAME E entry used by Q/W/E input.
+        void VerifyHumanYasuoENeutralOnRealRift(List<string> audit)
+        {
+            var world = rift.NeutralMonsters;
+            if (rift.CampCatalog == null || world == null ||
+                !world.HasVerifiedCamps || world.Monsters.Count != 8)
+                throw new InvalidOperationException(
+                    "Phase17B expected eight source-verified Map11 neutral entities");
+
+            ReturnToRoleSelection();
+            selectedHero = "Yasuo";
+            rosterSize = 2;
+            Configure(MatchRole.Hider);
+            SelectAugment(offered[0].Id);
+            SelectSkill(NativeSkillSlot.E);
+            if (menu != Menu.Playing || !rules.CanMove(HumanId) ||
+                bots.Count != 1 || !humanLoadout.Knows(NativeSkillSlot.E))
+                throw new InvalidOperationException(
+                    "Phase17B Yasuo hider E preparation failed");
+
+            var nav = rift.Navigation;
+            Vector2[] directions = {
+                Vector2.right, Vector2.left, Vector2.up, Vector2.down,
+                new Vector2(1, 1).normalized, new Vector2(1, -1).normalized,
+                new Vector2(-1, 1).normalized, new Vector2(-1, -1).normalized
+            };
+            NativeNeutralMonster testedMonster = null;
+            Vector2 origin = default, expectedLanding = default;
+            foreach (var monster in world.Monsters)
+            {
+                if (testedMonster != null) break;
+                foreach (var heading in directions)
+                {
+                    if (testedMonster != null) break;
+                    foreach (float range in new[] { 160f, 220f, 300f })
+                    {
+                        Vector2 candidate = monster.WalkableAnchor - heading * range;
+                        if (!nav.CanWalk(candidate) ||
+                            !world.TryDashLanding(monster.Id, candidate,
+                                NativeYasuoSkillState.EDashRangeProvisional,
+                                NativeYasuoSkillState.EDashBeyondProvisional,
+                                out var candidateLanding) ||
+                            !nav.LineClear(candidate, candidateLanding))
+                            continue;
+                        // Ensure no second camp can be chosen instead of the
+                        // intended monster, especially during target-lock replay.
+                        bool competing = false;
+                        foreach (var other in world.Monsters)
+                        {
+                            if (other.Id != monster.Id &&
+                                Vector2.Distance(candidate, other.WalkableAnchor) <=
+                                NativeYasuoSkillState.EDashRangeProvisional)
+                                competing = true;
+                        }
+                        if (competing) continue;
+                        testedMonster = monster;
+                        origin = candidate;
+                        expectedLanding = candidateLanding;
+                        break;
+                    }
+                }
+            }
+            if (testedMonster == null)
+                throw new InvalidOperationException(
+                    "Phase17B source-verified camp has no walkable E approach/exit");
+
+            Vector2 far = default;
+            bool farFound = false;
+            for (int y = 2; y < RiftGrid.Height - 2 && !farFound; y += 8)
+            for (int x = 2; x < RiftGrid.Width - 2 && !farFound; x += 8)
+            {
+                Vector2 candidate = nav.Center(x, y);
+                if (nav.CanWalk(candidate) &&
+                    Vector2.Distance(candidate, origin) >
+                    NativeSight.BasicSightDistance + 100f)
+                {
+                    far = candidate;
+                    farFound = true;
+                }
+            }
+            if (!farFound || !rift.TryTeleportTo(origin))
+                throw new InvalidOperationException(
+                    "Phase17B failed to stage real Map11 caster/remote opponent");
+            bots[0].Position = far;
+            if (VisibleTo(HumanId, bots[0].Id))
+                throw new InvalidOperationException(
+                    "Phase17B opponent still visible during neutral-only E test");
+
+            if (!TryHumanSkill(NativeSkillSlot.E) || !humanDash.Active)
+                throw new InvalidOperationException(
+                    "Phase17B Yasuo E did not dash through real verified neutral");
+            Vector2 landing = humanDash.Step(NativeDashMotion.ProvisionalDashSeconds);
+            if (humanDash.Active || !nav.CanWalk(landing) ||
+                !nav.LineClear(origin, landing) ||
+                Vector2.Distance(landing, expectedLanding) > 1f ||
+                !rift.TrySetExternalPosition(landing) ||
+                !testedMonster.Alive || testedMonster.Aggressive ||
+                rules.CapturedCount != 0 || rules.Find(bots[0].Id).Eliminated)
+                throw new InvalidOperationException(
+                    "Phase17B neutral E legal landing or passive/no-capture invariant failed");
+
+            // Global E cooldown is 0.5 seconds. After that expires, the
+            // particular neutral remains target-locked independently.
+            humanYasuo.Advance(.6f);
+            if (!rift.TryTeleportTo(origin) ||
+                TryHumanSkill(NativeSkillSlot.E) || humanDash.Active)
+                throw new InvalidOperationException(
+                    "Phase17B same neutral E repeat lock failed after global cooldown");
+            string record =
+                "Yasuo:Hider:E:real-source-camp=" + testedMonster.CampName +
+                ":dash=real-rift:target-lock=blocked:neutral-alive=true:capture=false";
+            audit.Add(record);
+            Debug.Log("MATCH_NEUTRAL_SKILL_SMOKE_PASS: " + record);
+        }
+
         IEnumerator VerifyGameplay()
         {
             var result = new GameplayReport { status = "FAIL" };
@@ -2347,6 +2465,11 @@ namespace HextechSeekers.Native
                 result.visionSkillSmokesExpected = 1;
                 result.visionSkillSmokesPassed = visionAudit.Count;
                 result.visionSkillEvidence = visionAudit.ToArray();
+                var neutralAudit = new List<string>();
+                VerifyHumanYasuoENeutralOnRealRift(neutralAudit);
+                result.neutralSkillSmokesExpected = 1;
+                result.neutralSkillSmokesPassed = neutralAudit.Count;
+                result.neutralSkillEvidence = neutralAudit.ToArray();
 
                 ReturnToRoleSelection();
                 selectedHero = "Garen";
@@ -2402,7 +2525,9 @@ namespace HextechSeekers.Native
                     result.targetedSkillSmokesExpected != 4 ||
                     result.targetedSkillSmokesPassed != 4 ||
                     result.visionSkillSmokesExpected != 1 ||
-                    result.visionSkillSmokesPassed != 1)
+                    result.visionSkillSmokesPassed != 1 ||
+                    result.neutralSkillSmokesExpected != 1 ||
+                    result.neutralSkillSmokesPassed != 1)
                     throw new InvalidOperationException("Gameplay smoke assertions failed");
                 result.status = "PASS";
             }
