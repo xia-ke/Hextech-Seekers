@@ -645,24 +645,11 @@ namespace HextechSeekers.Native
         bool TryHumanYasuoE(Vector2 origin)
         {
             if (humanYasuo == null) return false;
-            NativeSkillTarget chosen = default;
-            bool found = false;
-            float nearest = float.PositiveInfinity;
-            foreach (var target in GetSkillTargets(HumanId))
-            {
-                if (target.Eliminated || !target.VisibleToCaster) continue;
-                float d = (target.Position - origin).sqrMagnitude;
-                if (d < nearest)
-                {
-                    chosen = target;
-                    nearest = d;
-                    found = true;
-                }
-            }
             Vector2 destination;
-            if (found && humanYasuo.TryEDashThroughHero(
-                    humanLoadout, rules, hextech, HumanId, origin, chosen,
-                    rift.Navigation, out destination))
+            if (humanYasuo.TryEDashThroughNearestHero(
+                    humanLoadout, rules, hextech, HumanId, origin,
+                    GetSkillTargets(HumanId), rift.Navigation,
+                    out destination, out var selectedTargetId))
             {
                 if (!humanDash.Begin(rift.Navigation, origin, destination))
                     return false;
@@ -670,7 +657,7 @@ namespace HextechSeekers.Native
                 humanContact.Cancel();
                 PlayHumanOriginalSkill(NativeSkillSlot.E);
                 combatVfx?.Pulse(HumanId, origin, "Yasuo E Hero");
-                feedback = "Yasuo E through visible enemy; no capture";
+                feedback = "Yasuo E through visible enemy " + selectedTargetId + "; no capture";
                 return true;
             }
             if (rift.NeutralMonsters == null ||
