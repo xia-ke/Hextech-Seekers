@@ -3,7 +3,8 @@ Shader "HextechSeekers/WorldDepthFog"
     Properties
     {
         _FogMask ("Private Rift Fog Mask", 2D) = "white" {}
-        _FogTint ("Fog Color and Strength", Color) = (0.025, 0.042, 0.07, 0.96)
+        _FogTint ("Fog Color", Color) = (0.025, 0.042, 0.07, 1.0)
+        _FogParams ("Explored, Unknown, Outside Alpha", Vector) = (0.23, 0.49, 0.08, 0)
         _MapMin ("Rift Origin XZ", Vector) = (0,0,0,0)
         _MapSpan ("Rift Size XZ", Vector) = (1,1,0,0)
     }
@@ -37,6 +38,7 @@ Shader "HextechSeekers/WorldDepthFog"
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _FogTint;
+                float4 _FogParams;
                 float4 _MapMin;
                 float4 _MapSpan;
             CBUFFER_END
@@ -68,22 +70,31 @@ Shader "HextechSeekers/WorldDepthFog"
                 // Unrendered background is not visible ground.
                 #if UNITY_REVERSED_Z
                     if (rawDepth <= 0.00001)
-                        return half4(_FogTint.rgb, 0.94);
+                        return half4(_FogTint.rgb, 0);
                 #else
                     if (rawDepth >= 0.99999)
-                        return half4(_FogTint.rgb, 0.94);
+                        return half4(_FogTint.rgb, 0);
                 #endif
 
                 float3 world = ComputeWorldSpacePosition(
                     screenUV, rawDepth, UNITY_MATRIX_I_VP);
                 float2 uv = (world.xz - _MapMin.xy) / _MapSpan.xy;
                 if (any(uv < 0) || any(uv >= 1))
-                    return half4(_FogTint.rgb, 0.94);
+                    return half4(_FogTint.rgb, _FogParams.z);
 
                 // R8-equivalent encoded in RGBA32 to support the widest
                 // range of Windows D3D11 hardware and Unity GPU formats.
                 half fog = SAMPLE_TEXTURE2D(_FogMask, sampler_FogMask, uv).r;
-                return half4(_FogTint.rgb, saturate(fog * _FogTint.a));
+                // Visible=0, explored=170/255, unknown=238/255.
+                // The previous fog*.96 yielded 64%/90% dark overlays and
+                // forced the background to 94%, obscuring the whole view.
+                // Use three distinct visual strengths, with smooth edges.
+                // Tactical visibility and private masks stay unchanged.
+                half exploredBlend = smoothstep(.02, .65, fog);
+                half unknownBlend = smoothstep(.68, .90, fog);
+                half opacity = lerp(0, _FogParams.x, exploredBlend);
+                opacity = lerp(opacity, _FogParams.y, unknownBlend);
+                return half4(_FogTint.rgb, saturate(opacity));
             }
             ENDHLSL
         }
