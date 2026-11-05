@@ -32,6 +32,39 @@ namespace HextechSeekers.Native
         public bool Running => running;
         public int ObserverCount => observers.Count;
 
+        // Presentation-only switch. Vision grids and tactical target checks
+        // are never modified; 'Off' reveals terrain for local visual diagnosis,
+        // but never makes hidden enemy actors targetable or visible.
+        public enum FogDisplay { Normal, Light, Off }
+        public FogDisplay DisplayMode { get; private set; } = FogDisplay.Normal;
+        public static Vector3 DisplayOpacity(FogDisplay mode)
+        {
+            switch (mode)
+            {
+                case FogDisplay.Light: return new Vector3(.10f, .28f, .04f);
+                case FogDisplay.Off: return Vector3.zero;
+                default: return new Vector3(.23f, .49f, .08f);
+            }
+        }
+
+        void ApplyPresentation()
+        {
+            if (!material) return;
+            var paramsValue = DisplayOpacity(DisplayMode);
+            material.SetVector("_FogParams",
+                new Vector4(paramsValue.x, paramsValue.y, paramsValue.z, 0));
+            Debug.Log("NATIVE_FOG_PRESENTATION: " + DisplayMode +
+                      " exploredAlpha=" + paramsValue.x +
+                      " unknownAlpha=" + paramsValue.y);
+        }
+
+        public FogDisplay CyclePresentation()
+        {
+            DisplayMode = (FogDisplay)(((int)DisplayMode + 1) % 3);
+            ApplyPresentation();
+            return DisplayMode;
+        }
+
         public void Begin(RiftGrid navigation, NativeMatchRules match, Camera camera)
         {
             if (navigation == null || match == null || !camera)
@@ -65,7 +98,9 @@ namespace HextechSeekers.Native
                 renderQueue = FogQueue
             };
             material.SetTexture("_FogMask", mask);
-            material.SetColor("_FogTint", new Color(.025f, .042f, .07f, .96f));
+            material.SetColor("_FogTint", new Color(.025f, .042f, .07f, 1f));
+            DisplayMode = FogDisplay.Normal;
+            ApplyPresentation();
             material.SetVector("_MapMin", new Vector4(RiftGrid.MinX, RiftGrid.MinZ, 0, 0));
             material.SetVector("_MapSpan", new Vector4(
                 RiftGrid.Width * RiftGrid.CellSize,
