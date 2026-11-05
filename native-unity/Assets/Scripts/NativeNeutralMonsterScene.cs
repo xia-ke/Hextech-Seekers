@@ -20,33 +20,101 @@ namespace HextechSeekers.Native
         readonly List<GameObject> spawned = new List<GameObject>();
         readonly List<Material> materials = new List<Material>();
         readonly List<GltfImport> originalImports = new List<GltfImport>();
-        SkinnedMeshRenderer blueRenderer;
-        Animation blueIdle;
-        string blueIdleClip;
+        readonly List<OriginalNeutralVisual> originalVisuals =
+            new List<OriginalNeutralVisual>();
         public NativeNeutralMonsterWorld World { get; private set; }
         public int EntityCount => spawned.Count;
-        public int OriginalArtCount { get; private set; }
-        public int OriginalBlueVertices => blueRenderer && blueRenderer.sharedMesh ?
-            blueRenderer.sharedMesh.vertexCount : 0;
-        public bool OriginalBlueIdlePlaying => blueIdle &&
-            !string.IsNullOrEmpty(blueIdleClip) && blueIdle.IsPlaying(blueIdleClip);
-        public SkinnedMeshRenderer OriginalBlueRenderer => blueRenderer;
+        public int OriginalArtCount => originalVisuals.Count;
+        public IReadOnlyList<OriginalNeutralVisual> OriginalVisuals => originalVisuals;
+        public int OriginalBlueVertices =>
+            FindOriginalVisual("Chaos Blue")?.VertexCount ?? 0;
+        public bool OriginalBlueIdlePlaying =>
+            FindOriginalVisual("Chaos Blue")?.IdlePlaying ?? false;
+        public SkinnedMeshRenderer OriginalBlueRenderer =>
+            FindOriginalVisual("Chaos Blue")?.Renderer;
+
+        // The camp names and model types are separate source datasets:
+        // monster types are taken from the pinned original Map11 jungle manifest
+        // and assigned to the pinned lower-half camp coordinates by geography.
+        // Visual placement/facing remains subject to manual screenshot review.
+        public sealed class OriginalNeutralVisual
+        {
+            public readonly string CampName;
+            public readonly string Kind;
+            public readonly string IdleClip;
+            public readonly SkinnedMeshRenderer Renderer;
+            public readonly Animation IdleAnimation;
+            public readonly int VertexCount;
+            public bool IdlePlaying => IdleAnimation &&
+                IdleAnimation.IsPlaying(IdleClip);
+            internal OriginalNeutralVisual(string camp, string kind, string idle,
+                                           SkinnedMeshRenderer renderer,
+                                           Animation animation, int vertices)
+            {
+                CampName = camp;
+                Kind = kind;
+                IdleClip = idle;
+                Renderer = renderer;
+                IdleAnimation = animation;
+                VertexCount = vertices;
+            }
+        }
+
+        sealed class NeutralArtSpec
+        {
+            public readonly string Camp, Kind, SourceSha, IdleClip;
+            public readonly float Scale;
+            public NeutralArtSpec(string camp, string kind, string sourceSha,
+                                  string idle, float scale)
+            {
+                Camp = camp; Kind = kind; SourceSha = sourceSha;
+                IdleClip = idle; Scale = scale;
+            }
+        }
+        static readonly NeutralArtSpec[] RequiredModels = {
+            // Blue's previous one-model GPU acceptance used scale=1: preserve it.
+            new NeutralArtSpec("Chaos Blue", "buff_blue",
+                "6d3181d21998e13783f0bd05ff571217b86714d0ec0f3bbaab424d5979fee1c9",
+                "sru_blue_idle_normal", 1f),
+            new NeutralArtSpec("Order Red", "buff_red",
+                "0a06eed929ba61dec8a4feff2edb44beeb0e6712d573aa4f1c92967f52a31c1f",
+                "sru_red_idle1", 2.075f),
+            new NeutralArtSpec("Chaos OwlBear", "gromp",
+                "ba8070aa03cdda575e33c5a61deff0b1cdf95dfc5471616b6a477c346521ad3a",
+                "sru_gromp_idle1", 1f),
+            new NeutralArtSpec("Chaos Wolves", "wolves",
+                "9b9992a26de40957eb565c9ca6258b51d569d1491a401c04b5403c3ccc6f7ed5",
+                "sru_murkwolf_idle1", 1.2f),
+            new NeutralArtSpec("Order Wraiths", "raptors",
+                "f0464e241c0e8c3c6ebeb04f136b773b8557a3864157815df8fde6c1295d6696",
+                "sru_razorbeak_idle_normal1", 1.4f),
+            new NeutralArtSpec("Order Small Golems", "krugs",
+                "16df469a0c7e68f31cc3850eb6da153d79f20905775cb89e8ae0a8eb9f301b05",
+                "krug_idle_normal", 1.15f),
+            new NeutralArtSpec("Dragon Crab", "scuttle",
+                "40f0563b30d3a454e1d1cabb6bc653ee85889d12a3ea5c5493d73cb919387f26",
+                "sru_crab_idle1", .75f),
+            new NeutralArtSpec("Dragon", "dragon",
+                "ded89570c13274d7faa939e5695a43588ba35c57089a520303dee1b2465b30b3",
+                "sru_dragon_idle_normal", 1.25f)
+        };
 
         [Serializable]
         sealed class OriginalArtReceipt
         {
             public int version;
-            public string kind;
-            public string sourceSha256;
-            public string convertedSha256;
-            public string idleClip;
+            public string kind, sourceRepo, sourceCommit, sourceSha256;
+            public string convertedSha256, idleClip;
             public bool sourceVerified;
             public int skinnedMeshCount;
         }
 
-        const string BlueSourceSha256 =
-            "6d3181d21998e13783f0bd05ff571217b86714d0ec0f3bbaab424d5979fee1c9";
-        const string BlueIdleClip = "sru_blue_idle_normal";
+        public OriginalNeutralVisual FindOriginalVisual(string campName)
+        {
+            foreach (var visual in originalVisuals)
+                if (visual.CampName == campName) return visual;
+            return null;
+        }
 
         public void Initialize(NativeNeutralMonsterWorld world, RiftGrid nav)
         {
@@ -108,121 +176,137 @@ namespace HextechSeekers.Native
         }
 
         /// <summary>
-        /// Add real upstream skinned geometry only after checking its exact
-        /// pinned source and locally converted GLB hashes. The one-model
-        /// Phase18A acceptance requires blue sentinel idle animation; missing
-        /// optional files in normal local play leave diagnostic rings intact.
+        /// Load all locally staged source-pinned original monster meshes.
+        /// In normal local play, absent files retain explicit diagnostic rings;
+        /// incomplete/tampered bundles always fail instead of impersonating art.
+        /// Windows GPU QA requires all eight original models and idle states.
         /// </summary>
-        public async Task LoadOriginalBlueAsync(string neutralArtFolder, bool required)
+        public async Task LoadOriginalNeutralsAsync(string folder,
+                                                    bool requireBlue,
+                                                    bool requireAll)
         {
             if (World == null || !World.HasVerifiedCamps)
             {
-                if (required) throw new InvalidDataException(
-                    "Original neutral art requires verified Map11 camps");
+                if (requireAll || requireBlue)
+                    throw new InvalidDataException(
+                        "Original neutral art requires source-verified Map11 camps");
                 return;
             }
-            var modelFile = Path.Combine(neutralArtFolder, "buff_blue.glb");
-            var receiptFile = Path.Combine(neutralArtFolder, "buff_blue.json");
+            foreach (var spec in RequiredModels)
+            {
+                bool required = requireAll || (requireBlue && spec.Kind == "buff_blue");
+                await LoadOneOriginalAsync(folder, spec, required);
+            }
+            if (requireAll && originalVisuals.Count != RequiredModels.Length)
+                throw new InvalidDataException(
+                    "Phase18B requires all eight original skinned neutral rigs");
+        }
+
+        async Task LoadOneOriginalAsync(string folder, NeutralArtSpec spec, bool required)
+        {
+            string modelFile = Path.Combine(folder, spec.Kind + ".glb");
+            string receiptFile = Path.Combine(folder, spec.Kind + ".json");
             if (!File.Exists(modelFile) && !File.Exists(receiptFile))
             {
                 if (required)
                     throw new FileNotFoundException(
-                        "Phase18A original blue sentinel not staged", modelFile);
-                Debug.Log("NATIVE_ORIGINAL_BLUE_ABSENT: diagnostic marker retained");
+                        "Required original neutral model not staged: " + spec.Camp,
+                        modelFile);
+                Debug.Log("NATIVE_ORIGINAL_NEUTRAL_ABSENT: camp=" + spec.Camp +
+                          " fallback=diagnostic-ring");
                 return;
             }
             if (!File.Exists(modelFile) || !File.Exists(receiptFile))
                 throw new InvalidDataException(
-                    "Partial original blue sentinel source/receipt is forbidden");
+                    "Partial original neutral model/receipt: " + spec.Kind);
             var receipt = JsonUtility.FromJson<OriginalArtReceipt>(
                 File.ReadAllText(receiptFile));
             if (receipt == null || receipt.version != 1 ||
-                receipt.kind != "buff_blue" || !receipt.sourceVerified ||
-                receipt.sourceSha256 != BlueSourceSha256 ||
-                receipt.idleClip != BlueIdleClip ||
+                receipt.kind != spec.Kind || !receipt.sourceVerified ||
+                receipt.sourceRepo != "iamywl/Web_game" ||
+                receipt.sourceCommit != "557a9d5352af12bee8bf3db879c22d04d0a0954e" ||
+                receipt.sourceSha256 != spec.SourceSha ||
+                receipt.idleClip != spec.IdleClip ||
                 receipt.skinnedMeshCount < 1 ||
                 string.IsNullOrWhiteSpace(receipt.convertedSha256))
                 throw new InvalidDataException(
-                    "Original blue sentinel provenance/idle source invalid");
-            byte[] source = File.ReadAllBytes(modelFile);
+                    "Original neutral source provenance or clip mismatch: " + spec.Kind);
+            byte[] bytes = File.ReadAllBytes(modelFile);
             using (var sha = SHA256.Create())
             {
-                string actual = BitConverter.ToString(sha.ComputeHash(source))
+                string actual = BitConverter.ToString(sha.ComputeHash(bytes))
                     .Replace("-", "").ToLowerInvariant();
                 if (!string.Equals(actual, receipt.convertedSha256,
                                    StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException(
-                        "Original blue sentinel local GLB hash mismatch");
+                        "Original neutral converted file SHA256 mismatch: " + spec.Kind);
             }
-            NativeNeutralMonster selected = null;
             int index = -1;
             for (int i = 0; i < World.Monsters.Count; i++)
-                if (World.Monsters[i].CampName == "Chaos Blue")
+                if (World.Monsters[i].CampName == spec.Camp)
                 {
-                    selected = World.Monsters[i];
                     index = i;
                     break;
                 }
-            if (selected == null || index < 0 || index >= spawned.Count)
+            if (index < 0 || index >= spawned.Count)
                 throw new InvalidDataException(
-                    "Original blue sentinel needs source-verified Chaos Blue camp");
-            var artRoot = new GameObject("ORIGINAL_MAP11_BLUE_SENTINEL_SKINNED");
-            artRoot.transform.SetParent(spawned[index].transform, false);
-            // Original Map11 imported glTF uses the same conversion as terrain:
-            // avoid provisional scale changes that would fabricate geometry.
-            artRoot.transform.localPosition = Vector3.zero;
-            artRoot.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
-            artRoot.transform.localScale = Vector3.one;
+                    "Original neutral kind has no actual verified camp: " + spec.Camp);
+
+            var root = new GameObject("ORIGINAL_MAP11_" + spec.Kind + "_SKINNED");
+            root.transform.SetParent(spawned[index].transform, false);
+            root.transform.localPosition = Vector3.zero;
+            root.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            root.transform.localScale = Vector3.one * spec.Scale;
             var importer = new GltfImport(logger: new ConsoleLogger());
             try
             {
-                var url = new Uri(Path.GetFullPath(modelFile)).AbsoluteUri;
-                if (!await importer.Load(new Uri(url)))
+                var uri = new Uri(Path.GetFullPath(modelFile)).AbsoluteUri;
+                if (!await importer.Load(new Uri(uri)))
                     throw new InvalidDataException(
-                        "Verified original blue sentinel GLB failed glTFast loading");
+                        "Original source GLB failed glTFast Load: " + spec.Kind);
                 var scene = new GameObjectInstantiator(
-                    importer, artRoot.transform, logger: new ConsoleLogger());
+                    importer, root.transform, logger: new ConsoleLogger());
                 if (!await importer.InstantiateMainSceneAsync(scene))
                     throw new InvalidDataException(
-                        "Verified original blue sentinel GLB instantiation failed");
-                var renderers = artRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+                        "Original source GLB failed instantiation: " + spec.Kind);
+                var renderers = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
                 SkinnedMeshRenderer first = null;
                 int vertices = 0;
-                foreach (var renderer in renderers)
+                foreach (var candidate in renderers)
                 {
-                    if (!renderer || !renderer.sharedMesh) continue;
-                    if (first == null) first = renderer;
-                    vertices += renderer.sharedMesh.vertexCount;
+                    if (!candidate || !candidate.sharedMesh) continue;
+                    if (!first) first = candidate;
+                    vertices += candidate.sharedMesh.vertexCount;
                 }
                 var animation = scene.SceneInstance?.LegacyAnimation;
-                if (first == null || vertices <= 0 || animation == null ||
-                    animation.GetClip(receipt.idleClip) == null)
+                if (!first || vertices <= 0 || animation == null ||
+                    !animation.GetClip(spec.IdleClip))
                     throw new InvalidDataException(
-                        "Original blue sentinel requires skinned mesh and authentic idle clip");
-                var idle = animation[receipt.idleClip];
-                if (idle == null)
-                    throw new InvalidDataException("Blue sentinel idle animation state missing");
-                idle.wrapMode = WrapMode.Loop;
-                if (!animation.Play(receipt.idleClip))
+                        "Missing authentic skinned mesh or idle clip: " + spec.Kind);
+                var state = animation[spec.IdleClip];
+                if (state == null)
                     throw new InvalidDataException(
-                        "Original blue sentinel idle animation cannot play");
-                // Hide cyan diagnostic ring ONLY when the real model and its
-                // original idle state have both been positively validated.
+                        "Original idle animation state missing: " + spec.Kind);
+                state.wrapMode = WrapMode.Loop;
+                if (!animation.Play(spec.IdleClip))
+                    throw new InvalidDataException(
+                        "Cannot play authentic original idle clip: " + spec.Kind);
                 var diagnostic = spawned[index].GetComponent<LineRenderer>();
                 if (diagnostic) diagnostic.enabled = false;
-                blueRenderer = first;
-                blueIdle = animation;
-                blueIdleClip = receipt.idleClip;
-                OriginalArtCount = 1;
                 originalImports.Add(importer);
-                Debug.Log("NATIVE_ORIGINAL_NEUTRAL_MODEL_READY: camp=Chaos Blue" +
-                          " kind=buff_blue skinnedRenderers=" + renderers.Length +
-                          " vertices=" + vertices + " idle=" + receipt.idleClip +
+                var original = new OriginalNeutralVisual(
+                    spec.Camp, spec.Kind, spec.IdleClip, first, animation, vertices);
+                originalVisuals.Add(original);
+                Debug.Log("NATIVE_ORIGINAL_NEUTRAL_MODEL_READY: camp=" + spec.Camp +
+                          " kind=" + spec.Kind +
+                          " skinnedRenderers=" + renderers.Length +
+                          " vertices=" + vertices +
+                          " idle=" + spec.IdleClip +
                           " originalMesh=true diagnosticRing=false");
             }
             catch
             {
-                Destroy(artRoot);
+                Destroy(root);
                 importer.Dispose();
                 throw;
             }
@@ -231,10 +315,7 @@ namespace HextechSeekers.Native
         public void Clear()
         {
             World = null;
-            blueRenderer = null;
-            blueIdle = null;
-            blueIdleClip = null;
-            OriginalArtCount = 0;
+            originalVisuals.Clear();
             foreach (var importer in originalImports) importer.Dispose();
             originalImports.Clear();
             foreach (var item in spawned) if (item) Destroy(item);
