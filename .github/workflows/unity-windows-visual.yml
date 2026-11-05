@@ -456,6 +456,21 @@ jobs:
             Write-Host "TARGETED_SKILL_GPU_QA_PASS: $item"
           }
 
+          # Phase 17A: actual pinned Map11 bush vision, not fabricated targets.
+          if ($json.visionSkillSmokesExpected -ne 1 -or
+              $json.visionSkillSmokesPassed -ne 1 -or
+              @($json.visionSkillEvidence).Count -ne 1) {
+            throw "Phase17A real Map11 vision QA missing or incomplete"
+          }
+          $visionCase = [string]@($json.visionSkillEvidence)[0]
+          if (-not $visionCase.StartsWith('Yasuo:Hunter:E:real-map11-bush=true:') -or
+              -not $visionCase.Contains(':hidden-nearest-rejected=true:') -or
+              -not $visionCase.Contains(':visible-farther-dashed=true:') -or
+              -not $visionCase.EndsWith(':capture=false')) {
+            throw "Phase17A invalid Player vision evidence: $visionCase"
+          }
+          Write-Host "VISION_SKILL_GPU_QA_PASS: $visionCase"
+
       - name: Verify original champion rigs and capture per-hero real GPU art evidence
         run: |
           $project = Join-Path $env:GITHUB_WORKSPACE 'native-unity'
