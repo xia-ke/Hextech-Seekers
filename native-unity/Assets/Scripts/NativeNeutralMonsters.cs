@@ -208,6 +208,36 @@ namespace HextechSeekers.Native
         }
 
         /// <summary>
+        /// Attempt visible opponents by distance, but do not let an invalid
+        /// nearest opponent suppress another legal E target. The underlying
+        /// single-target validation remains authoritative for wall, vision,
+        /// range, elimination, team and per-target reuse checks.
+        /// </summary>
+        public bool TryEDashThroughNearestHero(
+            NativeHeroLoadout loadout, NativeMatchRules match,
+            NativeHextechRuntime effects, int casterId, Vector2 casterPosition,
+            IReadOnlyList<NativeSkillTarget> candidates, RiftGrid navigation,
+            out Vector2 destination, out int targetId)
+        {
+            destination = default;
+            targetId = -1;
+            if (candidates == null || candidates.Count == 0) return false;
+            var ordered = new List<NativeSkillTarget>(candidates);
+            ordered.Sort((a, b) =>
+                (a.Position - casterPosition).sqrMagnitude.CompareTo(
+                    (b.Position - casterPosition).sqrMagnitude));
+            foreach (var candidate in ordered)
+            {
+                if (!TryEDashThroughHero(loadout, match, effects,
+                    casterId, casterPosition, candidate, navigation,
+                    out destination)) continue;
+                targetId = candidate.Id;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
         /// E can pass through a currently perceived opposing champion as well
         /// as a neutral camp target. The caster lands beyond the target only
         /// when both the approach and exit path are navigable. No damage,

@@ -391,6 +391,29 @@ jobs:
             Write-Host "HUMAN_SKILL_GPU_QA_PASS: $item"
           }
 
+          # Phase 16: chain/target assertions are separate from Phase 15.
+          if ($json.targetedSkillSmokesExpected -ne 4 -or
+              $json.targetedSkillSmokesPassed -ne 4 -or
+              @($json.targetedSkillEvidence).Count -ne 4) {
+            throw "Targeted human skill Player QA missing: expected=$($json.targetedSkillSmokesExpected) passed=$($json.targetedSkillSmokesPassed)"
+          }
+          $targetedEvidence = @($json.targetedSkillEvidence)
+          if (@($targetedEvidence | Select-Object -Unique).Count -ne 4) {
+            throw 'Phase16 skill evidence is duplicated'
+          }
+          foreach ($case in @('Riven:Hider:Q1:', 'Riven:Hider:Q2:',
+                              'Riven:Hider:Q3:', 'Yasuo:Hider:E:')) {
+            if (@($targetedEvidence | Where-Object { $_.StartsWith($case) }).Count -ne 1) {
+              throw "Phase16 missing unique Player case: $case"
+            }
+          }
+          foreach ($item in $targetedEvidence) {
+            if (-not $item.Contains(':capture=false')) {
+              throw "Phase16 target/chain skill capture regression: $item"
+            }
+            Write-Host "TARGETED_SKILL_GPU_QA_PASS: $item"
+          }
+
       - name: Verify original champion rigs and capture per-hero real GPU art evidence
         run: |
           $project = Join-Path $env:GITHUB_WORKSPACE 'native-unity'
