@@ -1992,11 +1992,32 @@ namespace HextechSeekers.Native
                 Vector2 direction = QaSafeDashDirection(
                     NativeChampionCombat.RivenQDashProvisional);
                 Vector2 before = rift.PlayerPosition;
+                if (stage == 3)
+                {
+                    // A real enemy is staged at the *computed physical Q3
+                    // landing*, so the authentic contact geometry and
+                    // controller crowd-control path must both execute.
+                    Vector2 q3Landing = NativeSkillGeometry.WalkableDash(
+                        rift.Navigation, before, direction,
+                        NativeChampionCombat.RivenQDashProvisional);
+                    if (!rift.Navigation.CanWalk(q3Landing) ||
+                        !rift.Navigation.LineClear(before, q3Landing))
+                        throw new InvalidOperationException(
+                            "Phase16 Riven Q3 target position is obstructed");
+                    bots[0].Position = q3Landing;
+                    if (!VisibleTo(HumanId, bots[0].Id) ||
+                        heroControl.Locked(bots[0].Id))
+                        throw new InvalidOperationException(
+                            "Phase16 Riven Q3 target is hidden or already stunned");
+                }
                 if (!TryHumanSkill(NativeSkillSlot.Q, direction) ||
                     !humanDash.Active ||
                     humanCombat.RivenQStage != (stage == 3 ? 0 : stage))
                     throw new InvalidOperationException("Phase16 Riven Q" + stage +
                         " did not start from the real human cast entry");
+                if (stage == 3 && !heroControl.Locked(bots[0].Id))
+                    throw new InvalidOperationException(
+                        "Phase16 Riven Q3 failed to control the real enemy");
                 if (TryHumanSkill(NativeSkillSlot.Q, direction))
                     throw new InvalidOperationException(
                         "Phase16 Riven Q accepted an immediate recast");
@@ -2014,7 +2035,9 @@ namespace HextechSeekers.Native
                     throw new InvalidOperationException(
                         "Phase16 Riven Q caused a direct capture");
                 string record = "Riven:Hider:Q" + stage +
-                    ":entry=TryHumanSkill:dash=real-rift:recast=blocked:capture=false";
+                    ":entry=TryHumanSkill:dash=real-rift:recast=blocked" +
+                    (stage == 3 ? ":real-enemy-stunned=true" : "") +
+                    ":capture=false";
                 audit.Add(record);
                 Debug.Log("MATCH_TARGETED_SKILL_SMOKE_PASS: " + record);
             }
