@@ -1848,6 +1848,10 @@ namespace HextechSeekers.Native
             public string[] visionSkillEvidence;
             public int neutralSkillSmokesExpected, neutralSkillSmokesPassed;
             public string[] neutralSkillEvidence;
+            public int originalNeutralModelsExpected, originalNeutralModelsLoaded;
+            public int originalBlueMeshVertices;
+            public bool originalBlueIdlePlaying;
+            public bool originalBlueVisualSnapshotCaptured;
         }
 
         // This test intentionally calls the SAME private cast entry used by Q/W/E
@@ -2358,6 +2362,24 @@ namespace HextechSeekers.Native
                     throw new InvalidOperationException("Rift unavailable " +
                                                         (rift ? rift.LoadProblem : "no bootstrap"));
                 result.loadedRift = true;
+                result.originalNeutralModelsExpected = 1;
+                var neutralScene = rift.NeutralScene;
+                result.originalNeutralModelsLoaded =
+                    neutralScene ? neutralScene.OriginalArtCount : 0;
+                result.originalBlueMeshVertices =
+                    neutralScene ? neutralScene.OriginalBlueVertices : 0;
+                result.originalBlueIdlePlaying =
+                    neutralScene && neutralScene.OriginalBlueIdlePlaying;
+                if (result.originalNeutralModelsLoaded != 1 ||
+                    result.originalBlueMeshVertices <= 0 ||
+                    !result.originalBlueIdlePlaying ||
+                    !neutralScene.OriginalBlueRenderer ||
+                    !neutralScene.OriginalBlueRenderer.enabled)
+                    throw new InvalidOperationException(
+                        "Phase18A real blue sentinel skinned mesh/idle art not available");
+                Debug.Log("MATCH_ORIGINAL_NEUTRAL_MODEL_PASS: camp=Chaos Blue" +
+                          " skinnedVertices=" + result.originalBlueMeshVertices +
+                          " originalIdle=true sourceHashVerified=true");
                 // Exercise ALL three optional original champion rigs when their
                 // locally verified assets were staged in this Player. This is
                 // a distinct source/mesh smoke, not an artistic fidelity claim.
@@ -2527,7 +2549,11 @@ namespace HextechSeekers.Native
                     result.visionSkillSmokesExpected != 1 ||
                     result.visionSkillSmokesPassed != 1 ||
                     result.neutralSkillSmokesExpected != 1 ||
-                    result.neutralSkillSmokesPassed != 1)
+                    result.neutralSkillSmokesPassed != 1 ||
+                    result.originalNeutralModelsExpected != 1 ||
+                    result.originalNeutralModelsLoaded != 1 ||
+                    !result.originalBlueIdlePlaying ||
+                    result.originalBlueMeshVertices <= 0)
                     throw new InvalidOperationException("Gameplay smoke assertions failed");
                 result.status = "PASS";
             }
@@ -2536,6 +2562,65 @@ namespace HextechSeekers.Native
                 result.status = "FAIL";
                 result.reason = ex.ToString();
                 Debug.LogException(ex);
+            }
+            // The model may be intact yet invisible; obtain an actual D3D11
+            // screenshot with the camera over the authenticated Chaos Blue camp.
+            // This happens outside the test try/catch so C# coroutine yields
+            // remain legal (CS1626); failed evidence changes PASS to FAIL.
+            if (result.status == "PASS")
+            {
+                NativeNeutralMonster blue = null;
+                foreach (var monster in rift.NeutralMonsters.Monsters)
+                    if (monster.CampName == "Chaos Blue") { blue = monster; break; }
+                if (blue == null || !rift.TryTeleportTo(blue.WalkableAnchor))
+                {
+                    result.status = "FAIL";
+                    result.reason = "Phase18A original neutral screenshot staging failed";
+                }
+                else
+                {
+                    rift.CameraFollowOverride = blue.WalkableAnchor;
+                    yield return new WaitForEndOfFrame();
+                    var mainCamera = Camera.main;
+                    var model = rift.NeutralScene.OriginalBlueRenderer;
+                    if (!mainCamera || !model ||
+                        !GeometryUtility.TestPlanesAABB(
+                            GeometryUtility.CalculateFrustumPlanes(mainCamera),
+                            model.bounds))
+                    {
+                        result.status = "FAIL";
+                        result.reason = "Phase18A skinned blue sentinel not inside GPU camera";
+                    }
+                    else
+                    {
+                        string screenshot = Path.Combine(
+                            evidence, "original-neutral-blue-gpu.png");
+                        if (File.Exists(screenshot)) File.Delete(screenshot);
+                        ScreenCapture.CaptureScreenshot(screenshot);
+                        for (int frame = 0; frame < 180; frame++)
+                        {
+                            if (File.Exists(screenshot) &&
+                                new FileInfo(screenshot).Length > 10240)
+                                break;
+                            yield return null;
+                        }
+                        if (!File.Exists(screenshot) ||
+                            new FileInfo(screenshot).Length <= 10240)
+                        {
+                            result.status = "FAIL";
+                            result.reason = "Phase18A real GPU blue screenshot not written";
+                        }
+                        else
+                        {
+                            result.originalBlueVisualSnapshotCaptured = true;
+                            Debug.Log("MATCH_ORIGINAL_NEUTRAL_VISUAL_GPU_PASS: " +
+                                      "camp=Chaos Blue model=original-skin idle=playing" +
+                                      " screenshot=original-neutral-blue-gpu.png" +
+                                      " bytes=" + new FileInfo(screenshot).Length);
+                        }
+                    }
+                }
+                rift.CameraFollowOverride = null;
             }
             File.WriteAllText(Path.Combine(evidence, "gameplay-result.json"),
                               JsonUtility.ToJson(result, true));
