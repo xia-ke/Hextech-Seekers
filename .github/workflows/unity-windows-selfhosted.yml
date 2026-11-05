@@ -9,7 +9,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: hextech-native-windows-editor
+  # Keep independent branches queued rather than cancelling main Editor QA.
+  group: hextech-native-windows-editor-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   editor:
