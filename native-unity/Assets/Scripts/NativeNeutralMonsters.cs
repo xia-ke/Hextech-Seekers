@@ -197,12 +197,17 @@ namespace HextechSeekers.Native
             destination = default;
             if (!CanCast(loadout, match, effects, casterId, NativeSkillSlot.E) ||
                 world == null || clock < eAvailableAt) return false;
-            if (targetDashLocks.TryGetValue(monsterId, out float lockedUntil) &&
+            // Neutral IDs begin at 1 just like champion IDs. Keep the two
+            // target domains distinct so a dash through monster #1 does not
+            // incorrectly lock champion #1 (or vice versa).
+            if (monsterId <= 0) return false;
+            int neutralLockKey = -monsterId;
+            if (targetDashLocks.TryGetValue(neutralLockKey, out float lockedUntil) &&
                 lockedUntil > clock) return false;
             if (!world.TryDashLanding(monsterId, casterPosition,
                                       EDashRangeProvisional, EDashBeyondProvisional,
                                       out destination)) return false;
-            targetDashLocks[monsterId] = clock + ERepeatTargetLockProvisional;
+            targetDashLocks[neutralLockKey] = clock + ERepeatTargetLockProvisional;
             eAvailableAt = clock + .5f;
             return true;
         }
