@@ -12,7 +12,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: hextech-native-windows-gpu-visual
+  # Do not let a feature-branch push cancel an in-flight main GPU validation.
+  # A newer SHA on the SAME ref still supersedes its prior validation.
+  group: hextech-native-windows-gpu-visual-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
