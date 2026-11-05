@@ -12,7 +12,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: hextech-native-windows-gpu-visual
+  # Prevent feature-branch pushes from cancelling main GPU validation.
+  group: hextech-native-windows-gpu-visual-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
