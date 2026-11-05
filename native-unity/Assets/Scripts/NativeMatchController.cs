@@ -2178,9 +2178,26 @@ namespace HextechSeekers.Native
                 throw new InvalidOperationException(
                     "Phase17A actual nearer hidden/farther visible opponent setup invalid");
 
-            // Prove the concealed target cannot be used alone. The other
-            // hider is temporarily positioned outside actual sight range.
-            bots[1].Position = origin + Vector2.right * 2000f;
+            // Prove the concealed target cannot be used alone. Park the
+            // second real bot on a valid but out-of-sight Map11 cell.
+            Vector2 far = default;
+            bool farFound = false;
+            for (int y = 2; y < RiftGrid.Height - 2 && !farFound; y += 8)
+            for (int x = 2; x < RiftGrid.Width - 2 && !farFound; x += 8)
+            {
+                Vector2 candidate = nav.Center(x, y);
+                if (nav.CanWalk(candidate) &&
+                    Vector2.Distance(candidate, origin) >
+                    NativeSight.BasicSightDistance + 100f)
+                {
+                    far = candidate;
+                    farFound = true;
+                }
+            }
+            if (!farFound)
+                throw new InvalidOperationException(
+                    "Phase17A cannot stage real distant Map11 opponent");
+            bots[1].Position = far;
             if (VisibleTo(HumanId, bots[1].Id) ||
                 TryHumanSkill(NativeSkillSlot.E) || humanDash.Active)
                 throw new InvalidOperationException(
