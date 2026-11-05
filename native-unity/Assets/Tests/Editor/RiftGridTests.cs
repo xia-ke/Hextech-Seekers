@@ -11,7 +11,11 @@ namespace HextechSeekers.Native.Tests
         static byte[] Fixture()
         {
             var raw = new byte[RiftGrid.BinaryBytes];
-            for (int i = 0; i < RiftGrid.Width * RiftGrid.Height; i++) raw[i] = 1;
+            for (int i = 0; i < RiftGrid.Width * RiftGrid.Height; i++)
+            {
+                raw[i] = 1;
+                raw[RiftGrid.BushOffset + i] = byte.MaxValue; // Real Map11 no-bush sentinel
+            }
             return raw;
         }
         static Vector2 Cell(RiftGrid grid, int x, int y) => grid.Center(x, y);
@@ -31,8 +35,31 @@ namespace HextechSeekers.Native.Tests
             var nav = new RiftGrid(b);
             var p = Cell(nav, 200, 200);
             Assert.AreEqual((short)0x1234, nav.HeightAt(p));
-            Assert.AreEqual(9, nav.BushAt(p));
+            Assert.AreEqual(10, nav.BushAt(p)); // zero-based stored group 9 -> runtime group 10
         }
+        [Test]
+        public void OriginalMap11NoBushSentinelAndZeroBasedGroupZeroAreDistinct()
+        {
+            var raw = Fixture();
+            int first = 200 * RiftGrid.Width + 205;
+            int last = 200 * RiftGrid.Width + 206;
+            raw[RiftGrid.BushOffset + first] = 0;
+            raw[RiftGrid.BushOffset + last] = 38;
+            var nav = new RiftGrid(raw);
+            Vector2 observer = Cell(nav, 200, 200);
+            Vector2 bushZero = Cell(nav, 205, 200);
+            Vector2 bushThirtyEight = Cell(nav, 206, 200);
+            Assert.AreEqual(0, nav.BushAt(observer),
+                "Original 255 means outside all bushes");
+            Assert.AreEqual(1, nav.BushAt(bushZero),
+                "Stored bush group zero is a real bush");
+            Assert.AreEqual(39, nav.BushAt(bushThirtyEight));
+            Assert.IsFalse(NativeSight.Visible(nav, observer, bushZero),
+                "A real bush beyond reveal distance must conceal its target");
+            Assert.IsTrue(NativeSight.Visible(nav, Cell(nav, 204, 200), bushZero),
+                "A bush target within 120 units must be revealed");
+        }
+
         [Test]
         public void DirectPathRemainsOnWalkableCells()
         {
