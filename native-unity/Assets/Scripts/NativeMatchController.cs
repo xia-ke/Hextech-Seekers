@@ -279,14 +279,33 @@ namespace HextechSeekers.Native
                       " hextech=" + hextech.Selected(HumanId));
         }
 
-        bool HoveringHud(Vector2 mouse) =>
-            mouse.x < 545 && mouse.y > Screen.height -
-            (rules != null && rules.Phase == MatchPhase.Finished ? 475 : 325);
+        bool HoveringHud(Vector2 mouse)
+        {
+            // Match the visual UI rectangles. Input.mousePosition has a
+            // bottom-left origin; OnGUI uses a top-left origin and the same
+            // reference scaling through NativeGameUi.
+            float scale = Mathf.Clamp(Mathf.Min(Screen.width / 1280f,
+                                                 Screen.height / 720f),
+                                      .65f, 2.5f);
+            float x = mouse.x / scale;
+            float y = (Screen.height - mouse.y) / scale;
+            float w = Screen.width / scale;
+            float h = Screen.height / scale;
+            return (x < 376f && y < 345f) ||
+                   (x > (w - 300f) && y > h - 100f) ||
+                   (x > (w - 450f) * .5f && x < (w + 450f) * .5f &&
+                    y > h - 116f);
+        }
 
         void Update()
         {
             if (!rift || !rift.IsReady || rules == null || menu != Menu.Playing)
                 return;
+            // Presentation-only diagnostics; original private sight, target
+            // arbitration, capture and fog history remain untouched.
+            if (Input.GetKeyDown(KeyCode.V) && privateFog && privateFog.Running)
+                feedback = "Fog display: " + privateFog.CyclePresentation() +
+                           " (visual only; targeting vision unchanged)";
             float dt = Time.deltaTime;
             if (rules.Phase != MatchPhase.Finished)
             {
@@ -1662,162 +1681,299 @@ namespace HextechSeekers.Native
             rift.TryTeleportTo(HiderSpawn);
         }
 
+        static bool HasAutomatedVisualFlag()
+        {
+            var args = Environment.GetCommandLineArgs();
+            return Array.IndexOf(args, "-hextechVisualQA") >= 0 ||
+                   Array.IndexOf(args, "-hextechGameplayQA") >= 0 ||
+                   Array.IndexOf(args, "-hextechChampionVisualQA") >= 0 ||
+                   Array.IndexOf(args, "-hextechPhase10QA") >= 0;
+        }
+
         void OnGUI()
         {
-            if (!rift || !rift.IsReady) return;
-            if (menu == Menu.Augment)
+            if (!rift || !rift.IsReady)
             {
-                if (NativeHextechDraftUI.Draw(offered, out var selected))
-                    SelectAugment(selected);
+                // Present a real loading/error state instead of an empty sky
+                // while the pinned map and source rigs load asynchronously.
+                // Automated GPU captures still exercise the exact scene.
+                if (!HasAutomatedVisualFlag())
+                    NativeGameUi.DrawLoading(rift ? rift.LoadProblem :
+                        "RiftBootstrap not found", rift && rift.HasLoadFailed);
                 return;
             }
-            float width = 525;
-            bool tall = menu == Menu.Augment || menu == Menu.Playing;
-            float boxHeight = menu == Menu.Role ? 340f :
-                rules != null && rules.Phase == MatchPhase.Finished
-                ? 330f + rosterSize * 24f : (tall ? 310f : 218f);
-            GUI.Box(new Rect(12, 12, width, boxHeight), "");
-            GUI.Label(new Rect(25, 19, 495, 26), "HEXTECH SEEKERS | NATIVE 3D | GAMEPLAY ALPHA");
-            if (menu == Menu.Role)
+            if (menu == Menu.Augment)
             {
-                GUI.Label(new Rect(25, 50, 475, 26),
-                    "Select your champion (no duplicate AI hero)");
-                for (int i = 0; i < NativePlayerRoster.Heroes.Length; i++)
+                if (NativeHextechDraftUI.Draw(offered, out var selection))
+                    SelectAugment(selection);
+                return;
+            }
+
+            NativeGameUi.Begin();
+            try
+            {
+                if (menu == Menu.Role) DrawRoleSelectionUi();
+                else if (menu == Menu.Skill) DrawSkillSelectionUi();
+                else if (rules != null) DrawInGameUi();
+            }
+            finally { NativeGameUi.End(); }
+        }
+
+        void DrawRoleSelectionUi()
+        {
+            float x = 38f, y = Mathf.Max(32f, (NativeGameUi.Height - 466f) * .5f);
+            NativeGameUi.Panel(new Rect(x, y, 555f, 466f), true);
+            NativeGameUi.Text(new Rect(x + 28f, y + 20f, 500f, 40f),
+                "HEXTECH  SEEKERS", 30, NativeGameUi.Accent, true);
+            NativeGameUi.Text(new Rect(x + 28f, y + 60f, 500f, 22f),
+                "SUMMONER'S RIFT    /    NATIVE 3D ALPHA", 13,
+                NativeGameUi.Muted, true);
+            NativeGameUi.Rule(x + 28f, y + 93f, 499f);
+            NativeGameUi.Text(new Rect(x + 28f, y + 105f, 485f, 27f),
+                "CHOOSE YOUR CHAMPION", 17, NativeGameUi.Bright, true);
+            for (int i = 0; i < NativePlayerRoster.Heroes.Length; i++)
+            {
+                string hero = NativePlayerRoster.Heroes[i];
+                bool active = hero == selectedHero;
+                float cx = x + 27f + i * 125f;
+                if (NativeGameUi.Button(new Rect(cx, y + 141f, 116f, 67f),
+                    hero, isSelected: active))
                 {
-                    string choice = NativePlayerRoster.Heroes[i];
-                    if (GUI.Button(new Rect(25 + i * 121f, 80, 112, 38),
-                                   (choice == selectedHero ? "* " : "") + choice))
+                    if (rift.SelectPlayerChampion(hero))
                     {
-                        if (rift.SelectPlayerChampion(choice))
-                        {
-                            selectedHero = choice;
-                            feedback = rift.PlayerHasOriginalRig ?
-                                "Original " + choice + " rig loaded" :
-                                choice + ": tactical marker, original model not supplied";
-                        }
+                        selectedHero = hero;
+                        feedback = rift.PlayerHasOriginalRig ?
+                            "Original " + hero + " model ready" :
+                            hero + ": tactical marker; original art is not installed";
                     }
                 }
-                GUI.Label(new Rect(25, 130, 475, 24),
-                    rift.PlayerHasOriginalRig ? "Original rig available: " + selectedHero :
-                    "ART NOT INSTALLED: " + selectedHero + " tactical marker");
-                GUI.Label(new Rect(25, 164, 460, 25),
-                    "Participants: " + rosterSize + " (one hunter, remaining hiders)");
-                if (GUI.Button(new Rect(295, 161, 45, 30), "-"))
-                    rosterSize = Mathf.Max(2, rosterSize - 1);
-                if (GUI.Button(new Rect(350, 161, 45, 30), "+"))
-                    rosterSize = Mathf.Min(4, rosterSize + 1);
-                if (GUI.Button(new Rect(25, 213, 223, 44), "Play as HUNTER"))
-                    Configure(MatchRole.Hunter);
-                if (GUI.Button(new Rect(260, 213, 225, 44), "Play as HIDER"))
-                    Configure(MatchRole.Hider);
-                GUI.Label(new Rect(25, 269, 475, 22),
-                    "No source assets? Skills still run using a labeled tactical ring.");
-                GUI.Label(new Rect(25, 296, 475, 22), feedback);
+                NativeGameUi.Text(new Rect(cx + 6f, y + 207f, 107f, 18f),
+                    active ? "SELECTED" : "AVAILABLE", 10,
+                    active ? NativeGameUi.Teal : NativeGameUi.Muted, true,
+                    TextAnchor.MiddleCenter);
             }
-            else if (menu == Menu.Skill)
+            NativeGameUi.Pill(new Rect(x + 28f, y + 238f, 168f, 25f),
+                rift.PlayerHasOriginalRig ? "ORIGINAL RIG READY" :
+                "TACTICAL MARKER ONLY", rift.PlayerHasOriginalRig);
+            NativeGameUi.Text(new Rect(x + 210f, y + 239f, 313f, 23f),
+                "Selected: " + selectedHero, 14, NativeGameUi.Bright, true);
+            NativeGameUi.Rule(x + 28f, y + 280f, 499f);
+            NativeGameUi.Text(new Rect(x + 28f, y + 288f, 300f, 27f),
+                "PLAYERS IN MATCH", 14, NativeGameUi.Muted, true);
+            if (NativeGameUi.Button(new Rect(x + 340f, y + 284f, 44f, 38f),
+                "-", isSmall: true))
+                rosterSize = Mathf.Max(2, rosterSize - 1);
+            NativeGameUi.Text(new Rect(x + 387f, y + 286f, 43f, 36f),
+                rosterSize.ToString(), 22, NativeGameUi.Bright, true,
+                TextAnchor.MiddleCenter);
+            if (NativeGameUi.Button(new Rect(x + 434f, y + 284f, 44f, 38f),
+                "+", isSmall: true))
+                rosterSize = Mathf.Min(4, rosterSize + 1);
+            if (NativeGameUi.Button(new Rect(x + 28f, y + 340f, 234f, 55f),
+                "PLAY AS HUNTER", isPrimary: true))
+                Configure(MatchRole.Hunter);
+            if (NativeGameUi.Button(new Rect(x + 273f, y + 340f, 250f, 55f),
+                "PLAY AS HIDER"))
+                Configure(MatchRole.Hider);
+            NativeGameUi.Text(new Rect(x + 28f, y + 405f, 497f, 23f),
+                "2-minute preparation  |  PvE AI  |  unique champions", 12,
+                NativeGameUi.Muted);
+            NativeGameUi.Text(new Rect(x + 28f, y + 432f, 497f, 20f),
+                string.IsNullOrWhiteSpace(feedback) ?
+                "Original art not installed? Gameplay still uses tactical markers." :
+                feedback, 11, NativeGameUi.Teal);
+        }
+
+        void DrawSkillSelectionUi()
+        {
+            float w = 536f;
+            float x = (NativeGameUi.Width - w) * .5f;
+            float y = (NativeGameUi.Height - 255f) * .5f;
+            NativeGameUi.Panel(new Rect(x, y, w, 255f), true);
+            NativeGameUi.Text(new Rect(x + 25f, y + 21f, w - 50f, 32f),
+                selectedHero.ToUpperInvariant() + "  /  CHOOSE ONE SKILL",
+                23, NativeGameUi.Accent, true);
+            NativeGameUi.Text(new Rect(x + 26f, y + 65f, w - 52f, 25f),
+                "Your first Q / W / E skill is learned before the round.",
+                14, NativeGameUi.Muted);
+            foreach (NativeSkillSlot slot in new[] {
+                NativeSkillSlot.Q, NativeSkillSlot.W, NativeSkillSlot.E })
             {
-                GUI.Label(new Rect(25, 52, 478, 30),
-                    selectedHero + ": choose ONE legal skill to begin.");
+                if (!NativeSkillCatalog.Allowed(selectedHero, humanRole, slot))
+                    continue;
+                int index = (int)slot;
+                if (NativeGameUi.Button(
+                    new Rect(x + 25f + index * 164f, y + 115f, 155f, 63f),
+                    slot.ToString() + "   /   LEARN", isPrimary: true))
+                    SelectSkill(slot);
+            }
+            NativeGameUi.Text(new Rect(x + 25f, y + 202f, w - 50f, 29f),
+                "No summoner spells. Garen E (damage-only) is not selectable.",
+                12, NativeGameUi.Muted);
+        }
+
+        float DisplayCooldown(NativeSkillSlot slot)
+        {
+            if (humanLoadout == null || !humanLoadout.Knows(slot)) return -1;
+            if (selectedHero == "Garen")
+                return slot == NativeSkillSlot.Q ? garenSkills.CooldownQ :
+                       slot == NativeSkillSlot.W ? garenSkills.CooldownW : -1f;
+            if (selectedHero == "Yasuo")
+                return slot == NativeSkillSlot.Q ? humanYasuo.CooldownQ :
+                       slot == NativeSkillSlot.E ? humanYasuo.CooldownE :
+                       humanCombat.CooldownW;
+            if (humanCombat == null) return -1;
+            return slot == NativeSkillSlot.Q ? humanCombat.CooldownQ :
+                   slot == NativeSkillSlot.W ? humanCombat.CooldownW :
+                   humanCombat.CooldownE;
+        }
+
+        void DrawInGameUi()
+        {
+            float w = NativeGameUi.Width, h = NativeGameUi.Height;
+            string phase = rules.Phase == MatchPhase.Preparation ? "PREPARATION" :
+                           rules.Phase == MatchPhase.Pursuit ? "PURSUIT" : "FINISHED";
+            var player = rules.Find(HumanId);
+            NativeGameUi.Panel(new Rect(18, 16, 344, 149));
+            NativeGameUi.Text(new Rect(34, 25, 302, 24),
+                "HEXTECH  SEEKERS   /   MATCH", 13, NativeGameUi.Accent, true);
+            NativeGameUi.Rule(34, 53, 308);
+            NativeGameUi.Text(new Rect(34, 62, 307, 26),
+                selectedHero + "  /  " + humanRole.ToString().ToUpperInvariant(), 18,
+                NativeGameUi.Bright, true);
+            NativeGameUi.Text(new Rect(34, 95, 307, 23),
+                "Captured  " + rules.CapturedCount + "/" + rules.HiderCount +
+                "     SCORE  " + player.Score, 14, NativeGameUi.Teal, true);
+            NativeGameUi.Text(new Rect(34, 123, 309, 25),
+                "TARGET   " + SelectedTargetStatus(), 12, NativeGameUi.Muted);
+
+            float stageX = (w - 326f) * .5f;
+            NativeGameUi.Panel(new Rect(stageX, 15f, 326f, 80f), true);
+            NativeGameUi.Text(new Rect(stageX + 14, 22, 298f, 20f),
+                phase, 14, NativeGameUi.Accent, true, TextAnchor.MiddleCenter);
+            NativeGameUi.Text(new Rect(stageX + 14, 42, 298f, 38f),
+                Mathf.CeilToInt(rules.RemainingSeconds) + "s",
+                28, NativeGameUi.Bright, true, TextAnchor.MiddleCenter);
+
+            var chosen = hextech.Selected(HumanId);
+            string augment = chosen.HasValue ?
+                NativeHextechPool.Find(chosen.Value).Name : "None";
+            NativeGameUi.Panel(new Rect(18, 178, 344, 84));
+            NativeGameUi.Text(new Rect(34, 190, 313, 23),
+                "HEXTECH   " + augment, 14, NativeGameUi.Accent, true);
+            NativeGameUi.Text(new Rect(34, 223, 311, 20),
+                "F  /  " + Mathf.CeilToInt(hextech.RemainingCooldown(HumanId)) +
+                "s cooldown     V  /  fog: " +
+                (privateFog && privateFog.Running ?
+                    privateFog.DisplayMode.ToString() : "Unavailable"), 12,
+                NativeGameUi.Muted);
+
+            // These buttons were present in the previous diagnostic UI; keep
+            // their actions unchanged while reducing their visual footprint.
+            float actionY = 272f;
+            if (chosen == NativeHextech.TimeClockSilver &&
+                rules.Phase == MatchPhase.Pursuit)
+            {
+                if (NativeGameUi.Button(new Rect(18, actionY, 167, 39),
+                    "CLOCK  -1 MIN", isSmall: true))
+                    TryUseHextech(-1);
+                if (NativeGameUi.Button(new Rect(195, actionY, 167, 39),
+                    "CLOCK  +1 MIN", isSmall: true))
+                    TryUseHextech(1);
+                actionY += 44f;
+            }
+            if (humanLoadout != null && humanLoadout.Level == 2 &&
+                !humanLoadout.Secondary.HasValue &&
+                rules.Phase == MatchPhase.Preparation)
+            {
+                int i = 0;
                 foreach (NativeSkillSlot slot in new[] {
-                             NativeSkillSlot.Q, NativeSkillSlot.W, NativeSkillSlot.E })
+                    NativeSkillSlot.Q, NativeSkillSlot.W, NativeSkillSlot.E })
                 {
-                    if (!NativeSkillCatalog.Allowed(selectedHero, humanRole, slot))
+                    if (slot == humanLoadout.Primary ||
+                        !NativeSkillCatalog.Allowed(selectedHero, humanRole, slot))
                         continue;
-                    int index = (int)slot;
-                    if (GUI.Button(new Rect(25 + index * 155f, 94, 148, 47),
-                                   slot + " | " + selectedHero))
-                        SelectSkill(slot);
+                    if (NativeGameUi.Button(new Rect(18 + 173 * i,
+                        actionY, 165, 38), "LEVEL 2  +  " + slot,
+                        isSmall: true))
+                        humanLoadout.Choose(slot);
+                    i++;
                 }
-                GUI.Label(new Rect(25, 156, 470, 25),
-                    "Garen E is damage-only and not selectable.");
-                GUI.Label(new Rect(25, 185, 475, 22),
-                    "No normal summoner spells, runes or damage-only abilities.");
             }
-            else if (rules != null)
+
+            // Input hints are displayed as text only. Q/W/E/F/A are still
+            // handled exclusively by the existing controller input paths.
+            float barX = (w - 450f) * .5f, barY = h - 116f;
+            NativeGameUi.Panel(new Rect(barX, barY, 450f, 99f));
+            NativeGameUi.Text(new Rect(barX + 14, barY + 7, 423, 19),
+                "ABILITIES    /    KEYBOARD", 11, NativeGameUi.Muted, true);
+            for (int i = 0; i < 5; i++)
             {
-                string phase = rules.Phase == MatchPhase.Preparation ? "PREPARATION" :
-                               rules.Phase == MatchPhase.Pursuit ? "PURSUIT" : "FINISHED";
-                GUI.Label(new Rect(25, 47, 482, 24),
-                    selectedHero + " | " + humanRole + " | " + phase + " | " +
-                    Mathf.CeilToInt(rules.RemainingSeconds) + "s | " + rosterSize + " actors");
-                GUI.Label(new Rect(25, 76, 480, 22),
-                    "Captured " + rules.CapturedCount + "/" + rules.HiderCount +
-                    " | Your score " + rules.Find(HumanId).Score +
-                    (rules.Find(HumanId).Eliminated ?
-                      " | SPECTATING " + (SpectatedAlly() >= 0 ?
-                            rules.Find(SpectatedAlly()).HeroKey : "none") : ""));
-                var selected = hextech.Selected(HumanId);
-                GUI.Label(new Rect(25, 101, 480, 25),
-                    "Hextech: " + (selected.HasValue ? NativeHextechPool.Find(selected.Value).Name : "-") +
-                    " | Cooldown " + Mathf.CeilToInt(hextech.RemainingCooldown(HumanId)) + "s");
-                GUI.Label(new Rect(25, 127, 485, 23),
-                    "Target: " + SelectedTargetStatus() + " | A basic | Tab | Q/W/E | F");
-                if (selected == NativeHextech.TimeClockSilver &&
-                    rules.Phase == MatchPhase.Pursuit)
+                string key = i == 0 ? "A" : i == 4 ? "F" :
+                             ((NativeSkillSlot)(i - 1)).ToString();
+                float cd = i == 0 ? basicCooldown : i == 4 ?
+                    hextech.RemainingCooldown(HumanId) :
+                    DisplayCooldown((NativeSkillSlot)(i - 1));
+                bool usable = i == 0 || i == 4 || cd >= 0;
+                float slotX = barX + 13 + i * 87f;
+                NativeGameUi.Fill(new Rect(slotX, barY + 28, 77f, 56f),
+                    usable ? new Color(.13f, .26f, .35f, .96f) :
+                             new Color(.09f, .12f, .17f, .96f));
+                NativeGameUi.Text(new Rect(slotX, barY + 30, 77f, 29f),
+                    key, 21, usable ? NativeGameUi.Accent :
+                    NativeGameUi.Muted, true, TextAnchor.MiddleCenter);
+                NativeGameUi.Text(new Rect(slotX, barY + 60, 77f, 21f),
+                    !usable ? "LOCKED" : cd > .01f ?
+                    Mathf.CeilToInt(cd) + "s" :
+                    i == 0 ? "ATTACK" : i == 4 ? "HEXTECH" : "READY",
+                    11, usable ? NativeGameUi.Teal : NativeGameUi.Muted,
+                    true, TextAnchor.MiddleCenter);
+            }
+            NativeGameUi.Panel(new Rect(Mathf.Max(12f, w - 255f),
+                h - 104f, 239f, 87f));
+            NativeGameUi.Text(new Rect(w - 239f, h - 97f, 207f, 24f),
+                "RMB   MOVE     /     S   STOP", 12,
+                NativeGameUi.Bright, true);
+            NativeGameUi.Text(new Rect(w - 239f, h - 69f, 207f, 24f),
+                "TAB   TARGET    /    V   FOG", 12,
+                NativeGameUi.Muted, true);
+            NativeGameUi.Text(new Rect(w - 239f, h - 42f, 207f, 18f),
+                "VISUAL DEBUG: NORMAL / LIGHT / OFF", 10,
+                NativeGameUi.Teal);
+            if (!string.IsNullOrWhiteSpace(feedback))
+            {
+                NativeGameUi.Panel(new Rect(18, h - 100f, 350f, 82f));
+                NativeGameUi.Text(new Rect(32, h - 93f, 323f, 19f),
+                    "MATCH UPDATE", 11, NativeGameUi.Accent, true);
+                NativeGameUi.Text(new Rect(32, h - 68f, 323f, 41f),
+                    feedback, 12, NativeGameUi.Bright);
+            }
+            if (player.Eliminated)
+                NativeGameUi.Text(new Rect(stageX - 20f, 99f, 366f, 27f),
+                    "SPECTATING  /  TAB cycles living allies",
+                    13, NativeGameUi.Teal, true, TextAnchor.MiddleCenter);
+
+            if (rules.Phase == MatchPhase.Finished)
+            {
+                float endX = (w - 425f) * .5f, endY = (h - 285f) * .5f;
+                NativeGameUi.Panel(new Rect(endX, endY, 425f, 285f), true);
+                NativeGameUi.Text(new Rect(endX + 18, endY + 19, 390f, 33f),
+                    rules.HunterWon ? "HUNTER VICTORY" : "HIDERS SURVIVE",
+                    23, NativeGameUi.Accent, true,
+                    TextAnchor.MiddleCenter);
+                int row = 0;
+                foreach (var participant in rules.Players)
                 {
-                    if (GUI.Button(new Rect(25, 158, 213, 34), "Clock: -1 min"))
-                        TryUseHextech(-1);
-                    if (GUI.Button(new Rect(251, 158, 220, 34), "Clock: +1 min"))
-                        TryUseHextech(1);
+                    NativeGameUi.Text(new Rect(endX + 28, endY + 67 + row * 30,
+                        375f, 27f), participant.HeroKey + "   /   " +
+                        participant.Role + "   /   " + participant.Score +
+                        (participant.Eliminated ? "   OUT" : "   ALIVE"), 13,
+                        NativeGameUi.Bright);
+                    row++;
                 }
-                if (humanLoadout != null && humanLoadout.Level == 2 &&
-                    !humanLoadout.Secondary.HasValue &&
-                    rules.Phase == MatchPhase.Preparation)
-                {
-                    int optionIndex = 0;
-                    foreach (NativeSkillSlot slot in new[] {
-                                 NativeSkillSlot.Q, NativeSkillSlot.W, NativeSkillSlot.E })
-                    {
-                        if (slot == humanLoadout.Primary ||
-                            !NativeSkillCatalog.Allowed(selectedHero, humanRole, slot))
-                            continue;
-                        if (GUI.Button(new Rect(25 + 240 * optionIndex, 195, 224, 32),
-                                       "Level 2: learn " + slot))
-                            humanLoadout.Choose(slot);
-                        optionIndex++;
-                    }
-                }
-                if (rules.Phase == MatchPhase.Finished)
-                {
-                    GUI.Label(new Rect(25, 172, 475, 25),
-                        rules.HunterWon ? "Hunter wins" : "Hiders survived");
-                    if (GUI.Button(new Rect(275, 196, 215, 33), "Return to role select"))
-                        ReturnToRoleSelection();
-                }
-                GUI.Label(new Rect(25, 238, 490, 25), feedback);
-                GUI.Label(new Rect(25, 263, 490, 25),
-                    rules.Find(HumanId).Eliminated && SpectatedAlly() >= 0 ?
-                    "Spectating: Tab cycles allies; fog follows ONLY the chosen ally" :
-                    (privateFog && privateFog.Running ?
-                     "Fog: private 3D terrain vision + explored darkness" :
-                     "Fog unavailable: no full-map sight protection"));
-                if (humanLoadout != null)
-                {
-                    string cooldowns = selectedHero == "Garen"
-                        ? "Q " + Mathf.CeilToInt(garenSkills.CooldownQ) +
-                          "s  W " + Mathf.CeilToInt(garenSkills.CooldownW) + "s"
-                        : selectedHero == "Yasuo"
-                        ? "Q " + Mathf.CeilToInt(humanYasuo.CooldownQ) +
-                          "s  W " + Mathf.CeilToInt(humanCombat.CooldownW) +
-                          "s  E " + Mathf.CeilToInt(humanYasuo.CooldownE) + "s"
-                        : "Q " + Mathf.CeilToInt(humanCombat.CooldownQ) +
-                          "s  W " + Mathf.CeilToInt(humanCombat.CooldownW) +
-                          "s  E " + Mathf.CeilToInt(humanCombat.CooldownE) + "s";
-                    GUI.Label(new Rect(25, 286, 490, 20),
-                              selectedHero + " cooldowns: " + cooldowns);
-                }
-                if (rules.Phase == MatchPhase.Finished)
-                {
-                    int row = 0;
-                    foreach (var participant in rules.Players)
-                    {
-                        GUI.Label(new Rect(25, 305 + row * 23, 480, 22),
-                            participant.HeroKey + " / " + participant.Role +
-                            " / score " + participant.Score +
-                            (participant.Eliminated ? " / eliminated" : " / alive"));
-                        row++;
-                    }
-                }
+                if (NativeGameUi.Button(new Rect(endX + 48, endY + 220,
+                    329f, 45f), "RETURN TO ROLE SELECTION", isPrimary: true))
+                    ReturnToRoleSelection();
             }
         }
 
