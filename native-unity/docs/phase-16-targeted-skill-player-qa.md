@@ -6,7 +6,7 @@ This change extends the existing `-hextechGameplayQA` Windows Player test. It re
 
 ### Riven Q1 / Q2 / Q3
 
-A fresh two-actor human Riven hider round is configured through the existing role, offered augment and legal skill selection. Each Q is issued through the same `TryHumanSkill` method used by live keyboard input. The harness computes a navigable direction against the **actual loaded Map11** and advances the real `NativeDashMotion` to its destination. Each stage checks the source combat-stage transition, immediate second-press rejection, navigable swept line and absence of direct capture. After Q3 the test rejects a fourth press during the original Q cooldown.
+A fresh two-actor human Riven hider round is configured through the existing role, offered augment and legal skill selection. Each Q is issued through the same `TryHumanSkill` method used by live keyboard input. The harness computes a navigable direction against the **actual loaded Map11** and advances the real `NativeDashMotion` to its destination. Each stage checks the source combat-stage transition, immediate second-press rejection, navigable swept line and absence of direct capture. For Q3, an actual opposing bot is staged at the computed walkable dash landing; the cast must lock that real bot through the regular controller control path, without changing capture state. After Q3 the test rejects a fourth press during the original Q cooldown.
 
 The harness advances `NativeChampionCombat` by the minimum recast interval between casts rather than waiting for OS/frame scheduling; it does not use mock `NativeSkillImpact` or directly set the Riven Q stage. This is deterministic API-path Player validation, **not physical key injection** or timed animation sign-off.
 
@@ -30,4 +30,4 @@ No fake target struct is passed to the *successful* skill cast; the opposing bot
 
 ## Not claimed
 
-No proof of a Riven Q3 knockup on a physically positioned opponent, Yasuo E on neutral monsters, hidden-target negative test, 1:1 original LoL animation/VFX, actual key automation, or general frame-rate performance. These remain separate follow-up acceptance paths.
+The EditMode suite also checks Yasuo E rejection of hidden, allied and eliminated hero targets without spending cooldown, followed by valid hero casting and per-target lock. This test uses a synthetic fully walkable grid; it must not be described as proof of original Map11 fog rendering.\n\nNo proof of Yasuo E on neutral monsters in a live Player, actual visually observed Riven Q3 knockup animation, 1:1 original LoL animation/VFX, literal external key automation, or general frame-rate performance. These remain separate follow-up acceptance paths.
