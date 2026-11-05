@@ -6,6 +6,7 @@ Hextech-Seekers repository. A pinned source commit and SHA are mandatory.
 An unverified, partially downloaded or malformed model aborts staging.
 """
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -21,8 +22,13 @@ TARGET = ROOT / "Assets" / "StreamingAssets" / "Neutrals"
 SOURCE_COMMIT = "557a9d5352af12bee8bf3db879c22d04d0a0954e"
 SOURCE_REPO = "iamywl/Web_game"
 SOURCE_PATH = "public/assets/units/jungle/buff_blue.glb"
-SOURCE_URL = ("https://media.githubusercontent.com/media/" + SOURCE_REPO +
+# This GLB is a full ordinary Git blob, not an LFS pointer. The GitHub
+# /media/ endpoint returned HTTP 404 on the Windows GPU runner.
+SOURCE_URL = ("https://raw.githubusercontent.com/" + SOURCE_REPO +
               "/" + SOURCE_COMMIT + "/" + SOURCE_PATH)
+SOURCE_BLOB_SHA = "faaf2c3d4d0b5e2abd7791c126cbf2021cb653b3"
+SOURCE_BLOB_API = ("https://api.github.com/repos/" + SOURCE_REPO +
+                   "/git/blobs/" + SOURCE_BLOB_SHA)
 SOURCE_SHA256 = "6d3181d21998e13783f0bd05ff571217b86714d0ec0f3bbaab424d5979fee1c9"
 SOURCE_BYTES = 3179272
 IDLE_CLIP = "sru_blue_idle_normal"
@@ -53,27 +59,51 @@ def source_bytes(cache_root: Optional[Path]) -> bytes:
         data = cached.read_bytes()
         return verified_source(data)
     last = None
-    for attempt in range(3):
-        try:
-            with urllib.request.urlopen(SOURCE_URL, timeout=90) as response:
-                data = response.read(SOURCE_BYTES + 1)
-            verified_source(data)
-            if cached:
-                cache_root.mkdir(parents=True, exist_ok=True)
-                if cache_root.is_symlink():
-                    raise ValueError("Refusing linked cache root")
-                pending = cached.with_suffix(".part")
-                try:
-                    pending.write_bytes(data)
-                    pending.replace(cached)
-                finally:
-                    pending.unlink(missing_ok=True)
-            return data
-        except (OSError, ValueError) as exc:
-            last = exc
-            if attempt < 2:
-                time.sleep(2 * (attempt + 1))
-    raise RuntimeError("Cannot retrieve pinned original blue sentinel asset") from last
+    # First try GitHub's normal raw Git blob endpoint; the /media/ path used
+    # for some LFS assets does NOT resolve this regular 3,179,272-byte blob.
+    # If raw CDN access fails, GitHub's Git Blob API can serve base64 with an
+    # independently pinned blob SHA. Neither response is trusted until it
+    # passes the original byte-length, SHA-256 and GLB structural checks.
+    for url, mode in ((SOURCE_URL, "raw"), (SOURCE_BLOB_API, "git-blob-api")):
+        for attempt in range(3):
+            try:
+                request = urllib.request.Request(
+                    url, headers={"User-Agent": "HextechSeekers-asset-verifier",
+                                  "Accept": "application/vnd.github+json" if mode == "git-blob-api" else "application/octet-stream"})
+                with urllib.request.urlopen(request, timeout=90) as response:
+                    payload = response.read(SOURCE_BYTES * 2 + 4096)
+                if mode == "git-blob-api":
+                    decoded = json.loads(payload.decode("utf-8"))
+                    if (decoded.get("sha") != SOURCE_BLOB_SHA or
+                            decoded.get("size") != SOURCE_BYTES or
+                            decoded.get("encoding") != "base64"):
+                        raise ValueError("Git blob metadata/encoding mismatch")
+                    data = base64.b64decode(decoded["content"], validate=False)
+                else:
+                    data = payload
+                verified_source(data)
+                if cached:
+                    if cache_root.is_symlink():
+                        raise ValueError("Refusing linked cache root")
+                    cache_root.mkdir(parents=True, exist_ok=True)
+                    pending = cached.with_suffix(".part")
+                    try:
+                        pending.write_bytes(data)
+                        pending.replace(cached)
+                    finally:
+                        pending.unlink(missing_ok=True)
+                print("NATIVE_NEUTRAL_ORIGINAL_FETCH_OK: mode=" + mode +
+                      " bytes=" + str(len(data)) +
+                      " sha256=" + SOURCE_SHA256)
+                return data
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                last = exc
+                print("NATIVE_NEUTRAL_ORIGINAL_FETCH_RETRY: mode=" + mode +
+                      " attempt=" + str(attempt + 1) +
+                      " reason=" + type(exc).__name__ + ": " + str(exc))
+                if attempt < 2:
+                    time.sleep(2 * (attempt + 1))
+    raise RuntimeError("Cannot retrieve pinned original blue sentinel Git blob from raw or API") from last
 
 
 def stage(target: Path = TARGET, cache_root: Optional[Path] = None) -> dict:
