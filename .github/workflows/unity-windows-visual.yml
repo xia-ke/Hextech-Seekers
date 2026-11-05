@@ -217,6 +217,31 @@ jobs:
           }
           Write-Host "Converted Unity-compatible GLB size: $((Get-Item $output).Length) bytes"
 
+      - name: Stage SHA-verified original Blue Sentinel art and idle clip (not in Git)
+        run: |
+          $cacheRoot = 'F:\actions-runner\HextechNeutralSources'
+          Write-Host 'Retrieving pinned original blue sentinel model: SHA256 + skin + idle verified'
+          if (Get-Command py -ErrorAction SilentlyContinue) {
+            & py -3 native-unity/tools/stage_original_neutral_art.py --cache-root $cacheRoot
+          } else {
+            & python native-unity/tools/stage_original_neutral_art.py --cache-root $cacheRoot
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Pinned original blue sentinel art staging failed'
+          }
+          $receipt = Join-Path $env:GITHUB_WORKSPACE 'native-unity\Assets\StreamingAssets\Neutrals\buff_blue.json'
+          $model = Join-Path $env:GITHUB_WORKSPACE 'native-unity\Assets\StreamingAssets\Neutrals\buff_blue.glb'
+          if (-not (Test-Path $receipt -PathType Leaf) -or -not (Test-Path $model -PathType Leaf)) {
+            throw 'Verified original neutral GLB or receipt not staged'
+          }
+          $meta = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+          if ($meta.kind -ne 'buff_blue' -or $meta.sourceSha256 -ne
+              '6d3181d21998e13783f0bd05ff571217b86714d0ec0f3bbaab424d5979fee1c9' -or
+              $meta.idleClip -ne 'sru_blue_idle_normal' -or -not $meta.sourceVerified) {
+            throw 'Pinned blue sentinel model verification receipt invalid'
+          }
+          Write-Host "NATIVE_BLUE_ORIGINAL_STAGED: bytes=$((Get-Item $model).Length) idle=$($meta.idleClip)"
+
       - name: Build real Windows x64 Player
         run: |
           $project = Join-Path $env:GITHUB_WORKSPACE 'native-unity'
@@ -393,6 +418,7 @@ jobs:
             '-screen-height', '720',
             '-logFile', ('"{0}"' -f $log),
             '-hextechGameplayQA',
+            '-hextechRequireOriginalBlueArt',
             '-hextechEvidenceDir', ('"{0}"' -f $evidence)
           )
           Write-Host 'Running a real GPU Player gameplay smoke: both roles, 120s preparation, capture and scores'
@@ -484,6 +510,27 @@ jobs:
             throw "Phase17B invalid neutral Player evidence: $neutralCase"
           }
           Write-Host "NEUTRAL_SKILL_GPU_QA_PASS: $neutralCase"
+
+          # Phase 18A: do not pass only from the gameplay PASS. Require
+          # real skinned original geometry, source-idle animation and a
+          # D3D11 PNG captured while the mesh intersects the camera frustum.
+          if ($json.originalNeutralModelsExpected -ne 1 -or
+              $json.originalNeutralModelsLoaded -ne 1 -or
+              $json.originalBlueMeshVertices -le 0 -or
+              -not $json.originalBlueIdlePlaying -or
+              -not $json.originalBlueVisualSnapshotCaptured) {
+            throw 'Phase18A original blue neutral mesh, idle or screenshot GPU QA missing'
+          }
+          $blueImage = Join-Path $evidence 'original-neutral-blue-gpu.png'
+          if (-not (Test-Path -LiteralPath $blueImage -PathType Leaf)) {
+            throw 'Phase18A real GPU screenshot absent'
+          }
+          [byte[]]$png = [System.IO.File]::ReadAllBytes($blueImage)
+          if ($png.Length -lt 10240 -or
+              ($png[0..7] -join ',') -ne '137,80,78,71,13,10,26,10') {
+            throw 'Phase18A invalid or truncated real GPU PNG'
+          }
+          Write-Host "ORIGINAL_NEUTRAL_GPU_ART_PASS: originalBlueVertices=$($json.originalBlueMeshVertices) idle=true screenshotBytes=$($png.Length)"
 
       - name: Verify original champion rigs and capture per-hero real GPU art evidence
         run: |
