@@ -36,7 +36,14 @@ namespace HextechSeekers.Native
             for (int i = 0; i < cells; i++)
             {
                 heights[i] = (short)(raw[cells + i * 2] | raw[cells + i * 2 + 1] << 8);
-                bush[i] = raw[BushOffset + i];
+                // Original Map11 navigation.bin encodes NO BUSH as 255.
+                // Real bush groups are zero-based IDs 0..38. Expose 0
+                // consistently as "not in a bush", and 1..39 as real
+                // groups; otherwise 255 makes all normal terrain look like
+                // one giant bush and breaks unit visibility.
+                byte rawBush = raw[BushOffset + i];
+                bush[i] = rawBush == byte.MaxValue ?
+                    (byte)0 : (byte)(rawBush + 1);
             }
             for (int y = 1; y < Height - 1; y++)
                 for (int x = 1; x < Width - 1; x++)
