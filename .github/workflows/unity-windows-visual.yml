@@ -532,6 +532,72 @@ jobs:
           }
           Write-Host "ORIGINAL_NEUTRAL_GPU_ART_PASS: originalBlueVertices=$($json.originalBlueMeshVertices) idle=true screenshotBytes=$($png.Length)"
 
+      - name: Capture native launcher, Hextech cards and fog display on real GPU
+        run: |
+          $project = Join-Path $env:GITHUB_WORKSPACE 'native-unity'
+          $exe = Join-Path $project 'Build\Windows\HextechSeekers.exe'
+          $root = Join-Path $env:RUNNER_TEMP "hextech-native-gpu-$env:GITHUB_RUN_ID"
+          $evidence = Join-Path $root 'evidence'
+          $log = Join-Path $root 'UiVisual.log'
+          $args = @(
+            '-force-d3d11',
+            '-screen-fullscreen', '0',
+            '-screen-width', '1280',
+            '-screen-height', '720',
+            '-logFile', ('"{0}"' -f $log),
+            '-hextechUiVisualQA',
+            '-hextechEvidenceDir', ('"{0}"' -f $evidence)
+          )
+          $proc = Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe) -ArgumentList $args -PassThru
+          if (-not $proc.WaitForExit(180000)) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            throw 'UI actual GPU capture timed out after 3 minutes'
+          }
+          if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 55 }
+          $report = Join-Path $evidence 'ui-visual-result.json'
+          if (-not (Test-Path -LiteralPath $report -PathType Leaf)) {
+            throw 'UI Player produced no ui-visual-result.json'
+          }
+          $json = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          Write-Host (Get-Content -LiteralPath $report -Raw)
+          if ($proc.ExitCode -ne 0 -or
+              $json.status -ne 'CAPTURED_REQUIRES_VISUAL_REVIEW' -or
+              -not $json.originalMapReady -or -not $json.hardwareGpu -or
+              -not $json.fogDoesNotAlterTargetVisibility -or
+              -not $json.returnedToNormal -or
+              $json.screenshots -ne 6) {
+            throw "Native UI visual GPU smoke failed: $($json.reason) status=$($json.status)"
+          }
+          $expected = @(
+            'ui-role-selection.png',
+            'ui-hextech-draft.png',
+            'ui-skill-selection.png',
+            'ui-hud-fog-normal.png',
+            'ui-hud-fog-light.png',
+            'ui-hud-fog-off.png'
+          )
+          foreach ($name in $expected) {
+            $file = Join-Path $evidence $name
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+              throw "Missing genuine GPU UI screenshot: $name"
+            }
+            [byte[]]$bytes = [System.IO.File]::ReadAllBytes($file)
+            if ($bytes.Length -lt 16384 -or
+                ($bytes[0..7] -join ',') -ne '137,80,78,71,13,10,26,10') {
+              throw "Truncated or invalid real UI PNG: $name"
+            }
+            $width = [System.Net.IPAddress]::NetworkToHostOrder([BitConverter]::ToInt32($bytes,16))
+            $height = [System.Net.IPAddress]::NetworkToHostOrder([BitConverter]::ToInt32($bytes,20))
+            if ($width -lt 800 -or $height -lt 450) {
+              throw "Incorrect UI GPU screenshot size: $name ($width x $height)"
+            }
+            Write-Host "NATIVE_UI_GPU_EVIDENCE_OK: $name bytes=$($bytes.Length) resolution=$($width)x$($height)"
+          }
+          # This is screenshot integrity and real behavior evidence, not a
+          # claim of visual quality. Keep original images on self-hosted
+          # runner for user review: no third-party map art uploaded to Git.
+          Write-Host 'NATIVE_UI_GPU_CAPTURE_PASS: six real Player PNGs; actual visual quality requires human review'
+
       - name: Verify original champion rigs and capture per-hero real GPU art evidence
         run: |
           $project = Join-Path $env:GITHUB_WORKSPACE 'native-unity'
