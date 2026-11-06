@@ -106,7 +106,9 @@ namespace HextechSeekers.Native
 
         void Start()
         {
-            if (Array.IndexOf(Environment.GetCommandLineArgs(), "-hextechGameplayQA") >= 0)
+            if (Array.IndexOf(Environment.GetCommandLineArgs(), "-hextechUiVisualQA") >= 0)
+                StartCoroutine(VerifyUiVisual());
+            else if (Array.IndexOf(Environment.GetCommandLineArgs(), "-hextechGameplayQA") >= 0)
                 StartCoroutine(VerifyGameplay());
         }
 
@@ -2498,6 +2500,179 @@ namespace HextechSeekers.Native
                 ":dash=real-rift:target-lock=blocked:neutral-alive=true:capture=false";
             audit.Add(record);
             Debug.Log("MATCH_NEUTRAL_SKILL_SMOKE_PASS: " + record);
+        }
+
+        // These are actual Windows D3D11 Player frames, not static mockups.
+        // Screens are preserved on the self-hosted runner for human review.
+        [Serializable]
+        sealed class UiVisualReport
+        {
+            public string status = "FAIL";
+            public string reason = "";
+            public bool originalMapReady;
+            public bool hardwareGpu;
+            public int screenshots;
+            public string[] screenshotNames;
+            public bool fogDoesNotAlterTargetVisibility;
+            public bool returnedToNormal;
+            public float normalExploredAlpha, normalUnknownAlpha;
+            public float lightExploredAlpha, lightUnknownAlpha;
+            public int screenWidth, screenHeight;
+        }
+
+        static readonly string[] UiEvidenceScreens = {
+            "ui-role-selection.png", "ui-hextech-draft.png",
+            "ui-skill-selection.png", "ui-hud-fog-normal.png",
+            "ui-hud-fog-light.png", "ui-hud-fog-off.png"
+        };
+
+        IEnumerator CaptureActualUiFrame(string destination)
+        {
+            // OnGUI is drawn by this Player; the actual frame is captured
+            // after rendering, never drawn into a mocked RenderTexture.
+            yield return new WaitForEndOfFrame();
+            if (File.Exists(destination)) File.Delete(destination);
+            ScreenCapture.CaptureScreenshot(destination);
+            for (int frame = 0; frame < 180; frame++)
+            {
+                if (File.Exists(destination) &&
+                    new FileInfo(destination).Length >= 16384)
+                    break;
+                yield return null;
+            }
+        }
+
+        static bool IsRealUiPng(string path)
+        {
+            if (!File.Exists(path) || new FileInfo(path).Length < 16384)
+                return false;
+            byte[] actual = new byte[8];
+            using (var stream = File.OpenRead(path))
+                if (stream.Read(actual, 0, actual.Length) != actual.Length)
+                    return false;
+            byte[] expected = { 137, 80, 78, 71, 13, 10, 26, 10 };
+            for (int i = 0; i < expected.Length; i++)
+                if (actual[i] != expected[i]) return false;
+            return true;
+        }
+
+        void FinishUiEvidence(UiVisualReport report, string evidence,
+                              string reason = null)
+        {
+            report.status = reason == null ?
+                "CAPTURED_REQUIRES_VISUAL_REVIEW" : "FAIL";
+            report.reason = reason ?? "";
+            File.WriteAllText(Path.Combine(evidence, "ui-visual-result.json"),
+                              JsonUtility.ToJson(report, true));
+            Debug.Log("NATIVE_UI_VISUAL_QA_RESULT: " + report.status +
+                      (reason == null ? "" : " reason=" + reason));
+            Application.Quit(reason == null ? 0 : 1);
+        }
+
+        IEnumerator VerifyUiVisual()
+        {
+            string evidence = Path.Combine(Application.persistentDataPath,
+                                           "HextechUiVisualQA");
+            var args = Environment.GetCommandLineArgs();
+            for (int i = 0; i + 1 < args.Length; i++)
+                if (args[i] == "-hextechEvidenceDir")
+                    evidence = Path.GetFullPath(args[i + 1]);
+            Directory.CreateDirectory(evidence);
+            var report = new UiVisualReport {
+                screenshotNames = UiEvidenceScreens,
+                screenWidth = Screen.width,
+                screenHeight = Screen.height,
+                hardwareGpu = SystemInfo.graphicsDeviceType !=
+                    UnityEngine.Rendering.GraphicsDeviceType.Null
+            };
+            float started = Time.realtimeSinceStartup;
+            while (rift != null && !rift.IsReady && !rift.HasLoadFailed &&
+                   Time.realtimeSinceStartup - started < 180f)
+                yield return null;
+            report.originalMapReady = rift && rift.IsReady;
+            if (!report.originalMapReady || !report.hardwareGpu)
+            {
+                FinishUiEvidence(report, evidence,
+                    "Genuine pinned Map11 or hardware graphics unavailable");
+                yield break;
+            }
+
+            // 1. Full original map with the genuine interactive role menu.
+            yield return CaptureActualUiFrame(Path.Combine(evidence, UiEvidenceScreens[0]));
+            report.screenshots += IsRealUiPng(
+                Path.Combine(evidence, UiEvidenceScreens[0])) ? 1 : 0;
+
+            // 2. Real role -> independent Hextech -> legal hero skill flow.
+            selectedHero = "Garen";
+            rosterSize = 2;
+            Configure(MatchRole.Hider);
+            if (menu != Menu.Augment || offered == null || offered.Length != 3)
+            {
+                FinishUiEvidence(report, evidence, "Augment staging failed");
+                yield break;
+            }
+            yield return CaptureActualUiFrame(Path.Combine(evidence, UiEvidenceScreens[1]));
+            report.screenshots += IsRealUiPng(
+                Path.Combine(evidence, UiEvidenceScreens[1])) ? 1 : 0;
+            SelectAugment(offered[0].Id);
+            if (menu != Menu.Skill)
+            {
+                FinishUiEvidence(report, evidence, "Hero skill selection staging failed");
+                yield break;
+            }
+            yield return CaptureActualUiFrame(Path.Combine(evidence, UiEvidenceScreens[2]));
+            report.screenshots += IsRealUiPng(
+                Path.Combine(evidence, UiEvidenceScreens[2])) ? 1 : 0;
+
+            SelectSkill(NativeSkillSlot.Q);
+            if (menu != Menu.Playing || !privateFog || !privateFog.Running ||
+                privateFog.DisplayMode != NativeFogOfWar.FogDisplay.Normal)
+            {
+                FinishUiEvidence(report, evidence, "Actual preparation match fog missing");
+                yield break;
+            }
+            bool opponentInitiallyVisible = VisibleTo(HumanId, bots[0].Id);
+            int capturesBefore = rules.CapturedCount;
+            var normal = NativeFogOfWar.DisplayOpacity(
+                NativeFogOfWar.FogDisplay.Normal);
+            var light = NativeFogOfWar.DisplayOpacity(
+                NativeFogOfWar.FogDisplay.Light);
+            report.normalExploredAlpha = normal.x;
+            report.normalUnknownAlpha = normal.y;
+            report.lightExploredAlpha = light.x;
+            report.lightUnknownAlpha = light.y;
+
+            // 3. Same actual camera/match and independent per-player fog
+            // history across Normal -> Light -> Off. Do not change the
+            // authoritative NativeSight/NativeVisionGrid/targeting logic.
+            for (int mode = 0; mode < 3; mode++)
+            {
+                string imagePath = Path.Combine(evidence, UiEvidenceScreens[3 + mode]);
+                yield return CaptureActualUiFrame(imagePath);
+                report.screenshots += IsRealUiPng(imagePath) ? 1 : 0;
+                if (mode < 2) privateFog.CyclePresentation();
+            }
+            report.fogDoesNotAlterTargetVisibility =
+                opponentInitiallyVisible == VisibleTo(HumanId, bots[0].Id) &&
+                capturesBefore == rules.CapturedCount;
+            privateFog.CyclePresentation(); // Off -> Normal
+            report.returnedToNormal =
+                privateFog.DisplayMode == NativeFogOfWar.FogDisplay.Normal;
+
+            if (report.screenshots != UiEvidenceScreens.Length ||
+                !report.fogDoesNotAlterTargetVisibility ||
+                !report.returnedToNormal || report.screenWidth < 800 ||
+                report.screenHeight < 450)
+            {
+                FinishUiEvidence(report, evidence,
+                    "Real screenshots missing, display-mode cycle or targeting changed");
+                yield break;
+            }
+            Debug.Log("NATIVE_UI_GPU_SCREENSHOTS_CAPTURED: " +
+                      string.Join(",", UiEvidenceScreens) +
+                      " modes=Normal/Light/Off privateSightUnchanged=true" +
+                      " appearance=REQUIRES_HUMAN_REVIEW");
+            FinishUiEvidence(report, evidence);
         }
 
         IEnumerator VerifyGameplay()
