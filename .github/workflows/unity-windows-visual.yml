@@ -565,7 +565,13 @@ jobs:
               -not $json.originalMapReady -or -not $json.hardwareGpu -or
               -not $json.fogDoesNotAlterTargetVisibility -or
               -not $json.returnedToNormal -or
-              $json.screenshots -ne 6) {
+              -not $json.cameraPerspective -or
+              -not $json.cameraHeroInFrame -or
+              -not $json.cameraYawDidNotMovePlayer -or
+              [math]::Abs($json.cameraFieldOfView - 40.0) -gt 0.1 -or
+              [math]::Abs($json.cameraPitchDegrees - 56.0) -gt 0.1 -or
+              [math]::Abs($json.cameraDefaultYaw) -gt 0.1 -or
+              $json.screenshots -ne 8) {
             throw "Native UI visual GPU smoke failed: $($json.reason) status=$($json.status)"
           }
           $expected = @(
@@ -574,7 +580,9 @@ jobs:
             'ui-skill-selection.png',
             'ui-hud-fog-normal.png',
             'ui-hud-fog-light.png',
-            'ui-hud-fog-off.png'
+            'ui-hud-fog-off.png',
+            'ui-camera-yaw-minus45.png',
+            'ui-camera-yaw-plus45.png'
           )
           foreach ($name in $expected) {
             $file = Join-Path $evidence $name
@@ -596,7 +604,7 @@ jobs:
           # This is screenshot integrity and real behavior evidence, not a
           # claim of visual quality. Keep original images on self-hosted
           # runner for user review: no third-party map art uploaded to Git.
-          Write-Host 'NATIVE_UI_GPU_CAPTURE_PASS: six real Player PNGs; actual visual quality requires human review'
+          Write-Host 'NATIVE_UI_GPU_CAPTURE_PASS: eight real Player PNGs, 40FOV/56pitch perspective and +/-45 yaw comparisons; aesthetic match requires human review'
 
       - name: Verify original champion rigs and capture per-hero real GPU art evidence
         run: |
