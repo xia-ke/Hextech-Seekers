@@ -295,7 +295,7 @@ namespace HextechSeekers.Native
             float w = Screen.width / scale;
             float h = Screen.height / scale;
             return (x < 376f && y < 345f) ||
-                   (x > (w - 300f) && y > h - 100f) ||
+                   (x > (w - 300f) && y > h - 180f) ||
                    (x > (w - 450f) * .5f && x < (w + 450f) * .5f &&
                     y > h - 116f);
         }
