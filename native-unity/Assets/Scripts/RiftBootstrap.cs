@@ -18,8 +18,23 @@ namespace HextechSeekers.Native
         public float moveSpeed = 340f;
         public float worldScale = 1f;
         public float mapYawCorrection = 180f;
+        // The old Player used orthographicSize=520 and a height-following
+        // camera, which distorted the scale and framing compared to LoL.
+        // Keep the old scene field for compatibility, but DO NOT use it.
         public float cameraOrthographicSize = 520f;
-        public float cameraPitch = 55f;
+        public float cameraPitch = NativeRiftCameraProfile.DefaultPitch;
+        public float cameraYaw = NativeRiftCameraProfile.DefaultYaw;
+        public bool CameraLocked { get; private set; } = true;
+        public bool CameraInputEnabled { get; set; }
+        public float CameraDistance { get; private set; } =
+            NativeRiftCameraProfile.DefaultDistance;
+        Vector2 freeCameraFocus;
+        bool freeCameraFocusSet;
+
+        public string CameraStatus =>
+            (CameraLocked ? "LOCKED" : "FREE") + " / " +
+            Mathf.RoundToInt(cameraPitch) + "° TILT / " +
+            Mathf.RoundToInt(cameraYaw) + "° YAW";
 
 
         Camera sceneCamera;
@@ -275,6 +290,78 @@ namespace HextechSeekers.Native
                 Debug.LogException(e);
             }
         }
+        /// <summary>
+        /// Camera-only calibration and free panning. Never translates the
+        /// actual Map11, navigation, vision grids, hit targets or champions.
+        /// </summary>
+        public void ResetCameraForMatch()
+        {
+            CameraLocked = true;
+            CameraInputEnabled = true;
+            CameraDistance = NativeRiftCameraProfile.DefaultDistance;
+            cameraPitch = NativeRiftCameraProfile.DefaultPitch;
+            cameraYaw = NativeRiftCameraProfile.DefaultYaw;
+            freeCameraFocus = location;
+            freeCameraFocusSet = true;
+            Debug.Log("NATIVE_RIFT_CAMERA_RESET: perspective=true FOV=" +
+                      NativeRiftCameraProfile.FieldOfView + " pitch=" +
+                      cameraPitch + " yaw=" + cameraYaw +
+                      " distance=" + CameraDistance);
+        }
+
+        void TickCameraInput()
+        {
+            if (!CameraInputEnabled) return;
+            if (Input.GetKeyDown(KeyCode.Y))
+            {
+                CameraLocked = !CameraLocked;
+                freeCameraFocus = CameraFollowOverride ?? location;
+                freeCameraFocusSet = true;
+            }
+            if (Input.GetKeyDown(KeyCode.Alpha0))
+            {
+                cameraPitch = NativeRiftCameraProfile.DefaultPitch;
+                cameraYaw = NativeRiftCameraProfile.DefaultYaw;
+                CameraDistance = NativeRiftCameraProfile.DefaultDistance;
+                CameraLocked = true;
+            }
+            if (Input.GetKeyDown(KeyCode.LeftBracket))
+                cameraYaw = NativeRiftCameraProfile.WrapYaw(cameraYaw - 15f);
+            if (Input.GetKeyDown(KeyCode.RightBracket))
+                cameraYaw = NativeRiftCameraProfile.WrapYaw(cameraYaw + 15f);
+            if (Input.GetKeyDown(KeyCode.PageUp))
+                cameraPitch = NativeRiftCameraProfile.ClampPitch(cameraPitch + 3f);
+            if (Input.GetKeyDown(KeyCode.PageDown))
+                cameraPitch = NativeRiftCameraProfile.ClampPitch(cameraPitch - 3f);
+
+            float wheel = Input.GetAxis("Mouse ScrollWheel");
+            if (Mathf.Abs(wheel) > .0001f)
+                CameraDistance = NativeRiftCameraProfile.ClampDistance(
+                    CameraDistance - wheel * 1200f);
+
+            if (!CameraLocked && !CameraFollowOverride.HasValue)
+            {
+                if (!freeCameraFocusSet) { freeCameraFocus = location; freeCameraFocusSet = true; }
+                float h = (Input.GetKey(KeyCode.RightArrow) ? 1f : 0f) -
+                          (Input.GetKey(KeyCode.LeftArrow) ? 1f : 0f);
+                float v = (Input.GetKey(KeyCode.UpArrow) ? 1f : 0f) -
+                          (Input.GetKey(KeyCode.DownArrow) ? 1f : 0f);
+                if (Mathf.Abs(h) + Mathf.Abs(v) > 0)
+                {
+                    Vector2 direction = new Vector2(h, v).normalized;
+                    freeCameraFocus += NativeRiftCameraProfile.PanPlane(cameraYaw,
+                        direction) * NativeRiftCameraProfile.PanUnitsPerSecond *
+                        Time.unscaledDeltaTime;
+                    freeCameraFocus.x = Mathf.Clamp(freeCameraFocus.x,
+                        RiftGrid.MinX + 200f,
+                        RiftGrid.MinX + RiftGrid.Width * RiftGrid.CellSize - 200f);
+                    freeCameraFocus.y = Mathf.Clamp(freeCameraFocus.y,
+                        RiftGrid.MinZ + 200f,
+                        RiftGrid.MinZ + RiftGrid.Height * RiftGrid.CellSize - 200f);
+                }
+            }
+        }
+
         void LateUpdate()
         {
             if (!ready) return;
@@ -306,13 +393,28 @@ namespace HextechSeekers.Native
             if (playerTacticalMarker)
                 playerTacticalMarker.transform.position = at;
             previousLocation = location;
-            var forward = Quaternion.Euler(cameraPitch, 0, 0) * Vector3.forward;
-            Vector3 focus = CameraFollowOverride.HasValue ?
-                ToScene(CameraFollowOverride.Value) : at;
-            sceneCamera.transform.position = focus - forward * 900f;
-            sceneCamera.transform.rotation = Quaternion.Euler(cameraPitch, 0, 0);
-            sceneCamera.orthographic = true;
-            sceneCamera.orthographicSize = cameraOrthographicSize;
+            TickCameraInput();
+            // Classic Rift camera: perspective FOV 40 and 56-degree downward
+            // pitch from a constant y=0 focus plane. This is intentionally
+            // independent of the actual terrain/hero height, eliminating
+            // vertical wobble while crossing slopes and river elevations.
+            // Default yaw=0 retains verified original Map11 X/Z alignment;
+            // bracket keys allow visual yaw calibration without ever rotating
+            // map geometry or the authoritative nav grid.
+            Vector2 cameraCenter = CameraFollowOverride ??
+                (CameraLocked || !CameraInputEnabled ||
+                 Input.GetKey(KeyCode.Space) || !freeCameraFocusSet ?
+                 location : freeCameraFocus);
+            Vector3 focus = NativeRiftCameraProfile.FocusOnMapPlane(cameraCenter);
+            var rotation = NativeRiftCameraProfile.Rotation(cameraPitch, cameraYaw);
+            sceneCamera.transform.SetPositionAndRotation(
+                NativeRiftCameraProfile.CameraPosition(focus, cameraPitch,
+                                                       cameraYaw, CameraDistance),
+                rotation);
+            sceneCamera.orthographic = false;
+            sceneCamera.fieldOfView = NativeRiftCameraProfile.FieldOfView;
+            sceneCamera.nearClipPlane = .3f;
+            sceneCamera.farClipPlane = 6500f;
         }
         /// <summary>
         /// Change the locally controlled hero. If authorized original art is not
