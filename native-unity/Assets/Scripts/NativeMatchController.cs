@@ -259,6 +259,7 @@ namespace HextechSeekers.Native
                 }
             }
             rift.ExternalMoveEnabled = rules.CanMove(HumanId);
+            rift.ResetCameraForMatch();
             menu = Menu.Playing;
             string startMessage = rift.SpawnCalibration != null
                 ? "120s preparation: verified fountain; hunter cannot leave." :
@@ -1679,6 +1680,7 @@ namespace HextechSeekers.Native
             rift.ExternalGameplayControl = false;
             rift.ExternalMoveEnabled = true;
             rift.ExternalMoveMultiplier = 1f;
+            rift.CameraInputEnabled = false;
             rift.CameraFollowOverride = null;
             rift.TryTeleportTo(HiderSpawn);
         }
@@ -1931,17 +1933,28 @@ namespace HextechSeekers.Native
                     11, usable ? NativeGameUi.Teal : NativeGameUi.Muted,
                     true, TextAnchor.MiddleCenter);
             }
-            NativeGameUi.Panel(new Rect(Mathf.Max(12f, w - 255f),
-                h - 104f, 239f, 87f));
-            NativeGameUi.Text(new Rect(w - 239f, h - 97f, 207f, 24f),
-                "RMB   MOVE     /     S   STOP", 12,
+            // Camera controls are presentation-only; never unlock target
+            // visibility or change the Map11 navigation/world transform.
+            NativeGameUi.Panel(new Rect(Mathf.Max(12f, w - 287f),
+                h - 171f, 270f, 154f));
+            NativeGameUi.Text(new Rect(w - 272f, h - 165f, 238f, 21f),
+                "CAMERA   " + rift.CameraStatus, 11,
+                NativeGameUi.Accent, true);
+            NativeGameUi.Text(new Rect(w - 272f, h - 138f, 238f, 20f),
+                "Y  FREE / LOCK      SPACE  RECENTER", 11,
                 NativeGameUi.Bright, true);
-            NativeGameUi.Text(new Rect(w - 239f, h - 69f, 207f, 24f),
-                "TAB   TARGET    /    V   FOG", 12,
+            NativeGameUi.Text(new Rect(w - 272f, h - 115f, 238f, 20f),
+                "WHEEL  ZOOM       ARROWS  PAN", 11,
                 NativeGameUi.Muted, true);
-            NativeGameUi.Text(new Rect(w - 239f, h - 42f, 207f, 18f),
-                "VISUAL DEBUG: NORMAL / LIGHT / OFF", 10,
+            NativeGameUi.Text(new Rect(w - 272f, h - 92f, 238f, 20f),
+                "[ ]  ROTATE       PGUP / PGDN  TILT", 10,
+                NativeGameUi.Muted);
+            NativeGameUi.Text(new Rect(w - 272f, h - 69f, 238f, 20f),
+                "0  RESET  /  V  FOG  /  TAB  TARGET", 10,
                 NativeGameUi.Teal);
+            NativeGameUi.Text(new Rect(w - 272f, h - 43f, 238f, 18f),
+                "RMB MOVE     A ATTACK     S STOP", 10,
+                NativeGameUi.Muted);
             if (!string.IsNullOrWhiteSpace(feedback))
             {
                 NativeGameUi.Panel(new Rect(18, h - 100f, 350f, 82f));
