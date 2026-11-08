@@ -2524,6 +2524,9 @@ namespace HextechSeekers.Native
             public string reason = "";
             public bool originalMapReady;
             public bool hardwareGpu;
+            public bool cameraPerspective, cameraHeroInFrame;
+            public bool cameraYawDidNotMovePlayer;
+            public float cameraFieldOfView, cameraPitchDegrees, cameraDefaultYaw;
             public int screenshots;
             public string[] screenshotNames;
             public bool fogDoesNotAlterTargetVisibility;
@@ -2536,7 +2539,8 @@ namespace HextechSeekers.Native
         static readonly string[] UiEvidenceScreens = {
             "ui-role-selection.png", "ui-hextech-draft.png",
             "ui-skill-selection.png", "ui-hud-fog-normal.png",
-            "ui-hud-fog-light.png", "ui-hud-fog-off.png"
+            "ui-hud-fog-light.png", "ui-hud-fog-off.png",
+            "ui-camera-yaw-minus45.png", "ui-camera-yaw-plus45.png"
         };
 
         IEnumerator CaptureActualUiFrame(string destination)
@@ -2610,10 +2614,59 @@ namespace HextechSeekers.Native
                 yield break;
             }
 
-            // 1. Full original map with the genuine interactive role menu.
+            // 1. Verify real perspective camera projection/hero framing,
+            // then capture genuinely different yaw angles at the same map
+            // coordinates. This is evidence for visual comparison, never a
+            // claim that a guessed yaw matches Riot's exact original camera.
+            yield return null; // allow RiftBootstrap.LateUpdate to apply pose
+            var camera = Camera.main;
+            if (!camera)
+            {
+                FinishUiEvidence(report, evidence, "No actual Player camera");
+                yield break;
+            }
+            report.cameraPerspective = !camera.orthographic;
+            report.cameraFieldOfView = camera.fieldOfView;
+            report.cameraPitchDegrees = rift.cameraPitch;
+            report.cameraDefaultYaw = rift.cameraYaw;
+            Vector3 heroViewport = rift.HeroRig ?
+                camera.WorldToViewportPoint(rift.HeroRig.transform.position) :
+                camera.WorldToViewportPoint(
+                    NativeRiftCameraProfile.FocusOnMapPlane(rift.PlayerPosition));
+            report.cameraHeroInFrame = heroViewport.z > 0f &&
+                heroViewport.x > .1f && heroViewport.x < .9f &&
+                heroViewport.y > .1f && heroViewport.y < .9f;
+            if (!report.cameraPerspective ||
+                Mathf.Abs(report.cameraFieldOfView -
+                          NativeRiftCameraProfile.FieldOfView) > .1f ||
+                Mathf.Abs(report.cameraPitchDegrees - 56f) > .1f ||
+                Mathf.Abs(report.cameraDefaultYaw) > .1f ||
+                !report.cameraHeroInFrame)
+            {
+                FinishUiEvidence(report, evidence,
+                    "Source-faithful 40FOV/56pitch perspective or hero framing missing");
+                yield break;
+            }
+
             yield return CaptureActualUiFrame(Path.Combine(evidence, UiEvidenceScreens[0]));
             report.screenshots += IsRealUiPng(
                 Path.Combine(evidence, UiEvidenceScreens[0])) ? 1 : 0;
+
+            Vector2 positionBeforeYaw = rift.PlayerPosition;
+            rift.cameraYaw = -45f;
+            yield return null;
+            yield return CaptureActualUiFrame(Path.Combine(evidence, UiEvidenceScreens[6]));
+            report.screenshots += IsRealUiPng(
+                Path.Combine(evidence, UiEvidenceScreens[6])) ? 1 : 0;
+            rift.cameraYaw = 45f;
+            yield return null;
+            yield return CaptureActualUiFrame(Path.Combine(evidence, UiEvidenceScreens[7]));
+            report.screenshots += IsRealUiPng(
+                Path.Combine(evidence, UiEvidenceScreens[7])) ? 1 : 0;
+            rift.cameraYaw = NativeRiftCameraProfile.DefaultYaw;
+            yield return null;
+            report.cameraYawDidNotMovePlayer =
+                Vector2.Distance(positionBeforeYaw, rift.PlayerPosition) < .01f;
 
             // 2. Real role -> independent Hextech -> legal hero skill flow.
             selectedHero = "Garen";
@@ -2673,6 +2726,8 @@ namespace HextechSeekers.Native
                 privateFog.DisplayMode == NativeFogOfWar.FogDisplay.Normal;
 
             if (report.screenshots != UiEvidenceScreens.Length ||
+                !report.cameraPerspective || !report.cameraHeroInFrame ||
+                !report.cameraYawDidNotMovePlayer ||
                 !report.fogDoesNotAlterTargetVisibility ||
                 !report.returnedToNormal || report.screenWidth < 800 ||
                 report.screenHeight < 450)
