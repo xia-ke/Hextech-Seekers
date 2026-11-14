@@ -25,7 +25,7 @@ The production native view now uses:
   `1911.849` units up (Euclidean camera distance ~=2305.99).
 - Focus pivot: `(navigationX, y=0, navigationZ)` instead of changing
   height as the character runs over slopes.
-- Default yaw: `0°` in the **verified native navigation axes**;
+- Default yaw: `45°` diagonal framing in the **verified native navigation axes**;
   optional player-side rotation is camera-only. This is **not** a claim
   that the exact Riot client yaw has been independently recovered.
 
@@ -46,7 +46,7 @@ used extremely low FOV to approximate an orthographic map.
 | Space (hold) | Temporarily center on player (or current spectator target) |
 | [ / ] | Rotate camera yaw -15° / +15° for calibration |
 | Page Up / Page Down | Change camera pitch +3° / -3°, safely clamped |
-| 0 | Restore original-style 56° tilt, 0° navigation yaw, full zoom-out, locked |
+| 0 | Restore 56° tilt, 45° navigation yaw, full zoom-out, locked |
 | V | Fog-opacity-only Normal / Light / Off (unchanged) |
 
 These inputs run only when the normal match is playing, never when
@@ -60,10 +60,10 @@ active projection and rotation.
 ## Physical GPU evidence
 
 The exact-branch real Windows GPU workflow must validate
-`cameraPerspective=true`, FOV 40, pitch 56, yaw 0, and a rendered hero
+`cameraPerspective=true`, FOV 40, pitch 56, yaw 45, and a rendered hero
 inside the camera viewport. The existing six actual scene/HUD/visible
 fog screenshot tests remain. Two additional true D3D11 images capture
-the *same* Map11 role screen at camera yaw -45° and +45° to allow
+the *same* Map11 role screen at camera yaw -45° and +90° to allow
 comparison of map orientation without moving a single map/gameplay
 entity. The original `ui-role-selection.png` is the 0° reference.
 
@@ -86,7 +86,7 @@ have an independently verified glTF handedness correction.
 
 The camera baseline therefore stays at perspective FOV 40°, pitch 56° and
 a 2306-unit diagonal distance, with adjustable yaw, tilt and wheel zoom.
-Actual GPU captures of 0°, ±45° and the mid-river hunter scene are requested
+Actual GPU captures of 45° default, -45°, +90° and the mid-river hunter scene are requested
 for side-by-side human framing review. The original client video is a
 comparison reference, **not imported into or copied into this Git repo**.
 
@@ -122,3 +122,8 @@ addition to the eight UI/fog/yaw PNGs, a ninth genuine GPU screenshot
 Original source camp dataset: pinned `iamywl/Web_game@
 557a9d5352af12bee8bf3db879c22d04d0a0954e` Map11 placements; the
 original source jungle GLB data is not checked into this repository.
+
+
+## 2026-11-14 gameplay exit airwall correction
+
+The former camp/path paint was excessively wide (1280/820 units), allowing edge areas in nearby lanes. We now use 950/550 and revalidate all eight camp routes on the original Map11. Every edge from playable jungle to originally walkable exterior receives an invisible merged BoxCollider wall. This is in addition to, not a substitute for, the mandatory RiftGrid movement checks for human, AI, teleport, dash and pull: these actors move by direct transform updates rather than by physics. The original terrain model and navigation transform remain unchanged. Compare screenshots using the run-ID-specific Windows Player because the latest alias may still point to an older build.
