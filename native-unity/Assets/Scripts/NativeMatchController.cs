@@ -21,10 +21,12 @@ namespace HextechSeekers.Native
         const float HumanBasicCooldown = .8f;
         const float AiBasicCooldown = 1.1f;
         static readonly Vector2 HiderStart = new Vector2(7765f, -4020f);
-        // Original fountain bounds still require geometric calibration.
-        static readonly Vector2 HunterStaging = new Vector2(13000f, -1100f);
-        Vector2 HunterSpawn => rift && rift.SpawnCalibration != null
-            ? rift.SpawnCalibration.HunterSpawn : HunterStaging;
+        // Hunter preparation is staged in genuine navigable mid-river
+        // grass, selected from the preserved original Map11 bush channel.
+        Vector2 HunterSpawn => rift != null && rift.JungleArea != null
+            ? rift.JungleArea.HunterRiverBrush :
+            throw new InvalidOperationException(
+                "The hunter requires real Map11 river grass staging");
         Vector2 HiderSpawn => rift && rift.SpawnCalibration != null
             ? rift.SpawnCalibration.HiderSpawn : HiderStart;
         enum Menu { Role, Augment, Skill, Playing }
@@ -88,6 +90,7 @@ namespace HextechSeekers.Native
         string feedback = "";
         int preferredTargetId = -1;
         int preferredSpectateId = -1;
+        bool qaEnforceJungle;
 
         void Awake()
         {
@@ -117,6 +120,16 @@ namespace HextechSeekers.Native
             if (!rift || !rift.IsReady) return;
             CleanupBots();
             if (privateFog) privateFog.End();
+            // Gameplay uses the bounded jungle/river region. Existing full-map
+            // skill smokes retain their original geometry; a real GPU smoke
+            // explicitly enables the strict region and verifies its gates.
+            bool enforceRegion = qaEnforceJungle ||
+                !HasAutomatedVisualFlag() &&
+                Array.IndexOf(Environment.GetCommandLineArgs(),
+                              "-hextechUiVisualQA") < 0;
+            if (!rift.SetJungleOnly(enforceRegion))
+                throw new InvalidOperationException(
+                    "Verified jungle-only Map11 region unavailable");
             humanRole = role;
             if (!rift.SelectPlayerChampion(selectedHero))
                 throw new InvalidOperationException("Cannot choose native player hero: " + selectedHero);
@@ -261,9 +274,8 @@ namespace HextechSeekers.Native
             rift.ExternalMoveEnabled = rules.CanMove(HumanId);
             rift.ResetCameraForMatch();
             menu = Menu.Playing;
-            string startMessage = rift.SpawnCalibration != null
-                ? "120s preparation: verified fountain; hunter cannot leave." :
-                  "120s preparation: hunter locked at provisional staging (fountain unverified).";
+            string startMessage = "120s preparation: hunter waiting inside" +
+                " verified mid-river grass; jungle and river boundary active.";
             if (!privateFog) privateFog = GetComponent<NativeFogOfWar>() ??
                                          gameObject.AddComponent<NativeFogOfWar>();
             try
@@ -1365,7 +1377,16 @@ namespace HextechSeekers.Native
             {
                 Vector2 previous = bot.Position;
                 bot.VisualPreviousPosition = previous;
-                bot.Position = bot.Pull.Step(dt);
+                Vector2 pulled = bot.Pull.Step(dt);
+                if (rift.JungleOnlyActive &&
+                    (!rift.Navigation.CanWalk(pulled) ||
+                     !rift.Navigation.LineClear(previous, pulled)))
+                {
+                    bot.Pull.Cancel();
+                    Debug.Log("NATIVE_JUNGLE_BOUNDARY_BLOCK: actor=ai pull");
+                    return;
+                }
+                bot.Position = pulled;
                 PlaceMarker(bot);
                 UpdateBotCombatVfx(bot, true);
                 if (bot.RealRig)
@@ -1395,7 +1416,16 @@ namespace HextechSeekers.Native
             {
                 Vector2 previous = bot.Position;
                 bot.VisualPreviousPosition = previous;
-                bot.Position = bot.Dash.Step(dt);
+                Vector2 dashed = bot.Dash.Step(dt);
+                if (rift.JungleOnlyActive &&
+                    (!rift.Navigation.CanWalk(dashed) ||
+                     !rift.Navigation.LineClear(previous, dashed)))
+                {
+                    bot.Dash.Cancel();
+                    Debug.Log("NATIVE_JUNGLE_BOUNDARY_BLOCK: actor=ai dash");
+                    return;
+                }
+                bot.Position = dashed;
                 PlaceMarker(bot);
                 ResolveBotBasicContact(bot, dt);
                 UpdateBotCombatVfx(bot, true);
@@ -1491,6 +1521,15 @@ namespace HextechSeekers.Native
                     float length = difference.magnitude;
                     if (length < .001f || length <= allowance)
                     {
+                        if (rift.JungleOnlyActive &&
+                            (!rift.Navigation.CanWalk(goal) ||
+                             !rift.Navigation.LineClear(bot.Position, goal)))
+                        {
+                            bot.Path.Clear();
+                            bot.Waypoint = 0;
+                            Debug.Log("NATIVE_JUNGLE_BOUNDARY_BLOCK: actor=ai path");
+                            break;
+                        }
                         bot.Position = goal;
                         allowance -= length;
                         bot.Waypoint++;
@@ -1498,7 +1537,10 @@ namespace HextechSeekers.Native
                     else
                     {
                         Vector2 next = bot.Position + difference.normalized * allowance;
-                        if (rift.Navigation.CanWalk(next)) bot.Position = next;
+                        if (rift.Navigation.CanWalk(next) &&
+                            (!rift.JungleOnlyActive ||
+                             rift.Navigation.LineClear(bot.Position, next)))
+                            bot.Position = next;
                         allowance = 0f;
                     }
                 }
@@ -1680,6 +1722,7 @@ namespace HextechSeekers.Native
             rift.ExternalGameplayControl = false;
             rift.ExternalMoveEnabled = true;
             rift.ExternalMoveMultiplier = 1f;
+            rift.SetJungleOnly(false);
             rift.CameraInputEnabled = false;
             rift.CameraFollowOverride = null;
             rift.TryTeleportTo(HiderSpawn);
