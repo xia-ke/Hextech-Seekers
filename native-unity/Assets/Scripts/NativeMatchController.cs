@@ -2576,6 +2576,7 @@ namespace HextechSeekers.Native
             public bool hardwareGpu;
             public bool cameraPerspective, cameraHeroInFrame;
             public bool cameraYawDidNotMovePlayer;
+            public bool hunterWaitingInsideActualRiverBrush;
             public float cameraFieldOfView, cameraPitchDegrees, cameraDefaultYaw;
             public int screenshots;
             public string[] screenshotNames;
@@ -2590,7 +2591,8 @@ namespace HextechSeekers.Native
             "ui-role-selection.png", "ui-hextech-draft.png",
             "ui-skill-selection.png", "ui-hud-fog-normal.png",
             "ui-hud-fog-light.png", "ui-hud-fog-off.png",
-            "ui-camera-yaw-minus45.png", "ui-camera-yaw-plus45.png"
+            "ui-camera-yaw-minus45.png", "ui-camera-yaw-plus45.png",
+            "ui-hunter-river-brush.png"
         };
 
         IEnumerator CaptureActualUiFrame(string destination)
@@ -2718,7 +2720,32 @@ namespace HextechSeekers.Native
             report.cameraYawDidNotMovePlayer =
                 Vector2.Distance(positionBeforeYaw, rift.PlayerPosition) < .01f;
 
-            // 2. Real role -> independent Hextech -> legal hero skill flow.
+            // 2. Verify the actual hunter waits inside the original
+            // mid-river brush (preparation lock), at a camera composition
+            // comparable to the supplied League river recording.
+            qaEnforceJungle = true;
+            selectedHero = "Garen";
+            rosterSize = 2;
+            Configure(MatchRole.Hunter);
+            SelectAugment(offered[0].Id);
+            SelectSkill(NativeSkillSlot.Q);
+            report.hunterWaitingInsideActualRiverBrush =
+                menu == Menu.Playing && rift.JungleOnlyActive &&
+                rift.Navigation.BushAt(rift.PlayerPosition) > 0 &&
+                !rules.CanMove(HumanId);
+            if (!report.hunterWaitingInsideActualRiverBrush)
+            {
+                FinishUiEvidence(report, evidence,
+                    "Actual mid-river bush hunter preparation screenshot unavailable");
+                yield break;
+            }
+            yield return CaptureActualUiFrame(Path.Combine(evidence, UiEvidenceScreens[8]));
+            report.screenshots += IsRealUiPng(
+                Path.Combine(evidence, UiEvidenceScreens[8])) ? 1 : 0;
+            qaEnforceJungle = false;
+            ReturnToRoleSelection();
+
+            // 3. Real role -> independent Hextech -> legal hero skill flow.
             selectedHero = "Garen";
             rosterSize = 2;
             Configure(MatchRole.Hider);
@@ -2778,6 +2805,7 @@ namespace HextechSeekers.Native
             if (report.screenshots != UiEvidenceScreens.Length ||
                 !report.cameraPerspective || !report.cameraHeroInFrame ||
                 !report.cameraYawDidNotMovePlayer ||
+                !report.hunterWaitingInsideActualRiverBrush ||
                 !report.fogDoesNotAlterTargetVisibility ||
                 !report.returnedToNormal || report.screenWidth < 800 ||
                 report.screenHeight < 450)
