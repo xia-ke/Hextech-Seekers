@@ -582,7 +582,7 @@ jobs:
               -not $json.cameraYawDidNotMovePlayer -or
               [math]::Abs($json.cameraFieldOfView - 40.0) -gt 0.1 -or
               [math]::Abs($json.cameraPitchDegrees - 56.0) -gt 0.1 -or
-              [math]::Abs($json.cameraDefaultYaw) -gt 0.1 -or
+              [math]::Abs($json.cameraDefaultYaw - 45.0) -gt 0.1 -or
               -not $json.hunterWaitingInsideActualRiverBrush -or
               $json.screenshots -ne 9) {
             throw "Native UI visual GPU smoke failed: $($json.reason) status=$($json.status)"
@@ -595,7 +595,7 @@ jobs:
             'ui-hud-fog-light.png',
             'ui-hud-fog-off.png',
             'ui-camera-yaw-minus45.png',
-            'ui-camera-yaw-plus45.png',
+            'ui-camera-yaw-plus90.png',
             'ui-hunter-river-brush.png'
           )
           foreach ($name in $expected) {
@@ -618,7 +618,7 @@ jobs:
           # This is screenshot integrity and real behavior evidence, not a
           # claim of visual quality. Keep original images on self-hosted
           # runner for user review: no third-party map art uploaded to Git.
-          Write-Host 'NATIVE_UI_GPU_CAPTURE_PASS: nine real Player PNGs, original river-grass hunter, 40FOV/56pitch perspective and +/-45 yaw; human review required'
+          Write-Host 'NATIVE_UI_GPU_CAPTURE_PASS: nine real Player PNGs, original river-grass hunter, 40FOV/56pitch, 45 yaw and -45/+90 comparisons; human review required'
 
       - name: Verify original champion rigs and capture per-hero real GPU art evidence
         run: |
