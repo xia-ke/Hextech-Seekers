@@ -15,7 +15,8 @@ namespace HextechSeekers.Native
         // Unlike an orthographic map preview, the Player uses perspective.
         public const float FieldOfView = 40f;
         public const float DefaultPitch = 56f;
-        public const float DefaultYaw = 0f;
+        // Diagonal client-like view: camera-only, without rotating Map11.
+        public const float DefaultYaw = 45f;
         public const float MaxZoomOutBack = 1289.558f;
         public const float MaxZoomOutUp = 1911.849f;
         public const float MinDistance = 1024f;
