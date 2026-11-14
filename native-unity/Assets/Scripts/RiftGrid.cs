@@ -23,6 +23,15 @@ namespace HextechSeekers.Native
         readonly short[] heights;
         readonly byte[] clearance;
         readonly byte[] bush;
+        bool[] playArea;
+        public bool IsPlayAreaRestricted => playArea != null;
+
+        public void SetPlayArea(bool[] allowed)
+        {
+            if (allowed != null && allowed.Length != Width * Height)
+                throw new ArgumentException("Jungle play-area mask must cover the original Map11 grid");
+            playArea = allowed == null ? null : (bool[])allowed.Clone();
+        }
         public RiftGrid(byte[] raw)
         {
             if (raw == null || raw.Length != BinaryBytes)
@@ -61,7 +70,9 @@ namespace HextechSeekers.Native
             MinX + (x + .5f) * CellSize, MinZ + (y + .5f) * CellSize);
         public bool Valid(int x, int y)
         {
-            if (x < 0 || y < 0 || x >= Width || y >= Height || clearance[y * Width + x] == 0) return false;
+            if (x < 0 || y < 0 || x >= Width || y >= Height ||
+                clearance[y * Width + x] == 0 ||
+                (playArea != null && !playArea[y * Width + x])) return false;
             Vector2 p = Center(x, y);
             return p.x + p.y >= -120f; // same confirmed lower-jungle boundary as the web prototype
         }
