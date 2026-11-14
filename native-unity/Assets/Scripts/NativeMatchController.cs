@@ -2595,7 +2595,7 @@ namespace HextechSeekers.Native
             "ui-role-selection.png", "ui-hextech-draft.png",
             "ui-skill-selection.png", "ui-hud-fog-normal.png",
             "ui-hud-fog-light.png", "ui-hud-fog-off.png",
-            "ui-camera-yaw-minus45.png", "ui-camera-yaw-plus45.png",
+            "ui-camera-yaw-minus45.png", "ui-camera-yaw-plus90.png",
             "ui-hunter-river-brush.png"
         };
 
@@ -2696,7 +2696,8 @@ namespace HextechSeekers.Native
                 Mathf.Abs(report.cameraFieldOfView -
                           NativeRiftCameraProfile.FieldOfView) > .1f ||
                 Mathf.Abs(report.cameraPitchDegrees - 56f) > .1f ||
-                Mathf.Abs(report.cameraDefaultYaw) > .1f ||
+                Mathf.Abs(report.cameraDefaultYaw -
+                          NativeRiftCameraProfile.DefaultYaw) > .1f ||
                 !report.cameraHeroInFrame)
             {
                 FinishUiEvidence(report, evidence,
@@ -2714,7 +2715,7 @@ namespace HextechSeekers.Native
             yield return CaptureActualUiFrame(Path.Combine(evidence, UiEvidenceScreens[6]));
             report.screenshots += IsRealUiPng(
                 Path.Combine(evidence, UiEvidenceScreens[6])) ? 1 : 0;
-            rift.cameraYaw = 45f;
+            rift.cameraYaw = 90f;
             yield return null;
             yield return CaptureActualUiFrame(Path.Combine(evidence, UiEvidenceScreens[7]));
             report.screenshots += IsRealUiPng(
@@ -2839,7 +2840,9 @@ namespace HextechSeekers.Native
                 SelectAugment(offered[0].Id);
                 SelectSkill(NativeSkillSlot.Q);
                 if (menu != Menu.Playing || !rift.JungleOnlyActive ||
-                    rift.JungleArea == null || bots.Count != 1)
+                    rift.JungleArea == null || bots.Count != 1 ||
+                    rift.AirWallSegmentCount < 1 ||
+                    rift.AirWallExitEdgeCount < rift.AirWallSegmentCount)
                     throw new InvalidOperationException(
                         "Actual hunter jungle-only match was not initialized");
                 var nav = rift.Navigation;
@@ -2883,7 +2886,9 @@ namespace HextechSeekers.Native
                           result.jungleBrushGroup + " arenaCells=" +
                           result.jungleCells + " frozen120=true" +
                           " humanExit=blocked aiInside=true" +
-                          " riverToCampPath=legal trueMap11=true");
+                          " riverToCampPath=legal trueMap11=true" +
+                          " airwallSegments=" + rift.AirWallSegmentCount +
+                          " exitEdges=" + rift.AirWallExitEdgeCount);
             }
             finally
             {
