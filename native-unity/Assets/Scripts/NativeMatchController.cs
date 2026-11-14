@@ -388,8 +388,10 @@ namespace HextechSeekers.Native
             if (rift.ExternalMoveEnabled)
             {
                 if (Input.GetKeyDown(KeyCode.S)) rift.StopMovement();
-                if (Input.GetMouseButtonDown(1) && !HoveringHud(Input.mousePosition))
-                    rift.TryNavigateFromScreen(Input.mousePosition);
+                if (Input.GetMouseButtonDown(1) && !HoveringHud(Input.mousePosition) &&
+                    !rift.TryNavigateFromScreen(Input.mousePosition) &&
+                    rift.JungleOnlyActive)
+                    feedback = "MAP BOUNDARY  /  Stay in jungle and river lanes";
                 if (Input.GetKeyDown(KeyCode.Q)) TryHumanSkill(NativeSkillSlot.Q);
                 if (Input.GetKeyDown(KeyCode.W)) TryHumanSkill(NativeSkillSlot.W);
                 if (Input.GetKeyDown(KeyCode.E)) TryHumanSkill(NativeSkillSlot.E);
@@ -1892,7 +1894,9 @@ namespace HextechSeekers.Native
                 "Captured  " + rules.CapturedCount + "/" + rules.HiderCount +
                 "     SCORE  " + player.Score, 14, NativeGameUi.Teal, true);
             NativeGameUi.Text(new Rect(34, 123, 309, 25),
-                "TARGET   " + SelectedTargetStatus(), 12, NativeGameUi.Muted);
+                "TARGET   " + SelectedTargetStatus() +
+                (rift.JungleOnlyActive ? "  /  JUNGLE ONLY" : ""),
+                12, NativeGameUi.Muted);
 
             float stageX = (w - 326f) * .5f;
             NativeGameUi.Panel(new Rect(stageX, 15f, 326f, 80f), true);
