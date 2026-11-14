@@ -225,6 +225,10 @@ namespace HextechSeekers.Native
 
         async void Start()
         {
+            // Do not inherit a stale serialized yaw from an older Unity scene.
+            // Preview and gameplay must start with the same camera preset.
+            cameraPitch = NativeRiftCameraProfile.DefaultPitch;
+            cameraYaw = NativeRiftCameraProfile.DefaultYaw;
             Application.targetFrameRate = 60;
             QualitySettings.vSyncCount = 0;
             sceneCamera = Camera.main;
