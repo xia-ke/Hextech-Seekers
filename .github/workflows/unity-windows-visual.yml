@@ -888,3 +888,17 @@ jobs:
               )
             }
           }
+
+          # Keep the three newest run-ID archives. A running Player, the
+          # current run, and non-versioned "latest" are never forcibly removed.
+          $pruner = Join-Path $env:GITHUB_WORKSPACE 'native-unity/tools/prune_runner_history.ps1'
+          foreach ($history in @(
+            @{ Root = $buildRoot; Kind = 'Builds' },
+            @{ Root = $archiveRoot; Kind = 'VisualEvidence' }
+          )) {
+            try {
+              & $pruner -Root $history.Root -Kind $history.Kind -Keep 3 -ProtectRunId $env:GITHUB_RUN_ID
+            } catch {
+              Write-Warning "Local $($history.Kind) retention failed: $($_.Exception.Message)"
+            }
+          }
