@@ -2066,6 +2066,13 @@ namespace HextechSeekers.Native
             public int originalBlueMeshVertices;
             public bool originalBlueIdlePlaying;
             public bool originalBlueVisualSnapshotCaptured;
+            public bool jungleHunterInRealRiverBrush;
+            public bool jungleHunterFrozenThenReleased;
+            public bool jungleBoundaryBlocksExit;
+            public bool jungleBoundaryAllowsCampPath;
+            public bool jungleBotInPlayableArea;
+            public int jungleCells;
+            public int jungleBrushGroup;
         }
 
         // This test intentionally calls the SAME private cast entry used by Q/W/E
@@ -2786,6 +2793,73 @@ namespace HextechSeekers.Native
             FinishUiEvidence(report, evidence);
         }
 
+        // Boundary verification runs in the actual Windows Player against
+        // the original Map11 grid, not against a fabricated walkable fixture.
+        void VerifyJungleRiverModeOnRealRift(GameplayReport result)
+        {
+            ReturnToRoleSelection();
+            qaEnforceJungle = true;
+            try
+            {
+                selectedHero = "Garen";
+                rosterSize = 2;
+                Configure(MatchRole.Hunter);
+                SelectAugment(offered[0].Id);
+                SelectSkill(NativeSkillSlot.Q);
+                if (menu != Menu.Playing || !rift.JungleOnlyActive ||
+                    rift.JungleArea == null || bots.Count != 1)
+                    throw new InvalidOperationException(
+                        "Actual hunter jungle-only match was not initialized");
+                var nav = rift.Navigation;
+                var zone = rift.JungleArea;
+                var hunter = rift.PlayerPosition;
+                result.jungleCells = zone.AllowedCellCount;
+                result.jungleBrushGroup = nav.BushAt(hunter);
+                result.jungleHunterInRealRiverBrush =
+                    nav.CanWalk(hunter) && result.jungleBrushGroup != 0 &&
+                    result.jungleBrushGroup == zone.HunterBrushGroup &&
+                    Vector2.Distance(hunter, zone.HunterRiverBrush) <
+                    RiftGrid.CellSize * 1.5f;
+                bool frozen = !rules.CanMove(HumanId) &&
+                              !rift.TryNavigateTo(HiderSpawn);
+                result.jungleBotInPlayableArea = nav.CanWalk(bots[0].Position);
+                var outside = zone.ExcludedWalkable;
+                var before = rift.PlayerPosition;
+                result.jungleBoundaryBlocksExit =
+                    !nav.CanWalk(outside) &&
+                    !rift.TryNavigateTo(outside) &&
+                    !rift.TryTeleportTo(outside) &&
+                    !rift.TrySetExternalPosition(outside) &&
+                    Vector2.Distance(before, rift.PlayerPosition) < .01f;
+                rules.Advance(NativeMatchRules.PreparationSeconds);
+                rift.ExternalMoveEnabled = rules.CanMove(HumanId);
+                result.jungleHunterFrozenThenReleased =
+                    frozen && rules.CanMove(HumanId);
+                result.jungleBoundaryAllowsCampPath =
+                    nav.CanWalk(HiderSpawn) &&
+                    rift.TryNavigateTo(HiderSpawn);
+                rift.StopMovement();
+                if (!result.jungleHunterInRealRiverBrush ||
+                    !result.jungleBotInPlayableArea ||
+                    !result.jungleHunterFrozenThenReleased ||
+                    !result.jungleBoundaryBlocksExit ||
+                    !result.jungleBoundaryAllowsCampPath ||
+                    result.jungleCells < 1000)
+                    throw new InvalidOperationException(
+                        "Original Map11 river hunter staging or jungle boundary invalid");
+                Debug.Log("NATIVE_JUNGLE_GPU_QA_PASS: hunterGrassGroup=" +
+                          result.jungleBrushGroup + " arenaCells=" +
+                          result.jungleCells + " frozen120=true" +
+                          " humanExit=blocked aiInside=true" +
+                          " riverToCampPath=legal trueMap11=true");
+            }
+            finally
+            {
+                qaEnforceJungle = false;
+                ReturnToRoleSelection();
+            }
+        }
+
         IEnumerator VerifyGameplay()
         {
             var result = new GameplayReport { status = "FAIL" };
@@ -2974,6 +3048,16 @@ namespace HextechSeekers.Native
                 rules.Advance(120f + NativeMatchRules.ChaseSeconds(1));
                 result.hiderWinsBySurviving = rules.Phase == MatchPhase.Finished &&
                     !rules.HunterWon && rules.Find(HumanId).Score == 1;
+                VerifyJungleRiverModeOnRealRift(result);
+                if (!result.jungleHunterInRealRiverBrush ||
+                    !result.jungleHunterFrozenThenReleased ||
+                    !result.jungleBoundaryBlocksExit ||
+                    !result.jungleBoundaryAllowsCampPath ||
+                    !result.jungleBotInPlayableArea ||
+                    result.jungleBrushGroup <= 0 ||
+                    result.jungleCells < 1000)
+                    throw new InvalidOperationException(
+                        "Jungle-only real Map11 Player QA failed");
                 if (!result.loadedRift || !result.hunterLockedDuringPreparation ||
                     !result.hunterReleasedAfterPreparation ||
                     !result.hunterCapturedUsingBasicAttack ||
