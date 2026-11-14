@@ -73,3 +73,52 @@ rules remain unchanged. It is deliberately reported as
 `CAPTURED_REQUIRES_VISUAL_REVIEW`: automated checks cannot confirm
 that model facing, perceived pitch/zoom, camera framing and visual
 fidelity exactly match an external League client screenshot.
+
+## Nov 14 League Player reference: river and jungle map region
+
+The user provided an actual League of Legends (TM) Client recording (35.47s,
+2544×1364, about 30fps) and a river screenshot (2048×1095). Unlike the old
+native orthographic preview, the reference keeps the character relatively
+small while showing broad terrain, both river banks and the neighboring
+brush/monster sites in the same field of view. **Do not change original
+Map11 model rotation to imitate the screenshot:** the renderer and navigation
+have an independently verified glTF handedness correction.
+
+The camera baseline therefore stays at perspective FOV 40°, pitch 56° and
+a 2306-unit diagonal distance, with adjustable yaw, tilt and wheel zoom.
+Actual GPU captures of 0°, ±45° and the mid-river hunter scene are requested
+for side-by-side human framing review. The original client video is a
+comparison reference, **not imported into or copied into this Git repo**.
+
+### River-bush preparation and bounded wild-area play
+
+The lower-half original navigation binary (`295×296` cells, 50 units each)
+contains a real navigable grass group 23 (raw group ID 22, **not** the
+255 no-grass sentinel) near native coordinates **x≈8524, z≈−6308**.
+This position was independently selected from the untouched original Map11
+bush channel, using clearance and a 3×3 grass-neighborhood interior check.
+The hunter is frozen inside that river bush during the existing 120-second
+preparation phase, and released once Pursuit begins. There is no fabricated
+fountain or fake bush model.
+
+`NativeJunglePlayArea` creates a **game-mode-only** walkable region using
+the eight already-verified lower-jungle camp coordinates, the real river
+brush, and A* connections on the original navigation. Allowed areas are
+source camp neighborhoods and buffered real traversable routes. Areas
+outside that region (not just outside the rectangular map bounds) reject
+right-click routes, voluntary steps and skill/forced movement; both human
+and AI use the SAME restricted `RiftGrid`. The raw Map11 nav bytes, camps,
+visibility/brush IDs and map GLB are unchanged. The region boundary is an
+intentional game design choice, not an official Riot jungle zone polygon.
+
+A dedicated real Windows GPU gameplay check stages Garen as the hunter,
+verifies actual grass group, 120-second lock/release, rejects an *originally
+walkable* point outside the zone using navigation, teleport and forced
+movement entry points, confirms an AI remains within the boundary, and
+requires a legal route from the river brush into the Order Red camp. In
+addition to the eight UI/fog/yaw PNGs, a ninth genuine GPU screenshot
+`ui-hunter-river-brush.png` records the waiting area for visual comparison.
+
+Original source camp dataset: pinned `iamywl/Web_game@
+557a9d5352af12bee8bf3db879c22d04d0a0954e` Map11 placements; the
+original source jungle GLB data is not checked into this repository.
