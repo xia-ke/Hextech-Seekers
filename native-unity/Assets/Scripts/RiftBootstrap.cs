@@ -63,6 +63,20 @@ namespace HextechSeekers.Native
         public GameObject LoadedMap => loadedMap;
         public RiftGrid Navigation => nav;
         public NativeCampCatalog CampCatalog { get; private set; }
+        public NativeJunglePlayArea JungleArea { get; private set; }
+        public bool JungleOnlyActive => nav != null && nav.IsPlayAreaRestricted;
+
+        public bool SetJungleOnly(bool enabled)
+        {
+            if (!ready || nav == null || (enabled && JungleArea == null))
+                return false;
+            nav.SetPlayArea(enabled ? JungleArea.SnapshotMask() : null);
+            StopMovement();
+            Debug.Log("NATIVE_JUNGLE_BOUNDARY: " + (enabled ? "ENABLED" : "DISABLED") +
+                      " regionCells=" + (JungleArea?.AllowedCellCount ?? 0));
+            return true;
+        }
+
         public NativeSpawnCalibration SpawnCalibration { get; private set; }
         public NativeNeutralMonsterWorld NeutralMonsters { get; private set; }
         public NativeNeutralMonsterScene NeutralScene => neutralScene;
@@ -231,6 +245,8 @@ namespace HextechSeekers.Native
                         Debug.LogWarning("NATIVE_CAMP_CATALOG_UNAVAILABLE: " + invalidCamp.Message);
                     }
                 }
+                if (CampCatalog != null)
+                    JungleArea = NativeJunglePlayArea.Build(nav, CampCatalog);
                 if (!nav.TryNearest(initialPosition, out location))
                     throw new InvalidDataException("Spawn is outside the original lower-jungle navigation region");
                 loadedMap = new GameObject("ORIGINAL_RIFT_3D_Map11");
@@ -377,8 +393,18 @@ namespace HextechSeekers.Native
                 {
                     Vector2 to = route[waypoint] - location;
                     float distance = to.magnitude;
+                    Vector2 next = distance <= delta ? route[waypoint] :
+                        location + to.normalized * delta;
+                    if (nav.IsPlayAreaRestricted &&
+                        (!nav.CanWalk(next) || !nav.LineClear(location, next)))
+                    {
+                        Debug.Log("NATIVE_JUNGLE_BOUNDARY_BLOCK: actor=human from=" +
+                                  location + " to=" + next);
+                        StopMovement();
+                        break;
+                    }
                     if (distance <= delta) { location = route[waypoint++]; delta -= distance; }
-                    else { location += to.normalized * delta; delta = 0; }
+                    else { location = next; delta = 0; }
                 }
             }
             var at = ToScene(location);
@@ -510,7 +536,8 @@ namespace HextechSeekers.Native
 
         public bool TryTeleportTo(Vector2 desired)
         {
-            if (!ready || !nav.TryNearest(desired, out var destination, 65)) return false;
+            if (!ready || (JungleOnlyActive && !JungleArea.Contains(desired)) ||
+                !nav.TryNearest(desired, out var destination, 65)) return false;
             location = destination;
             previousLocation = destination;
             route = Array.Empty<Vector2>();
@@ -528,7 +555,8 @@ namespace HextechSeekers.Native
         /// </summary>
         public bool TrySetExternalPosition(Vector2 desired)
         {
-            if (!ready || nav == null || !nav.CanWalk(desired)) return false;
+            if (!ready || nav == null || !nav.CanWalk(desired) ||
+                (JungleOnlyActive && !nav.LineClear(location, desired))) return false;
             location = desired;
             previousLocation = desired;
             route = Array.Empty<Vector2>();
@@ -546,7 +574,8 @@ namespace HextechSeekers.Native
 
         public bool TryNavigateTo(Vector2 target)
         {
-            if (!ready || (ExternalGameplayControl && !ExternalMoveEnabled)) return false;
+            if (!ready || (ExternalGameplayControl && !ExternalMoveEnabled) ||
+                (JungleOnlyActive && !JungleArea.Contains(target))) return false;
             var result = new System.Collections.Generic.List<Vector2>();
             if (!nav.TryPath(location, target, result) || result.Count == 0) return false;
             route = result.ToArray();
