@@ -18,8 +18,10 @@ namespace HextechSeekers.Native
         const float MidRiverX = 7500f;
         const float MidRiverZ = -7500f;
         const float MaxRiverBrushDistance = 2500f;
-        const float CampRadius = 1280f;
-        const float PathRadius = 820f;
+        // Tighten overly broad allowances near lane entrances. Preserve and
+        // revalidate paths among all eight verified source camps.
+        const float CampRadius = 950f;
+        const float PathRadius = 550f;
         readonly bool[] allowed;
         readonly Vector2[] campAnchors;
 
