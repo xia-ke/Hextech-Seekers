@@ -156,3 +156,10 @@ jobs:
           Write-Host "UNITY_EDITOR_EVIDENCE_DIR=$target"
           Get-ChildItem -LiteralPath $target -File -Recurse |
             ForEach-Object { Write-Host ("UNITY_EDITOR_EVIDENCE_FILE=" + $_.FullName + " bytes=" + $_.Length) }
+          # Preserve the newest three run-ID snapshots only.
+          $pruner = Join-Path $env:GITHUB_WORKSPACE 'native-unity/tools/prune_runner_history.ps1'
+          try {
+            & $pruner -Root 'F:\actions-runner\HextechEditorEvidence' -Kind EditorEvidence -Keep 3 -ProtectRunId $env:GITHUB_RUN_ID
+          } catch {
+            Write-Warning "Local EditorEvidence retention failed: $($_.Exception.Message)"
+          }

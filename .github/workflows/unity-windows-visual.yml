@@ -510,6 +510,18 @@ jobs:
             throw "Phase17B invalid neutral Player evidence: $neutralCase"
           }
           Write-Host "NEUTRAL_SKILL_GPU_QA_PASS: $neutralCase"
+          # Real Map11 jungle boundary, not a guessed world rectangle.
+          if (-not $json.jungleHunterInRealRiverBrush -or
+              -not $json.jungleHunterFrozenThenReleased -or
+              -not $json.jungleBoundaryBlocksExit -or
+              -not $json.jungleBoundaryAllowsCampPath -or
+              -not $json.jungleBotInPlayableArea -or
+              $json.jungleCells -lt 1000 -or
+              $json.jungleBrushGroup -le 0) {
+            throw 'Actual River + Jungle Player geofence smoke missing'
+          }
+          Write-Host "NATIVE_JUNGLE_GPU_QA_PASS: hunterGrassGroup=$($json.jungleBrushGroup) cells=$($json.jungleCells) exitRejected=true"
+
 
           # Phase 18A: do not pass only from the gameplay PASS. Require
           # real skinned original geometry, source-idle animation and a
@@ -565,7 +577,14 @@ jobs:
               -not $json.originalMapReady -or -not $json.hardwareGpu -or
               -not $json.fogDoesNotAlterTargetVisibility -or
               -not $json.returnedToNormal -or
-              $json.screenshots -ne 6) {
+              -not $json.cameraPerspective -or
+              -not $json.cameraHeroInFrame -or
+              -not $json.cameraYawDidNotMovePlayer -or
+              [math]::Abs($json.cameraFieldOfView - 40.0) -gt 0.1 -or
+              [math]::Abs($json.cameraPitchDegrees - 56.0) -gt 0.1 -or
+              [math]::Abs($json.cameraDefaultYaw - 45.0) -gt 0.1 -or
+              -not $json.hunterWaitingInsideActualRiverBrush -or
+              $json.screenshots -ne 9) {
             throw "Native UI visual GPU smoke failed: $($json.reason) status=$($json.status)"
           }
           $expected = @(
@@ -574,7 +593,10 @@ jobs:
             'ui-skill-selection.png',
             'ui-hud-fog-normal.png',
             'ui-hud-fog-light.png',
-            'ui-hud-fog-off.png'
+            'ui-hud-fog-off.png',
+            'ui-camera-yaw-minus45.png',
+            'ui-camera-yaw-plus90.png',
+            'ui-hunter-river-brush.png'
           )
           foreach ($name in $expected) {
             $file = Join-Path $evidence $name
@@ -596,7 +618,7 @@ jobs:
           # This is screenshot integrity and real behavior evidence, not a
           # claim of visual quality. Keep original images on self-hosted
           # runner for user review: no third-party map art uploaded to Git.
-          Write-Host 'NATIVE_UI_GPU_CAPTURE_PASS: six real Player PNGs; actual visual quality requires human review'
+          Write-Host 'NATIVE_UI_GPU_CAPTURE_PASS: nine real Player PNGs, original river-grass hunter, 40FOV/56pitch, 45 yaw and -45/+90 comparisons; human review required'
 
       - name: Verify original champion rigs and capture per-hero real GPU art evidence
         run: |
@@ -864,5 +886,19 @@ jobs:
                 'The images remain local and are **not** published to a public artifact endpoint.'
                 'The GPU verification step, not this archiving step, determines acceptance.'
               )
+            }
+          }
+
+          # Keep the three newest run-ID archives. A running Player, the
+          # current run, and non-versioned "latest" are never forcibly removed.
+          $pruner = Join-Path $env:GITHUB_WORKSPACE 'native-unity/tools/prune_runner_history.ps1'
+          foreach ($history in @(
+            @{ Root = $buildRoot; Kind = 'Builds' },
+            @{ Root = $archiveRoot; Kind = 'VisualEvidence' }
+          )) {
+            try {
+              & $pruner -Root $history.Root -Kind $history.Kind -Keep 3 -ProtectRunId $env:GITHUB_RUN_ID
+            } catch {
+              Write-Warning "Local $($history.Kind) retention failed: $($_.Exception.Message)"
             }
           }

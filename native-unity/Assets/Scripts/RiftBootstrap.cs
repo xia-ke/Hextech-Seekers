@@ -18,8 +18,23 @@ namespace HextechSeekers.Native
         public float moveSpeed = 340f;
         public float worldScale = 1f;
         public float mapYawCorrection = 180f;
+        // The old Player used orthographicSize=520 and a height-following
+        // camera, which distorted the scale and framing compared to LoL.
+        // Keep the old scene field for compatibility, but DO NOT use it.
         public float cameraOrthographicSize = 520f;
-        public float cameraPitch = 55f;
+        public float cameraPitch = NativeRiftCameraProfile.DefaultPitch;
+        public float cameraYaw = NativeRiftCameraProfile.DefaultYaw;
+        public bool CameraLocked { get; private set; } = true;
+        public bool CameraInputEnabled { get; set; }
+        public float CameraDistance { get; private set; } =
+            NativeRiftCameraProfile.DefaultDistance;
+        Vector2 freeCameraFocus;
+        bool freeCameraFocusSet;
+
+        public string CameraStatus =>
+            (CameraLocked ? "LOCKED" : "FREE") + " / " +
+            Mathf.RoundToInt(cameraPitch) + "° TILT / " +
+            Mathf.RoundToInt(cameraYaw) + "° YAW";
 
 
         Camera sceneCamera;
@@ -48,6 +63,41 @@ namespace HextechSeekers.Native
         public GameObject LoadedMap => loadedMap;
         public RiftGrid Navigation => nav;
         public NativeCampCatalog CampCatalog { get; private set; }
+        public NativeJunglePlayArea JungleArea { get; private set; }
+        public bool JungleOnlyActive => nav != null && nav.IsPlayAreaRestricted;
+
+        GameObject jungleAirWalls;
+        public int AirWallSegmentCount { get; private set; }
+        public int AirWallExitEdgeCount { get; private set; }
+
+        public bool SetJungleOnly(bool enabled)
+        {
+            if (!ready || nav == null || (enabled && JungleArea == null))
+                return false;
+            if (enabled && !JungleArea.Contains(location)) return false;
+            if (enabled && !jungleAirWalls)
+            {
+                jungleAirWalls = NativeJungleAirWalls.Create(
+                    nav, JungleArea, transform, out int segments, out int exitEdges);
+                AirWallSegmentCount = segments;
+                AirWallExitEdgeCount = exitEdges;
+            }
+            nav.SetPlayArea(enabled ? JungleArea.SnapshotMask() : null);
+            if (!enabled && jungleAirWalls)
+            {
+                jungleAirWalls.SetActive(false);
+                Destroy(jungleAirWalls);
+                jungleAirWalls = null;
+                AirWallSegmentCount = AirWallExitEdgeCount = 0;
+            }
+            StopMovement();
+            Debug.Log("NATIVE_JUNGLE_BOUNDARY: " + (enabled ? "ENABLED" : "DISABLED") +
+                      " regionCells=" + (JungleArea?.AllowedCellCount ?? 0) +
+                      " physicalWalls=" + AirWallSegmentCount +
+                      " exitEdges=" + AirWallExitEdgeCount);
+            return true;
+        }
+
         public NativeSpawnCalibration SpawnCalibration { get; private set; }
         public NativeNeutralMonsterWorld NeutralMonsters { get; private set; }
         public NativeNeutralMonsterScene NeutralScene => neutralScene;
@@ -175,6 +225,10 @@ namespace HextechSeekers.Native
 
         async void Start()
         {
+            // Do not inherit a stale serialized yaw from an older Unity scene.
+            // Preview and gameplay must start with the same camera preset.
+            cameraPitch = NativeRiftCameraProfile.DefaultPitch;
+            cameraYaw = NativeRiftCameraProfile.DefaultYaw;
             Application.targetFrameRate = 60;
             QualitySettings.vSyncCount = 0;
             sceneCamera = Camera.main;
@@ -216,6 +270,8 @@ namespace HextechSeekers.Native
                         Debug.LogWarning("NATIVE_CAMP_CATALOG_UNAVAILABLE: " + invalidCamp.Message);
                     }
                 }
+                if (CampCatalog != null)
+                    JungleArea = NativeJunglePlayArea.Build(nav, CampCatalog);
                 if (!nav.TryNearest(initialPosition, out location))
                     throw new InvalidDataException("Spawn is outside the original lower-jungle navigation region");
                 loadedMap = new GameObject("ORIGINAL_RIFT_3D_Map11");
@@ -275,6 +331,78 @@ namespace HextechSeekers.Native
                 Debug.LogException(e);
             }
         }
+        /// <summary>
+        /// Camera-only calibration and free panning. Never translates the
+        /// actual Map11, navigation, vision grids, hit targets or champions.
+        /// </summary>
+        public void ResetCameraForMatch()
+        {
+            CameraLocked = true;
+            CameraInputEnabled = true;
+            CameraDistance = NativeRiftCameraProfile.DefaultDistance;
+            cameraPitch = NativeRiftCameraProfile.DefaultPitch;
+            cameraYaw = NativeRiftCameraProfile.DefaultYaw;
+            freeCameraFocus = location;
+            freeCameraFocusSet = true;
+            Debug.Log("NATIVE_RIFT_CAMERA_RESET: perspective=true FOV=" +
+                      NativeRiftCameraProfile.FieldOfView + " pitch=" +
+                      cameraPitch + " yaw=" + cameraYaw +
+                      " distance=" + CameraDistance);
+        }
+
+        void TickCameraInput()
+        {
+            if (!CameraInputEnabled) return;
+            if (Input.GetKeyDown(KeyCode.Y))
+            {
+                CameraLocked = !CameraLocked;
+                freeCameraFocus = CameraFollowOverride ?? location;
+                freeCameraFocusSet = true;
+            }
+            if (Input.GetKeyDown(KeyCode.Alpha0))
+            {
+                cameraPitch = NativeRiftCameraProfile.DefaultPitch;
+                cameraYaw = NativeRiftCameraProfile.DefaultYaw;
+                CameraDistance = NativeRiftCameraProfile.DefaultDistance;
+                CameraLocked = true;
+            }
+            if (Input.GetKeyDown(KeyCode.LeftBracket))
+                cameraYaw = NativeRiftCameraProfile.WrapYaw(cameraYaw - 15f);
+            if (Input.GetKeyDown(KeyCode.RightBracket))
+                cameraYaw = NativeRiftCameraProfile.WrapYaw(cameraYaw + 15f);
+            if (Input.GetKeyDown(KeyCode.PageUp))
+                cameraPitch = NativeRiftCameraProfile.ClampPitch(cameraPitch + 3f);
+            if (Input.GetKeyDown(KeyCode.PageDown))
+                cameraPitch = NativeRiftCameraProfile.ClampPitch(cameraPitch - 3f);
+
+            float wheel = Input.GetAxis("Mouse ScrollWheel");
+            if (Mathf.Abs(wheel) > .0001f)
+                CameraDistance = NativeRiftCameraProfile.ClampDistance(
+                    CameraDistance - wheel * 1200f);
+
+            if (!CameraLocked && !CameraFollowOverride.HasValue)
+            {
+                if (!freeCameraFocusSet) { freeCameraFocus = location; freeCameraFocusSet = true; }
+                float h = (Input.GetKey(KeyCode.RightArrow) ? 1f : 0f) -
+                          (Input.GetKey(KeyCode.LeftArrow) ? 1f : 0f);
+                float v = (Input.GetKey(KeyCode.UpArrow) ? 1f : 0f) -
+                          (Input.GetKey(KeyCode.DownArrow) ? 1f : 0f);
+                if (Mathf.Abs(h) + Mathf.Abs(v) > 0)
+                {
+                    Vector2 direction = new Vector2(h, v).normalized;
+                    freeCameraFocus += NativeRiftCameraProfile.PanPlane(cameraYaw,
+                        direction) * NativeRiftCameraProfile.PanUnitsPerSecond *
+                        Time.unscaledDeltaTime;
+                    freeCameraFocus.x = Mathf.Clamp(freeCameraFocus.x,
+                        RiftGrid.MinX + 200f,
+                        RiftGrid.MinX + RiftGrid.Width * RiftGrid.CellSize - 200f);
+                    freeCameraFocus.y = Mathf.Clamp(freeCameraFocus.y,
+                        RiftGrid.MinZ + 200f,
+                        RiftGrid.MinZ + RiftGrid.Height * RiftGrid.CellSize - 200f);
+                }
+            }
+        }
+
         void LateUpdate()
         {
             if (!ready) return;
@@ -290,8 +418,18 @@ namespace HextechSeekers.Native
                 {
                     Vector2 to = route[waypoint] - location;
                     float distance = to.magnitude;
+                    Vector2 next = distance <= delta ? route[waypoint] :
+                        location + to.normalized * delta;
+                    if (nav.IsPlayAreaRestricted &&
+                        (!nav.CanWalk(next) || !nav.LineClear(location, next)))
+                    {
+                        Debug.Log("NATIVE_JUNGLE_BOUNDARY_BLOCK: actor=human from=" +
+                                  location + " to=" + next);
+                        StopMovement();
+                        break;
+                    }
                     if (distance <= delta) { location = route[waypoint++]; delta -= distance; }
-                    else { location += to.normalized * delta; delta = 0; }
+                    else { location = next; delta = 0; }
                 }
             }
             var at = ToScene(location);
@@ -306,13 +444,28 @@ namespace HextechSeekers.Native
             if (playerTacticalMarker)
                 playerTacticalMarker.transform.position = at;
             previousLocation = location;
-            var forward = Quaternion.Euler(cameraPitch, 0, 0) * Vector3.forward;
-            Vector3 focus = CameraFollowOverride.HasValue ?
-                ToScene(CameraFollowOverride.Value) : at;
-            sceneCamera.transform.position = focus - forward * 900f;
-            sceneCamera.transform.rotation = Quaternion.Euler(cameraPitch, 0, 0);
-            sceneCamera.orthographic = true;
-            sceneCamera.orthographicSize = cameraOrthographicSize;
+            TickCameraInput();
+            // Classic Rift camera: perspective FOV 40 and 56-degree downward
+            // pitch from a constant y=0 focus plane. This is intentionally
+            // independent of the actual terrain/hero height, eliminating
+            // vertical wobble while crossing slopes and river elevations.
+            // Default yaw=0 retains verified original Map11 X/Z alignment;
+            // bracket keys allow visual yaw calibration without ever rotating
+            // map geometry or the authoritative nav grid.
+            Vector2 cameraCenter = CameraFollowOverride ??
+                (CameraLocked || !CameraInputEnabled ||
+                 Input.GetKey(KeyCode.Space) || !freeCameraFocusSet ?
+                 location : freeCameraFocus);
+            Vector3 focus = NativeRiftCameraProfile.FocusOnMapPlane(cameraCenter);
+            var rotation = NativeRiftCameraProfile.Rotation(cameraPitch, cameraYaw);
+            sceneCamera.transform.SetPositionAndRotation(
+                NativeRiftCameraProfile.CameraPosition(focus, cameraPitch,
+                                                       cameraYaw, CameraDistance),
+                rotation);
+            sceneCamera.orthographic = false;
+            sceneCamera.fieldOfView = NativeRiftCameraProfile.FieldOfView;
+            sceneCamera.nearClipPlane = .3f;
+            sceneCamera.farClipPlane = 6500f;
         }
         /// <summary>
         /// Change the locally controlled hero. If authorized original art is not
@@ -408,7 +561,8 @@ namespace HextechSeekers.Native
 
         public bool TryTeleportTo(Vector2 desired)
         {
-            if (!ready || !nav.TryNearest(desired, out var destination, 65)) return false;
+            if (!ready || (JungleOnlyActive && !JungleArea.Contains(desired)) ||
+                !nav.TryNearest(desired, out var destination, 65)) return false;
             location = destination;
             previousLocation = destination;
             route = Array.Empty<Vector2>();
@@ -426,7 +580,8 @@ namespace HextechSeekers.Native
         /// </summary>
         public bool TrySetExternalPosition(Vector2 desired)
         {
-            if (!ready || nav == null || !nav.CanWalk(desired)) return false;
+            if (!ready || nav == null || !nav.CanWalk(desired) ||
+                (JungleOnlyActive && !nav.LineClear(location, desired))) return false;
             location = desired;
             previousLocation = desired;
             route = Array.Empty<Vector2>();
@@ -444,7 +599,8 @@ namespace HextechSeekers.Native
 
         public bool TryNavigateTo(Vector2 target)
         {
-            if (!ready || (ExternalGameplayControl && !ExternalMoveEnabled)) return false;
+            if (!ready || (ExternalGameplayControl && !ExternalMoveEnabled) ||
+                (JungleOnlyActive && !JungleArea.Contains(target))) return false;
             var result = new System.Collections.Generic.List<Vector2>();
             if (!nav.TryPath(location, target, result) || result.Count == 0) return false;
             route = result.ToArray();

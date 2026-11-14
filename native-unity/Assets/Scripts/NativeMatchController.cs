@@ -21,10 +21,12 @@ namespace HextechSeekers.Native
         const float HumanBasicCooldown = .8f;
         const float AiBasicCooldown = 1.1f;
         static readonly Vector2 HiderStart = new Vector2(7765f, -4020f);
-        // Original fountain bounds still require geometric calibration.
-        static readonly Vector2 HunterStaging = new Vector2(13000f, -1100f);
-        Vector2 HunterSpawn => rift && rift.SpawnCalibration != null
-            ? rift.SpawnCalibration.HunterSpawn : HunterStaging;
+        // Hunter preparation is staged in genuine navigable mid-river
+        // grass, selected from the preserved original Map11 bush channel.
+        Vector2 HunterSpawn => rift != null && rift.JungleArea != null
+            ? rift.JungleArea.HunterRiverBrush :
+            throw new InvalidOperationException(
+                "The hunter requires real Map11 river grass staging");
         Vector2 HiderSpawn => rift && rift.SpawnCalibration != null
             ? rift.SpawnCalibration.HiderSpawn : HiderStart;
         enum Menu { Role, Augment, Skill, Playing }
@@ -88,6 +90,7 @@ namespace HextechSeekers.Native
         string feedback = "";
         int preferredTargetId = -1;
         int preferredSpectateId = -1;
+        bool qaEnforceJungle;
 
         void Awake()
         {
@@ -117,6 +120,16 @@ namespace HextechSeekers.Native
             if (!rift || !rift.IsReady) return;
             CleanupBots();
             if (privateFog) privateFog.End();
+            // Gameplay uses the bounded jungle/river region. Existing full-map
+            // skill smokes retain their original geometry; a real GPU smoke
+            // explicitly enables the strict region and verifies its gates.
+            bool enforceRegion = qaEnforceJungle ||
+                !HasAutomatedVisualFlag() &&
+                Array.IndexOf(Environment.GetCommandLineArgs(),
+                              "-hextechUiVisualQA") < 0;
+            if (!rift.SetJungleOnly(enforceRegion))
+                throw new InvalidOperationException(
+                    "Verified jungle-only Map11 region unavailable");
             humanRole = role;
             if (!rift.SelectPlayerChampion(selectedHero))
                 throw new InvalidOperationException("Cannot choose native player hero: " + selectedHero);
@@ -259,10 +272,10 @@ namespace HextechSeekers.Native
                 }
             }
             rift.ExternalMoveEnabled = rules.CanMove(HumanId);
+            rift.ResetCameraForMatch();
             menu = Menu.Playing;
-            string startMessage = rift.SpawnCalibration != null
-                ? "120s preparation: verified fountain; hunter cannot leave." :
-                  "120s preparation: hunter locked at provisional staging (fountain unverified).";
+            string startMessage = "120s preparation: hunter waiting inside" +
+                " verified mid-river grass; jungle and river boundary active.";
             if (!privateFog) privateFog = GetComponent<NativeFogOfWar>() ??
                                          gameObject.AddComponent<NativeFogOfWar>();
             try
@@ -294,7 +307,7 @@ namespace HextechSeekers.Native
             float w = Screen.width / scale;
             float h = Screen.height / scale;
             return (x < 376f && y < 345f) ||
-                   (x > (w - 300f) && y > h - 100f) ||
+                   (x > (w - 300f) && y > h - 180f) ||
                    (x > (w - 450f) * .5f && x < (w + 450f) * .5f &&
                     y > h - 116f);
         }
@@ -375,8 +388,10 @@ namespace HextechSeekers.Native
             if (rift.ExternalMoveEnabled)
             {
                 if (Input.GetKeyDown(KeyCode.S)) rift.StopMovement();
-                if (Input.GetMouseButtonDown(1) && !HoveringHud(Input.mousePosition))
-                    rift.TryNavigateFromScreen(Input.mousePosition);
+                if (Input.GetMouseButtonDown(1) && !HoveringHud(Input.mousePosition) &&
+                    !rift.TryNavigateFromScreen(Input.mousePosition) &&
+                    rift.JungleOnlyActive)
+                    feedback = "MAP BOUNDARY  /  Stay in jungle and river lanes";
                 if (Input.GetKeyDown(KeyCode.Q)) TryHumanSkill(NativeSkillSlot.Q);
                 if (Input.GetKeyDown(KeyCode.W)) TryHumanSkill(NativeSkillSlot.W);
                 if (Input.GetKeyDown(KeyCode.E)) TryHumanSkill(NativeSkillSlot.E);
@@ -1364,7 +1379,16 @@ namespace HextechSeekers.Native
             {
                 Vector2 previous = bot.Position;
                 bot.VisualPreviousPosition = previous;
-                bot.Position = bot.Pull.Step(dt);
+                Vector2 pulled = bot.Pull.Step(dt);
+                if (rift.JungleOnlyActive &&
+                    (!rift.Navigation.CanWalk(pulled) ||
+                     !rift.Navigation.LineClear(previous, pulled)))
+                {
+                    bot.Pull.Cancel();
+                    Debug.Log("NATIVE_JUNGLE_BOUNDARY_BLOCK: actor=ai pull");
+                    return;
+                }
+                bot.Position = pulled;
                 PlaceMarker(bot);
                 UpdateBotCombatVfx(bot, true);
                 if (bot.RealRig)
@@ -1394,7 +1418,16 @@ namespace HextechSeekers.Native
             {
                 Vector2 previous = bot.Position;
                 bot.VisualPreviousPosition = previous;
-                bot.Position = bot.Dash.Step(dt);
+                Vector2 dashed = bot.Dash.Step(dt);
+                if (rift.JungleOnlyActive &&
+                    (!rift.Navigation.CanWalk(dashed) ||
+                     !rift.Navigation.LineClear(previous, dashed)))
+                {
+                    bot.Dash.Cancel();
+                    Debug.Log("NATIVE_JUNGLE_BOUNDARY_BLOCK: actor=ai dash");
+                    return;
+                }
+                bot.Position = dashed;
                 PlaceMarker(bot);
                 ResolveBotBasicContact(bot, dt);
                 UpdateBotCombatVfx(bot, true);
@@ -1490,6 +1523,15 @@ namespace HextechSeekers.Native
                     float length = difference.magnitude;
                     if (length < .001f || length <= allowance)
                     {
+                        if (rift.JungleOnlyActive &&
+                            (!rift.Navigation.CanWalk(goal) ||
+                             !rift.Navigation.LineClear(bot.Position, goal)))
+                        {
+                            bot.Path.Clear();
+                            bot.Waypoint = 0;
+                            Debug.Log("NATIVE_JUNGLE_BOUNDARY_BLOCK: actor=ai path");
+                            break;
+                        }
                         bot.Position = goal;
                         allowance -= length;
                         bot.Waypoint++;
@@ -1497,7 +1539,10 @@ namespace HextechSeekers.Native
                     else
                     {
                         Vector2 next = bot.Position + difference.normalized * allowance;
-                        if (rift.Navigation.CanWalk(next)) bot.Position = next;
+                        if (rift.Navigation.CanWalk(next) &&
+                            (!rift.JungleOnlyActive ||
+                             rift.Navigation.LineClear(bot.Position, next)))
+                            bot.Position = next;
                         allowance = 0f;
                     }
                 }
@@ -1679,6 +1724,8 @@ namespace HextechSeekers.Native
             rift.ExternalGameplayControl = false;
             rift.ExternalMoveEnabled = true;
             rift.ExternalMoveMultiplier = 1f;
+            rift.SetJungleOnly(false);
+            rift.CameraInputEnabled = false;
             rift.CameraFollowOverride = null;
             rift.TryTeleportTo(HiderSpawn);
         }
@@ -1847,7 +1894,9 @@ namespace HextechSeekers.Native
                 "Captured  " + rules.CapturedCount + "/" + rules.HiderCount +
                 "     SCORE  " + player.Score, 14, NativeGameUi.Teal, true);
             NativeGameUi.Text(new Rect(34, 123, 309, 25),
-                "TARGET   " + SelectedTargetStatus(), 12, NativeGameUi.Muted);
+                "TARGET   " + SelectedTargetStatus() +
+                (rift.JungleOnlyActive ? "  /  JUNGLE ONLY" : ""),
+                12, NativeGameUi.Muted);
 
             float stageX = (w - 326f) * .5f;
             NativeGameUi.Panel(new Rect(stageX, 15f, 326f, 80f), true);
@@ -1931,17 +1980,28 @@ namespace HextechSeekers.Native
                     11, usable ? NativeGameUi.Teal : NativeGameUi.Muted,
                     true, TextAnchor.MiddleCenter);
             }
-            NativeGameUi.Panel(new Rect(Mathf.Max(12f, w - 255f),
-                h - 104f, 239f, 87f));
-            NativeGameUi.Text(new Rect(w - 239f, h - 97f, 207f, 24f),
-                "RMB   MOVE     /     S   STOP", 12,
+            // Camera controls are presentation-only; never unlock target
+            // visibility or change the Map11 navigation/world transform.
+            NativeGameUi.Panel(new Rect(Mathf.Max(12f, w - 287f),
+                h - 171f, 270f, 154f));
+            NativeGameUi.Text(new Rect(w - 272f, h - 165f, 238f, 21f),
+                "CAMERA   " + rift.CameraStatus, 11,
+                NativeGameUi.Accent, true);
+            NativeGameUi.Text(new Rect(w - 272f, h - 138f, 238f, 20f),
+                "Y  FREE / LOCK      SPACE  RECENTER", 11,
                 NativeGameUi.Bright, true);
-            NativeGameUi.Text(new Rect(w - 239f, h - 69f, 207f, 24f),
-                "TAB   TARGET    /    V   FOG", 12,
+            NativeGameUi.Text(new Rect(w - 272f, h - 115f, 238f, 20f),
+                "WHEEL  ZOOM       ARROWS  PAN", 11,
                 NativeGameUi.Muted, true);
-            NativeGameUi.Text(new Rect(w - 239f, h - 42f, 207f, 18f),
-                "VISUAL DEBUG: NORMAL / LIGHT / OFF", 10,
+            NativeGameUi.Text(new Rect(w - 272f, h - 92f, 238f, 20f),
+                "[ ]  ROTATE       PGUP / PGDN  TILT", 10,
+                NativeGameUi.Muted);
+            NativeGameUi.Text(new Rect(w - 272f, h - 69f, 238f, 20f),
+                "0  RESET  /  V  FOG  /  TAB  TARGET", 10,
                 NativeGameUi.Teal);
+            NativeGameUi.Text(new Rect(w - 272f, h - 43f, 238f, 18f),
+                "RMB MOVE     A ATTACK     S STOP", 10,
+                NativeGameUi.Muted);
             if (!string.IsNullOrWhiteSpace(feedback))
             {
                 NativeGameUi.Panel(new Rect(18, h - 100f, 350f, 82f));
@@ -2010,6 +2070,13 @@ namespace HextechSeekers.Native
             public int originalBlueMeshVertices;
             public bool originalBlueIdlePlaying;
             public bool originalBlueVisualSnapshotCaptured;
+            public bool jungleHunterInRealRiverBrush;
+            public bool jungleHunterFrozenThenReleased;
+            public bool jungleBoundaryBlocksExit;
+            public bool jungleBoundaryAllowsCampPath;
+            public bool jungleBotInPlayableArea;
+            public int jungleCells;
+            public int jungleBrushGroup;
         }
 
         // This test intentionally calls the SAME private cast entry used by Q/W/E
@@ -2511,6 +2578,10 @@ namespace HextechSeekers.Native
             public string reason = "";
             public bool originalMapReady;
             public bool hardwareGpu;
+            public bool cameraPerspective, cameraHeroInFrame;
+            public bool cameraYawDidNotMovePlayer;
+            public bool hunterWaitingInsideActualRiverBrush;
+            public float cameraFieldOfView, cameraPitchDegrees, cameraDefaultYaw;
             public int screenshots;
             public string[] screenshotNames;
             public bool fogDoesNotAlterTargetVisibility;
@@ -2523,7 +2594,9 @@ namespace HextechSeekers.Native
         static readonly string[] UiEvidenceScreens = {
             "ui-role-selection.png", "ui-hextech-draft.png",
             "ui-skill-selection.png", "ui-hud-fog-normal.png",
-            "ui-hud-fog-light.png", "ui-hud-fog-off.png"
+            "ui-hud-fog-light.png", "ui-hud-fog-off.png",
+            "ui-camera-yaw-minus45.png", "ui-camera-yaw-plus90.png",
+            "ui-hunter-river-brush.png"
         };
 
         IEnumerator CaptureActualUiFrame(string destination)
@@ -2597,12 +2670,87 @@ namespace HextechSeekers.Native
                 yield break;
             }
 
-            // 1. Full original map with the genuine interactive role menu.
+            // 1. Verify real perspective camera projection/hero framing,
+            // then capture genuinely different yaw angles at the same map
+            // coordinates. This is evidence for visual comparison, never a
+            // claim that a guessed yaw matches Riot's exact original camera.
+            yield return null; // allow RiftBootstrap.LateUpdate to apply pose
+            var camera = Camera.main;
+            if (!camera)
+            {
+                FinishUiEvidence(report, evidence, "No actual Player camera");
+                yield break;
+            }
+            report.cameraPerspective = !camera.orthographic;
+            report.cameraFieldOfView = camera.fieldOfView;
+            report.cameraPitchDegrees = rift.cameraPitch;
+            report.cameraDefaultYaw = rift.cameraYaw;
+            Vector3 heroViewport = rift.HeroRig ?
+                camera.WorldToViewportPoint(rift.HeroRig.transform.position) :
+                camera.WorldToViewportPoint(
+                    NativeRiftCameraProfile.FocusOnMapPlane(rift.PlayerPosition));
+            report.cameraHeroInFrame = heroViewport.z > 0f &&
+                heroViewport.x > .1f && heroViewport.x < .9f &&
+                heroViewport.y > .1f && heroViewport.y < .9f;
+            if (!report.cameraPerspective ||
+                Mathf.Abs(report.cameraFieldOfView -
+                          NativeRiftCameraProfile.FieldOfView) > .1f ||
+                Mathf.Abs(report.cameraPitchDegrees - 56f) > .1f ||
+                Mathf.Abs(report.cameraDefaultYaw -
+                          NativeRiftCameraProfile.DefaultYaw) > .1f ||
+                !report.cameraHeroInFrame)
+            {
+                FinishUiEvidence(report, evidence,
+                    "Source-faithful 40FOV/56pitch perspective or hero framing missing");
+                yield break;
+            }
+
             yield return CaptureActualUiFrame(Path.Combine(evidence, UiEvidenceScreens[0]));
             report.screenshots += IsRealUiPng(
                 Path.Combine(evidence, UiEvidenceScreens[0])) ? 1 : 0;
 
-            // 2. Real role -> independent Hextech -> legal hero skill flow.
+            Vector2 positionBeforeYaw = rift.PlayerPosition;
+            rift.cameraYaw = -45f;
+            yield return null;
+            yield return CaptureActualUiFrame(Path.Combine(evidence, UiEvidenceScreens[6]));
+            report.screenshots += IsRealUiPng(
+                Path.Combine(evidence, UiEvidenceScreens[6])) ? 1 : 0;
+            rift.cameraYaw = 90f;
+            yield return null;
+            yield return CaptureActualUiFrame(Path.Combine(evidence, UiEvidenceScreens[7]));
+            report.screenshots += IsRealUiPng(
+                Path.Combine(evidence, UiEvidenceScreens[7])) ? 1 : 0;
+            rift.cameraYaw = NativeRiftCameraProfile.DefaultYaw;
+            yield return null;
+            report.cameraYawDidNotMovePlayer =
+                Vector2.Distance(positionBeforeYaw, rift.PlayerPosition) < .01f;
+
+            // 2. Verify the actual hunter waits inside the original
+            // mid-river brush (preparation lock), at a camera composition
+            // comparable to the supplied League river recording.
+            qaEnforceJungle = true;
+            selectedHero = "Garen";
+            rosterSize = 2;
+            Configure(MatchRole.Hunter);
+            SelectAugment(offered[0].Id);
+            SelectSkill(NativeSkillSlot.Q);
+            report.hunterWaitingInsideActualRiverBrush =
+                menu == Menu.Playing && rift.JungleOnlyActive &&
+                rift.Navigation.BushAt(rift.PlayerPosition) > 0 &&
+                !rules.CanMove(HumanId);
+            if (!report.hunterWaitingInsideActualRiverBrush)
+            {
+                FinishUiEvidence(report, evidence,
+                    "Actual mid-river bush hunter preparation screenshot unavailable");
+                yield break;
+            }
+            yield return CaptureActualUiFrame(Path.Combine(evidence, UiEvidenceScreens[8]));
+            report.screenshots += IsRealUiPng(
+                Path.Combine(evidence, UiEvidenceScreens[8])) ? 1 : 0;
+            qaEnforceJungle = false;
+            ReturnToRoleSelection();
+
+            // 3. Real role -> independent Hextech -> legal hero skill flow.
             selectedHero = "Garen";
             rosterSize = 2;
             Configure(MatchRole.Hider);
@@ -2660,6 +2808,9 @@ namespace HextechSeekers.Native
                 privateFog.DisplayMode == NativeFogOfWar.FogDisplay.Normal;
 
             if (report.screenshots != UiEvidenceScreens.Length ||
+                !report.cameraPerspective || !report.cameraHeroInFrame ||
+                !report.cameraYawDidNotMovePlayer ||
+                !report.hunterWaitingInsideActualRiverBrush ||
                 !report.fogDoesNotAlterTargetVisibility ||
                 !report.returnedToNormal || report.screenWidth < 800 ||
                 report.screenHeight < 450)
@@ -2673,6 +2824,77 @@ namespace HextechSeekers.Native
                       " modes=Normal/Light/Off privateSightUnchanged=true" +
                       " appearance=REQUIRES_HUMAN_REVIEW");
             FinishUiEvidence(report, evidence);
+        }
+
+        // Boundary verification runs in the actual Windows Player against
+        // the original Map11 grid, not against a fabricated walkable fixture.
+        void VerifyJungleRiverModeOnRealRift(GameplayReport result)
+        {
+            ReturnToRoleSelection();
+            qaEnforceJungle = true;
+            try
+            {
+                selectedHero = "Garen";
+                rosterSize = 2;
+                Configure(MatchRole.Hunter);
+                SelectAugment(offered[0].Id);
+                SelectSkill(NativeSkillSlot.Q);
+                if (menu != Menu.Playing || !rift.JungleOnlyActive ||
+                    rift.JungleArea == null || bots.Count != 1 ||
+                    rift.AirWallSegmentCount < 1 ||
+                    rift.AirWallExitEdgeCount < rift.AirWallSegmentCount)
+                    throw new InvalidOperationException(
+                        "Actual hunter jungle-only match was not initialized");
+                var nav = rift.Navigation;
+                var zone = rift.JungleArea;
+                var hunter = rift.PlayerPosition;
+                result.jungleCells = zone.AllowedCellCount;
+                result.jungleBrushGroup = nav.BushAt(hunter);
+                result.jungleHunterInRealRiverBrush =
+                    nav.CanWalk(hunter) && result.jungleBrushGroup != 0 &&
+                    result.jungleBrushGroup == zone.HunterBrushGroup &&
+                    Vector2.Distance(hunter, zone.HunterRiverBrush) <
+                    RiftGrid.CellSize * 1.5f;
+                bool frozen = !rules.CanMove(HumanId) &&
+                              !rift.TryNavigateTo(HiderSpawn);
+                result.jungleBotInPlayableArea = nav.CanWalk(bots[0].Position);
+                var outside = zone.ExcludedWalkable;
+                var before = rift.PlayerPosition;
+                result.jungleBoundaryBlocksExit =
+                    !nav.CanWalk(outside) &&
+                    !rift.TryNavigateTo(outside) &&
+                    !rift.TryTeleportTo(outside) &&
+                    !rift.TrySetExternalPosition(outside) &&
+                    Vector2.Distance(before, rift.PlayerPosition) < .01f;
+                rules.Advance(NativeMatchRules.PreparationSeconds);
+                rift.ExternalMoveEnabled = rules.CanMove(HumanId);
+                result.jungleHunterFrozenThenReleased =
+                    frozen && rules.CanMove(HumanId);
+                result.jungleBoundaryAllowsCampPath =
+                    nav.CanWalk(HiderSpawn) &&
+                    rift.TryNavigateTo(HiderSpawn);
+                rift.StopMovement();
+                if (!result.jungleHunterInRealRiverBrush ||
+                    !result.jungleBotInPlayableArea ||
+                    !result.jungleHunterFrozenThenReleased ||
+                    !result.jungleBoundaryBlocksExit ||
+                    !result.jungleBoundaryAllowsCampPath ||
+                    result.jungleCells < 1000)
+                    throw new InvalidOperationException(
+                        "Original Map11 river hunter staging or jungle boundary invalid");
+                Debug.Log("NATIVE_JUNGLE_GPU_QA_PASS: hunterGrassGroup=" +
+                          result.jungleBrushGroup + " arenaCells=" +
+                          result.jungleCells + " frozen120=true" +
+                          " humanExit=blocked aiInside=true" +
+                          " riverToCampPath=legal trueMap11=true" +
+                          " airwallSegments=" + rift.AirWallSegmentCount +
+                          " exitEdges=" + rift.AirWallExitEdgeCount);
+            }
+            finally
+            {
+                qaEnforceJungle = false;
+                ReturnToRoleSelection();
+            }
         }
 
         IEnumerator VerifyGameplay()
@@ -2863,6 +3085,16 @@ namespace HextechSeekers.Native
                 rules.Advance(120f + NativeMatchRules.ChaseSeconds(1));
                 result.hiderWinsBySurviving = rules.Phase == MatchPhase.Finished &&
                     !rules.HunterWon && rules.Find(HumanId).Score == 1;
+                VerifyJungleRiverModeOnRealRift(result);
+                if (!result.jungleHunterInRealRiverBrush ||
+                    !result.jungleHunterFrozenThenReleased ||
+                    !result.jungleBoundaryBlocksExit ||
+                    !result.jungleBoundaryAllowsCampPath ||
+                    !result.jungleBotInPlayableArea ||
+                    result.jungleBrushGroup <= 0 ||
+                    result.jungleCells < 1000)
+                    throw new InvalidOperationException(
+                        "Jungle-only real Map11 Player QA failed");
                 if (!result.loadedRift || !result.hunterLockedDuringPreparation ||
                     !result.hunterReleasedAfterPreparation ||
                     !result.hunterCapturedUsingBasicAttack ||

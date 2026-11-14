@@ -23,6 +23,15 @@ namespace HextechSeekers.Native
         readonly short[] heights;
         readonly byte[] clearance;
         readonly byte[] bush;
+        bool[] playArea;
+        public bool IsPlayAreaRestricted => playArea != null;
+
+        public void SetPlayArea(bool[] allowed)
+        {
+            if (allowed != null && allowed.Length != Width * Height)
+                throw new ArgumentException("Jungle play-area mask must cover the original Map11 grid");
+            playArea = allowed == null ? null : (bool[])allowed.Clone();
+        }
         public RiftGrid(byte[] raw)
         {
             if (raw == null || raw.Length != BinaryBytes)
@@ -59,11 +68,18 @@ namespace HextechSeekers.Native
             Mathf.FloorToInt((x - MinX) / CellSize), Mathf.FloorToInt((z - MinZ) / CellSize));
         public Vector2 Center(int x, int y) => new Vector2(
             MinX + (x + .5f) * CellSize, MinZ + (y + .5f) * CellSize);
+        // Original Map11 walkability, independent of the game-mode mask.
+        public bool OriginalCellWalkable(int x, int y)
+        {
+            if (x < 0 || y < 0 || x >= Width || y >= Height ||
+                clearance[y * Width + x] == 0) return false;
+            Vector2 p = Center(x, y);
+            return p.x + p.y >= -120f;
+        }
         public bool Valid(int x, int y)
         {
-            if (x < 0 || y < 0 || x >= Width || y >= Height || clearance[y * Width + x] == 0) return false;
-            Vector2 p = Center(x, y);
-            return p.x + p.y >= -120f; // same confirmed lower-jungle boundary as the web prototype
+            return OriginalCellWalkable(x, y) &&
+                   (playArea == null || playArea[y * Width + x]);
         }
         public bool CanWalk(Vector2 p) { var c = Cell(p.x, p.y); return Valid(c.x, c.y); }
         public short HeightAt(Vector2 p)
