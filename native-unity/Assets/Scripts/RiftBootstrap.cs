@@ -66,14 +66,35 @@ namespace HextechSeekers.Native
         public NativeJunglePlayArea JungleArea { get; private set; }
         public bool JungleOnlyActive => nav != null && nav.IsPlayAreaRestricted;
 
+        GameObject jungleAirWalls;
+        public int AirWallSegmentCount { get; private set; }
+        public int AirWallExitEdgeCount { get; private set; }
+
         public bool SetJungleOnly(bool enabled)
         {
             if (!ready || nav == null || (enabled && JungleArea == null))
                 return false;
+            if (enabled && !JungleArea.Contains(location)) return false;
+            if (enabled && !jungleAirWalls)
+            {
+                jungleAirWalls = NativeJungleAirWalls.Create(
+                    nav, JungleArea, transform, out int segments, out int exitEdges);
+                AirWallSegmentCount = segments;
+                AirWallExitEdgeCount = exitEdges;
+            }
             nav.SetPlayArea(enabled ? JungleArea.SnapshotMask() : null);
+            if (!enabled && jungleAirWalls)
+            {
+                jungleAirWalls.SetActive(false);
+                Destroy(jungleAirWalls);
+                jungleAirWalls = null;
+                AirWallSegmentCount = AirWallExitEdgeCount = 0;
+            }
             StopMovement();
             Debug.Log("NATIVE_JUNGLE_BOUNDARY: " + (enabled ? "ENABLED" : "DISABLED") +
-                      " regionCells=" + (JungleArea?.AllowedCellCount ?? 0));
+                      " regionCells=" + (JungleArea?.AllowedCellCount ?? 0) +
+                      " physicalWalls=" + AirWallSegmentCount +
+                      " exitEdges=" + AirWallExitEdgeCount);
             return true;
         }
 
