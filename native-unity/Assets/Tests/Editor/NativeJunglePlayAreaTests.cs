@@ -89,6 +89,57 @@ namespace HextechSeekers.Native.Tests
         }
 
         [Test]
+        public void InvisibleAirWallsSealEveryExteriorWalkableExit()
+        {
+            var nav = SourceCompatibleWalkableFixture();
+            var area = NativeJunglePlayArea.Build(nav, OriginalCampFixture(nav));
+            GameObject root = null;
+            try
+            {
+                root = NativeJungleAirWalls.Create(nav, area, null,
+                                                   out int segments, out int exits);
+                var walls = root.GetComponentsInChildren<BoxCollider>();
+                Assert.Greater(segments, 0);
+                Assert.AreEqual(segments, walls.Length);
+                Assert.AreEqual(0, root.GetComponentsInChildren<Renderer>().Length);
+                var mask = area.SnapshotMask();
+                int counted = 0;
+                for (int y = 0; y < RiftGrid.Height; y++)
+                for (int x = 0; x < RiftGrid.Width; x++)
+                {
+                    if (x + 1 < RiftGrid.Width &&
+                        nav.OriginalCellWalkable(x, y) &&
+                        nav.OriginalCellWalkable(x + 1, y) &&
+                        mask[y * RiftGrid.Width + x] != mask[y * RiftGrid.Width + x + 1])
+                    {
+                        var at = new Vector3(RiftGrid.MinX + (x + 1) * RiftGrid.CellSize,
+                                             0f, RiftGrid.MinZ + (y + .5f) * RiftGrid.CellSize);
+                        Assert.IsTrue(Array.Exists(walls, wall => wall.bounds.Contains(at)),
+                                      "East-west jungle exit has no collider: " + at);
+                        counted++;
+                    }
+                    if (y + 1 < RiftGrid.Height &&
+                        nav.OriginalCellWalkable(x, y) &&
+                        nav.OriginalCellWalkable(x, y + 1) &&
+                        mask[y * RiftGrid.Width + x] != mask[(y + 1) * RiftGrid.Width + x])
+                    {
+                        var at = new Vector3(RiftGrid.MinX + (x + .5f) * RiftGrid.CellSize,
+                                             0f, RiftGrid.MinZ + (y + 1) * RiftGrid.CellSize);
+                        Assert.IsTrue(Array.Exists(walls, wall => wall.bounds.Contains(at)),
+                                      "North-south jungle exit has no collider: " + at);
+                        counted++;
+                    }
+                }
+                Assert.Greater(counted, 0);
+                Assert.AreEqual(exits, counted);
+                nav.SetPlayArea(area.SnapshotMask());
+                Assert.IsFalse(nav.CanWalk(area.ExcludedWalkable));
+                nav.SetPlayArea(null);
+            }
+            finally { if (root) UnityEngine.Object.DestroyImmediate(root); }
+        }
+
+        [Test]
         public void APlayAreaMaskCannotUseInvalidCellCount()
         {
             var nav = SourceCompatibleWalkableFixture();
