@@ -18,11 +18,16 @@ namespace HextechSeekers.Native.Tests
                 NativeRiftCameraProfile.DefaultDistance);
             // The original client references approx 1289.558 units back
             // and 1911.849 units up when zoomed out. No orthographic math.
-            Assert.AreEqual(0f, position.x - focus.x, 1f);
+            Assert.AreEqual(45f, NativeRiftCameraProfile.DefaultYaw, .001f);
+            float yaw = NativeRiftCameraProfile.DefaultYaw * Mathf.Deg2Rad;
+            Assert.AreEqual(-1289.558f * Mathf.Sin(yaw),
+                            position.x - focus.x, 3f);
             Assert.AreEqual(1911.849f, position.y - focus.y, 3f);
-            Assert.AreEqual(-1289.558f, position.z - focus.z, 3f);
+            Assert.AreEqual(-1289.558f * Mathf.Cos(yaw),
+                            position.z - focus.z, 3f);
             Vector3 forward = NativeRiftCameraProfile.Rotation(
-                NativeRiftCameraProfile.DefaultPitch, 0f) * Vector3.forward;
+                NativeRiftCameraProfile.DefaultPitch,
+                NativeRiftCameraProfile.DefaultYaw) * Vector3.forward;
             Assert.AreEqual((focus - position).normalized.x, forward.x, .001f);
             Assert.AreEqual((focus - position).normalized.y, forward.y, .001f);
             Assert.AreEqual((focus - position).normalized.z, forward.z, .001f);
